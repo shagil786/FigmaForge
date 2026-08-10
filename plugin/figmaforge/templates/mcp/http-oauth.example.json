@@ -1,0 +1,11 @@
+{
+  "name": "example-http-oauth-server",
+  "description": "Example HTTP-based MCP server with OAuth authentication template",
+  "type": "http",
+  "transport": "sse",
+  "url": "https://example.invalid/api/mcp",
+  "headers": {
+    "Authorization": "Bearer ${EXAMPLE_TOKEN}",
+    "X-API-Key": "${EXAMPLE_API_KEY}"
+  }
+}

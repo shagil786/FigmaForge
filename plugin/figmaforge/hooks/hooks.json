@@ -1,0 +1,25 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "command": "python3 core/hooks/session_detector.py",
+        "description": "Runs the detector; injects concise additional context only when actionable evidence exists.",
+        "hooks": []
+      }
+    ],
+    "PreToolUse": [
+      {
+        "command": "python3 core/hooks/external_mutation_gate.py",
+        "description": "Inspects Bash commands and MCP tool names for external mutations.",
+        "hooks": []
+      }
+    ],
+    "PostToolUse": [
+      {
+        "command": "python3 core/hooks/post_edit_validator.py",
+        "description": "Validates edits with manifest-aware checks.",
+        "hooks": []
+      }
+    ]
+  }
+}

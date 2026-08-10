@@ -1,0 +1,20 @@
+{
+  "name": "figmaforge",
+  "version": "0.0.1-dev",
+  "description": "Technology-agnostic, adaptive, full-lifecycle Claude Code engineering platform with 100 catalog roles, 6 core skills, 3 agents, detector+router, 10-phase lifecycle, and safety-first design.",
+  "license": "MIT",
+  "author": {
+    "name": "Md Shagil Nizami"
+  },
+  "homepage": "https://github.com/example/figmaforge",
+  "repository": "https://github.com/example/figmaforge",
+  "keywords": [
+    "claude-code-plugin",
+    "adaptive",
+    "full-lifecycle",
+    "engineering-platform",
+    "catalog-roles",
+    "detector",
+    "router"
+  ]
+}

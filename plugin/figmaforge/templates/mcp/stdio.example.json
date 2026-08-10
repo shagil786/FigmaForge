@@ -1,0 +1,11 @@
+{
+  "name": "example-stdio-server",
+  "description": "Example stdio-based MCP server template",
+  "type": "stdio",
+  "command": "python3",
+  "args": ["server.py"],
+  "env": {
+    "EXAMPLE_ENV": "example_value",
+    "API_BASE_URL": "example.invalid"
+  }
+}

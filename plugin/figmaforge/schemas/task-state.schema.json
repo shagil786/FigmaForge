@@ -1,0 +1,132 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Lifecycle Task State",
+  "description": "Atomic state representation of a FigmaForge run through the 10-phase lifecycle",
+  "type": "object",
+  "required": ["run_id", "request", "phase", "status", "selected_roles", "decisions", "artifacts", "evidence", "validations", "approvals", "blockers"],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "description": "Unique run identifier"
+    },
+    "request": {
+      "type": "string",
+      "description": "Original user request"
+    },
+    "phase": {
+      "type": "string",
+      "enum": ["intake", "discover", "define", "design", "plan", "implement", "verify", "release", "operate", "learn"],
+      "description": "Current lifecycle phase"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "blocked", "completed", "failed", "cancelled"],
+      "description": "Run status"
+    },
+    "risk": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "critical"],
+      "description": "Current risk level"
+    },
+    "selected_roles": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Catalog role IDs selected for this run"
+    },
+    "selected_capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Installed plugin capabilities/refs used"
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["phase", "action", "reason", "evidence"],
+        "properties": {
+          "phase": { "type": "string" },
+          "action": { "type": "string" },
+          "reason": { "type": "string" },
+          "evidence": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "description": "Evidence-driven decisions"
+    },
+    "artifacts": {
+      "type": "object",
+      "description": "Deliverables generated"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Evidence collected during the run"
+    },
+    "validations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["check", "passed", "details"],
+        "properties": {
+          "check": { "type": "string" },
+          "passed": { "type": "boolean" },
+          "details": { "type": "object" }
+        }
+      },
+      "description": "Validation results"
+    },
+    "approvals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["gate", "granted", "timestamp", "reason"],
+        "properties": {
+          "gate": { "type": "string" },
+          "granted": { "type": "boolean" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "reason": { "type": "string" }
+        }
+      },
+      "description": "Approval records"
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "message", "resolved"],
+        "properties": {
+          "id": { "type": "string" },
+          "message": { "type": "string" },
+          "resolved": { "type": "boolean" }
+        }
+      },
+      "description": "Active blockers"
+    }
+  },
+  "example": {
+    "run_id": "abc-123",
+    "request": "Design a CLI feature",
+    "phase": "define",
+    "status": "active",
+    "risk": "medium",
+    "selected_roles": ["requirements-architect"],
+    "decisions": [
+      {
+        "phase": "define",
+        "action": "advance to design",
+        "reason": "Requirements defined with acceptance criteria",
+        "evidence": ["user_stories.md exists"]
+      }
+    ],
+    "artifacts": { "requirements": "..." },
+    "evidence": [],
+    "validations": [],
+    "approvals": [],
+    "blockers": []
+  }
+}

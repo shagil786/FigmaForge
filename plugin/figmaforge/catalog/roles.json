@@ -1,0 +1,1154 @@
+{
+  "domains": {
+    "discovery": {
+      "title": "Discovery and Strategy",
+      "roles": [
+        {
+          "id": "product-manager",
+          "title": "Product Manager",
+          "phases": ["intake", "define"],
+          "triggers": ["requirements", "epic", "roadmap", "okr", "prioritize"],
+          "deliverables": ["user stories", "epic backlog", "prioritized backlog", "roadmap"],
+          "repository_signals": ["README.md", "docs/roadmap.md", "docs/okrs.md"],
+          "risk": "low",
+          "capability_refs": ["product-skills:product-discovery"],
+          "fallback_pack": "general-product-manager"
+        },
+        {
+          "id": "business-analyst",
+          "title": "Business Analyst",
+          "phases": ["intake", "define"],
+          "triggers": ["requirements", "stakeholder", "process", "workflow", "user journey"],
+          "deliverables": ["business requirements", "stakeholder maps", "user journeys"],
+          "repository_signals": ["docs/business-requirements.md", "stakeholders.md"],
+          "risk": "low",
+          "capability_refs": [],
+          "fallback_pack": "general-business-analyst"
+        },
+        {
+          "id": "requirements-analyst",
+          "title": "Requirements Analyst",
+          "phases": ["define"],
+          "triggers": ["requirements", "acceptance criteria", "specs", "user stories"],
+          "deliverables": ["requirements spec", "acceptance criteria list"],
+          "repository_signals": ["REQUIREMENTS.md", "docs/specs/"],
+          "risk": "medium",
+          "capability_refs": [],
+          "fallback_pack": "general-requirements-analyst"
+        },
+        {
+          "id": "product-owner",
+          "title": "Product Owner",
+          "phases": ["intake", "define"],
+          "triggers": ["epic", "backlog", "velocity", "sprint", "value"],
+          "deliverables": ["backlog grooming", "sprint planning", "value analysis"],
+          "repository_signals": ["docs/roadmap.md", "backlog/"],
+          "risk": "low",
+          "capability_refs": [],
+          "fallback_pack": "general-product-owner"
+        },
+        {
+          "id": "stakeholder-representative",
+          "title": "Stakeholder Representative",
+          "phases": ["intake", "define"],
+          "triggers": ["stakeholder", "customer", "user", "business goal"],
+          "deliverables": ["stakeholder interviews", "business goals", "use cases"],
+          "repository_signals": ["docs/stakeholders.md"],
+          "risk": "medium",
+          "capability_refs": [],
+          "fallback_pack": "general-stakeholder-representative"
+        },
+        {
+          "id": "discovery-researcher",
+          "title": "Discovery Researcher",
+          "phases": ["discover", "define"],
+          "triggers": ["research", "investigation", "audit", "competitor", "analysis"],
+          "deliverables": ["research report", "competitor analysis", "gap analysis"],
+          "repository_signals": ["docs/research/", "RESEARCH.md"],
+          "risk": "low",
+          "capability_refs": ["deep-research"],
+          "fallback_pack": "general-researcher"
+        },
+        {
+          "id": "product-market-fit-analyst",
+          "title": "Product-Market Fit Analyst",
+          "phases": ["learn"],
+          "triggers": ["market fit", "metrics", "growth", "analytics", "retention"],
+          "deliverables": ["metrics dashboard", "growth plan", "retention analysis"],
+          "repository_signals": ["docs/metrics/", "ANALYTICS.md"],
+          "risk": "medium",
+          "capability_refs": ["product-skills:product-analytics"],
+          "fallback_pack": "general-analytics-analyst"
+        },
+        {
+          "id": "competitive-intel-analyst",
+          "title": "Competitive Intel Analyst",
+          "phases": ["discover"],
+          "triggers": ["competitor", "benchmark", "market", "positioning"],
+          "deliverables": ["competitive landscape", "benchmark report", "positioning strategy"],
+          "repository_signals": ["docs/competitive/"],
+          "risk": "low",
+          "capability_refs": ["product-skills:competitive-teardown"],
+          "fallback_pack": "general-competitive-analyst"
+        },
+        {
+          "id": "value-engineer",
+          "title": "Value Engineer",
+          "phases": ["discover"],
+          "triggers": ["roi", "cost-benefit", "investment", "value prop"],
+          "deliverables": ["roi analysis", "cost-benefit analysis", "value propositions"],
+          "repository_signals": ["docs/roi/", "docs/value/"],
+          "risk": "low",
+          "capability_refs": [],
+          "fallback_pack": "general-value-engineer"
+        },
+        {
+          "id": "discovery-lead",
+          "title": "Discovery Lead",
+          "phases": ["discover", "define"],
+          "triggers": ["discovery", "epic", "roadmap", "discovery"],
+          "deliverables": ["discovery plan", "discovery report", "alignment artifacts"],
+          "repository_signals": ["docs/discovery/"],
+          "risk": "medium",
+          "capability_refs": [],
+          "fallback_pack": "general-lead"
+        }
+      ]
+    },
+    "experience": {
+      "title": "Experience and Design",
+      "roles": [
+        {
+          "id": "ux-researcher",
+          "title": "UX Researcher",
+          "phases": ["discover", "define"],
+          "triggers": ["ux research", "usability", "testing", "interviews", "user study"],
+          "deliverables": ["research findings", "usability report", "user personas"],
+          "repository_signals": ["docs/ux/", "RESEARCH.md"],
+          "risk": "low",
+          "capability_refs": [],
+          "fallback_pack": "general-ux-researcher"
+        },
+        {
+          "id": "ux-designer",
+          "title": "UX Designer",
+          "phases": ["define", "design"],
+          "triggers": ["ux", "design", "ui", "layout", "wireframe"],
+          "deliverables": ["wireframes", "high-fidelity mockups", "style guide"],
+          "repository_signals": ["docs/design/"],
+          "risk": "medium",
+          "capability_refs": ["dataviz"],
+          "fallback_pack": "general-ux-designer"
+        },
+        {
+          "id": "ui-designer",
+          "title": "UI Designer",
+          "phases": ["design"],
+          "triggers": ["ui", "interface", "visual", "design system", "tokens"],
+          "deliverables": ["component library", "design tokens", "visual guidelines"],
+          "repository_signals": ["docs/design/"],
+          "risk": "medium",
+          "capability_refs": ["dataviz"],
+          "fallback_pack": "general-ui-designer"
+        },
+        {
+          "id": "product-designer",
+          "title": "Product Designer",
+          "phases": ["discover", "define", "design"],
+          "triggers": ["product", "design", "ux", "ui", "user experience"],
+          "deliverables": ["design system", "user flows", "component specs"],
+          "repository_signals": ["docs/design/"],
+          "risk": "medium",
+          "capability_refs": ["product-skills:ux-researcher-designer"],
+          "fallback_pack": "general-product-designer"
+        },
+        {
+          "id": "interaction-designer",
+          "title": "Interaction Designer",
+          "phases": ["design"],
+          "triggers": ["interaction", "microinteractions", "animation", "gesture"],
+          "deliverables": ["interaction specs", "animation plans", "gesture guide"],
+          "repository_signals": ["docs/design/"],
+          "risk": "low",
+          "capability_refs": [],
+          "fallback_pack": "general-interaction-designer"
+        },
+        {
+          "id": "accessibility-specialist",
+          "title": "Accessibility Specialist",
+          "phases": ["design", "verify"],
+          "triggers": ["a11y", "accessibility", "wcag", "screen reader", "contrast"],
+          "deliverables": ["accessibility audit", "wcag compliance report"],
+          "repository_signals": ["docs/a11y/"],
+          "risk": "medium",
+          "capability_refs": ["engineering-skills:senior-a11y"],
+          "fallback_pack": "general-accessibility-specialist"
+        },
+        {
+          "id": "design-system-engineer",
+          "title": "Design System Engineer",
+          "phases": ["design", "implement"],
+          "triggers": ["design system", "component library", "tokens", "pattern library"],
+          "deliverables": ["design system", "component tokens", "documentation"],
+          "repository_signals": ["docs/design-system/", "design-system/"],
+          "risk": "medium",
+          "capability_refs": [],
+          "fallback_pack": "general-design-system-engineer"
+        },
+        {
+          "id": "visual-designer",
+          "title": "Visual Designer",
+          "phases": ["design"],
+          "triggers": ["visual", "brand", "logo", "typography", "color"],
+          "deliverables": ["brand guidelines", "logo variants", "typography system"],
+          "repository_signals": ["docs/brand/"],
+          "risk": "medium",
+          "capability_refs": ["dataviz"],
+          "fallback_pack": "general-visual-designer"
+        },
+        {
+          "id": "copywriter",
+          "title": "Copywriter",
+          "phases": ["define"],
+          "triggers": ["copy", "copywriting", "content", "text", "microcopy"],
+          "deliverables": ["copy documentation", "content guidelines"],
+          "repository_signals": ["docs/copy/"],
+          "risk": "low",
+          "capability_refs": [],
+          "fallback_pack": "general-copywriter"
+        },
+        {
+          "id": "user-research-manager",
+          "title": "User Research Manager",
+          "phases": ["discover"],
+          "triggers": ["user research", "studies", "interviews", "usability", "testing"],
+          "deliverables": ["research plan", "interview guides", "study protocol"],
+          "repository_signals": ["docs/research/"],
+          "risk": "low",
+          "capability_refs": [],
+          "fallback_pack": "general-research-manager"
+        }
+      ]
+    },
+    "architecture": {
+      "title": "Architecture",
+      "roles": [
+        {
+          "id": "solution-architect",
+          "title": "Solution Architect",
+          "phases": ["design", "plan"],
+          "triggers": ["solution architecture", "high-level design", "architecture", "system design"],
+          "deliverables": ["solution architecture", "design document", "architecture diagram"],
+          "repository_signals": ["docs/architecture/", "ARCHITECTURE.md"],
+          "risk": "medium",
+          "capability_refs": [],
+          "fallback_pack": "general-solution-architect"
+        },
+        {
+          "id": "system-architect",
+          "title": "System Architect",
+          "phases": ["design", "plan"],
+          "triggers": ["system design", "backend architecture", "system architecture", "infrastructure"],
+          "deliverables": ["system architecture", "technical design", "infrastructure plan"],
+          "repository_signals": ["docs/system-architecture/"],
+          "risk": "high",
+          "capability_refs": ["engineering-skills:senior-architect"],
+          "fallback_pack": "general-system-architect"
+        },
+        {
+          "id": "data-architect",
+          "title": "Data Architect",
+          "phases": ["design", "plan"],
+          "triggers": ["data architecture", "database", "data model", "schema", "etl"],
+          "deliverables": ["data model", "database schema", "data pipeline design"],
+          "repository_signals": ["docs/data-architecture/", "migrations/"],
+          "risk": "high",
+          "capability_refs": ["engineering-skills:senior-data-engineer"],
+          "fallback_pack": "general-data-architect"
+        },
+        {
+          "id": "devops-architect",
+          "title": "DevOps Architect",
+          "phases": ["plan", "operate"],
+          "triggers": ["devops", "infrastructure", "ci/cd", "deploy", "kubernetes"],
+          "deliverables": ["devops architecture", "pipeline design", "infrastructure as code"],
+          "repository_signals": ["infrastructure/", "k8s/", "terraform/"],
+          "risk": "high",
+          "capability_refs": ["engineering-skills:senior-devops"],
+          "fallback_pack": "general-devops-architect"
+        },
+        {
+          "id": "security-architect",
+          "title": "Security Architect",
+          "phases": ["design", "plan"],
+          "triggers": ["security", "access control", "auth", "encryption", "compliance"],
+          "deliverables": ["security architecture", "security assessment", "compliance plan"],
+          "repository_signals": ["docs/security/", "security/"],
+          "risk": "high",
+          "capability_refs": ["engineering-skills:senior-security"],
+          "fallback_pack": "general-security-architect"
+        },
+        {
+          "id": "performance-architect",
+          "title": "Performance Architect",
+          "phases": ["design", "verify"],
+          "triggers": ["performance", "scalability", "throughput", "latency", "caching"],
+          "deliverables": ["performance plan", "load testing strategy", "scalability analysis"],
+          "repository_signals": ["docs/performance/", "tests/load/"],
+          "risk": "medium",
+          "capability_refs": ["engineering-skills:performance-profiler"],
+          "fallback_pack": "general-performance-architect"
+        },
+        {
+          "id": "availability-architect",
+          "title": "Availability Architect",
+          "phases": ["design", "operate"],
+          "triggers": ["high availability", "fault tolerance", "disaster recovery", "dr"],
+          "deliverables": ["dr plan", "fault tolerance analysis", "backup strategy"],
+          "repository_signals": ["docs/high-availability/", "disaster-recovery/"],
+          "risk": "high",
+          "capability_refs": [],
+          "fallback_pack": "general-availability-architect"
+        },
+        {
+          "id": "scalability-architect",
+          "title": "Scalability Architect",
+          "phases": ["design", "operate"],
+          "triggers": ["scalability", "load balancing", "concurrency", "horizontal scaling"],
+          "deliverables": ["scalability plan", "load balancing strategy", "horizontal scaling design"],
+          "repository_signals": ["docs/scalability/"],
+          "risk": "high",
+          "capability_refs": [],
+          "fallback_pack": "general-scalability-architect"
+        },
+        {
+          "id": "resilience-architect",
+          "title": "Resilience Architect",
+          "phases": ["design", "operate"],
+          "triggers": ["resilience", "circuit breaker", "retry", "timeout", "fault isolation"],
+          "deliverables": ["resilience strategy", "circuit breaker design", "fault isolation plan"],
+          "repository_signals": ["docs/resilience/"],
+          "risk": "high",
+          "capability_refs": [],
+          "fallback_pack": "general-resilience-architect"
+        },
+        {
+          "id": "architecture-reviewer",
+          "title": "Architecture Reviewer",
+          "phases": ["verify"],
+          "triggers": ["architecture review", "design review", "code review", "technical review"],
+          "deliverables": ["review report", "recommendations", "action items"],
+          "repository_signals": ["docs/reviews/"],
+          "risk": "medium",
+          "capability_refs": ["engineering-skills:adversarial-reviewer"],
+          "fallback_pack": "general-architecture-reviewer"
+        }
+      ]
+    },
+    "application": {
+      "title": "Application Engineering",
+      "roles": [
+        {
+          "id": "frontend-engineer",
+          "title": "Frontend Engineer",
+          "phases": ["implement", "verify"],
+          "triggers": ["frontend", "react", "vue", "angular", "ui"],
+          "deliverables": ["feature implementation", "bug fixes", "ui components"],
+          "repository_signals": ["src/client/", "src/frontend/", "app/", "components/"],
+          "risk": "medium",
+          "capability_refs": ["engineering-skills:senior-frontend"],
+          "fallback_pack": "general-frontend-engineer"
+        },
+        {
+          "id": "backend-engineer",
+          "title": "Backend Engineer",
+          "phases": ["implement", "verify"],
+          "triggers": ["backend", "api", "service", "server", "controller"],
+          "deliverables": ["feature implementation", "api endpoints", "services"],
+          "repository_signals": ["src/server/", "src/api/", "backend/", "services/"],
+          "risk": "medium",
+          "capability_refs": ["engineering-skills:senior-backend"],
+          "fallback_pack": "general-backend-engineer"
+        },
+        {
+          "id": "fullstack-engineer",
+          "title": "Fullstack Engineer",
+          "phases": ["implement", "verify"],
+          "triggers": ["fullstack", "full-stack", "full stack", "application"],
+          "deliverables": ["feature implementation", "end-to-end features"],
+          "repository_signals": ["src/", "app/", "pages/"],
+          "risk": "medium",
+          "capability_refs": ["engineering-skills:senior-fullstack"],
+          "fallback_pack": "general-fullstack-engineer"
+        },
+        {
+          "id": "mobile-engineer",
+          "title": "Mobile Engineer",
+          "phases": ["implement", "verify"],
+          "triggers": ["mobile", "ios", "android", "react-native", "flutter"],
+          "deliverables": ["feature implementation", "mobile app components"],
+          "repository_signals": ["ios/", "android/", "mobile/", "src/mobile/"],
+          "risk": "medium",
+          "capability_refs": ["engineering-skills:senior-mobile"],
+          "fallback_pack": "general-mobile-engineer"
+        },
+        {
+          "id": "cli-engineer",
+          "title": "CLI Engineer",
+          "phases": ["implement", "verify"],
+          "triggers": ["cli", "command line", "terminal", "script"],
+          "deliverables": ["cli tool", "command implementation"],
+          "repository_signals": ["src/cli/", "bin/", "cli/"],
+          "risk": "low",
+          "capability_refs": ["engineering-skills:senior-cli"],
+          "fallback_pack": "general-cli-engineer"
+        },
+        {
+          "id": "web-extension-engineer",
+          "title": "Web Extension Engineer",
+          "phases": ["implement", "verify"],
+          "triggers": ["extension", "browser extension", "chrome extension", "firefox extension"],
+          "deliverables": ["extension implementation", "browser integration"],
+          "repository_signals": ["extension/", "src/extension/"],
+          "risk": "medium",
+          "capability_refs": ["engineering-skills:senior-frontend"],
+          "fallback_pack": "general-extension-engineer"
+        },
+        {
+          "id": "sdk-engineer",
+          "title": "SDK Engineer",
+          "phases": ["implement", "verify"],
+          "triggers": ["sdk", "library", "package", "npm", "npm package"],
+          "deliverables": ["library implementation", "sdk package", "npm package"],
+          "repository_signals": ["lib/", "src/lib/", "packages/"],
+          "risk": "medium",
+          "capability_refs": ["engineering-skills:senior-lib"],
+          "fallback_pack": "general-sdk-engineer"
+        },
+        {
+          "id": "api-engineer",
+          "title": "API Engineer",
+          "phases": ["implement", "verify"],
+          "triggers": ["api", "rest", "graphql", "grpc", "websocket"],
+          "deliverables": ["api implementation", "api documentation"],
+          "repository_signals": ["src/api/", "src/routes/", "api/"],
+          "risk": "medium",
+          "capability_refs": ["engineering-skills:senior-backend"],
+          "fallback_pack": "general-api-engineer"
+        },
+        {
+          "id": "automation-engineer",
+          "title": "Automation Engineer",
+          "phases": ["implement", "operate"],
+          "triggers": ["automation", "scripting", "script", "automate"],
+          "deliverables": ["automation scripts", "workflows"],
+          "repository_signals": ["scripts/", "automation/"],
+          "risk": "medium",
+          "capability_refs": ["engineering-skills:senior-devops"],
+          "fallback_pack": "general-automation-engineer"
+        },
+        {
+          "id": "migration-engineer",
+          "title": "Migration Engineer",
+          "phases": ["implement", "operate"],
+          "triggers": ["migration", "migration", "migrate", "refactor", "legacy"],
+          "deliverables": ["migration plan", "refactor implementation"],
+          "repository_signals": ["migrations/", "docs/migration/"],
+          "risk": "high",
+          "capability_refs": ["engineering-skills:migration-architect"],
+          "fallback_pack": "general-migration-engineer"
+        }
+      ]
+    },
+    "data": {
+      "title": "Data and AI",
+      "roles": [
+        {
+          "id": "data-engineer",
+          "title": "Data Engineer",
+          "phases": ["design", "implement", "operate"],
+          "triggers": ["data engineering", "data pipeline", "etl", "data lake", "data warehouse"],
+          "deliverables": ["data pipelines", "data models", "etl jobs"],
+          "repository_signals": ["data/", "etl/", "pipelines/"],
+          "risk": "medium",
+          "capability_refs": ["engineering-skills:senior-data-engineer"],
+          "fallback_pack": "general-data-engineer"
+        },
+        {
+          "id": "data-scientist",
+          "title": "Data Scientist",
+          "phases": ["design", "learn"],
+          "triggers": ["machine learning", "ml", "ai", "data science", "model"],
+          "deliverables": ["data models", "analysis", "predictions"],
+          "repository_signals": ["notebooks/", "ml/", "models/"],
+          "risk": "medium",
+          "capability_refs": ["engineering-skills:senior-data-scientist"],
+          "fallback_pack": "general-data-scientist"
+        },
+        {
+          "id": "ml-engineer",
+          "title": "ML Engineer",
+          "phases": ["design", "implement", "learn"],
+          "triggers": ["machine learning", "ml", "model training", "inference", "deployment"],
+          "deliverables": ["ml pipelines", "model deployment", "inference services"],
+          "repository_signals": ["ml/", "models/", "inference/"],
+          "risk": "medium",
+          "capability_refs": ["engineering-skills:senior-ml-engineer"],
+          "fallback_pack": "general-ml-engineer"
+        },
+        {
+          "id": "ai-engineer",
+          "title": "AI Engineer",
+          "phases": ["design", "implement", "learn"],
+          "triggers": ["ai", "llm", "large language model", "generative ai", "ai"],
+          "deliverables": ["ai services", "llm integration", "generative features"],
+          "repository_signals": ["ai/", "llm/", "genai/"],
+          "risk": "medium",
+          "capability_refs": [],
+          "fallback_pack": "general-ai-engineer"
+        },
+        {
+          "id": "data-analyst",
+          "title": "Data Analyst",
+          "phases": ["discover", "learn"],
+          "triggers": ["data analysis", "analytics", "reporting", "visualization"],
+          "deliverables": ["reports", "dashboards", "analysis"],
+          "repository_signals": ["docs/analytics/", "data/"],
+          "risk": "low",
+          "capability_refs": ["product-skills:product-analytics"],
+          "fallback_pack": "general-data-analyst"
+        },
+        {
+          "id": "data-pipeline-engineer",
+          "title": "Data Pipeline Engineer",
+          "phases": ["design", "operate"],
+          "triggers": ["pipeline", "streaming", "batch", "data flow", "message queue"],
+          "deliverables": ["pipeline architecture", "streaming jobs", "batch jobs"],
+          "repository_signals": ["pipelines/", "workflows/"],
+          "risk": "medium",
+          "capability_refs": ["engineering-skills:senior-data-engineer"],
+          "fallback_pack": "general-pipeline-engineer"
+        },
+        {
+          "id": "data-warehouse-engineer",
+          "title": "Data Warehouse Engineer",
+          "phases": ["design", "operate"],
+          "triggers": ["warehouse", "dw", "data warehouse", "etl", "ldm"],
+          "deliverables": ["schema design", "materialized views", "warehouse setup"],
+          "repository_signals": ["data/warehouse/", "dw/"],
+          "risk": "high",
+          "capability_refs": [],
+          "fallback_pack": "general-warehouse-engineer"
+        },
+        {
+          "id": "etl-engineer",
+          "title": "ETL Engineer",
+          "phases": ["design", "operate"],
+          "triggers": ["etl", "extract transform load", "data integration"],
+          "deliverables": ["etl jobs", "transformations", "data integration"],
+          "repository_signals": ["etl/", "etl-jobs/"],
+          "risk": "medium",
+          "capability_refs": ["engineering-skills:senior-data-engineer"],
+          "fallback_pack": "general-etl-engineer"
+        },
+        {
+          "id": "data-sre",
+          "title": "Data SRE",
+          "phases": ["operate", "learn"],
+          "triggers": ["data sre", "monitoring", "alerting", "observability"],
+          "deliverables": ["monitoring dashboards", "alerting rules", "observability setup"],
+          "repository_signals": ["monitoring/", "dataops/"],
+          "risk": "medium",
+          "capability_refs": ["engineering-skills:senior-devops"],
+          "fallback_pack": "general-data-sre"
+        },
+        {
+          "id": "mlops-engineer",
+          "title": "MLOps Engineer",
+          "phases": ["design", "operate", "learn"],
+          "triggers": ["mlops", "model ops", "experiment tracking", "model registry"],
+          "deliverables": ["mlops pipeline", "experiment tracking", "model registry"],
+          "repository_signals": ["mlflow/", "ml-ops/"],
+          "risk": "medium",
+          "capability_refs": [],
+          "fallback_pack": "general-mlops-engineer"
+        }
+      ]
+    },
+    "quality": {
+      "title": "Quality and Security",
+      "roles": [
+        {
+          "id": "qa-engineer",
+          "title": "QA Engineer",
+          "phases": ["verify"],
+          "triggers": ["testing", "test", "qa", "quality assurance", "test plan"],
+          "deliverables": ["test plan", "test cases", "test reports"],
+          "repository_signals": ["tests/", "qa/"],
+          "risk": "low",
+          "capability_refs": ["engineering-skills:senior-qa"],
+          "fallback_pack": "general-qa-engineer"
+        },
+        {
+          "id": "test-automation-engineer",
+          "title": "Test Automation Engineer",
+          "phases": ["verify"],
+          "triggers": ["test automation", "test suite", "automated tests", "integration tests"],
+          "deliverables": ["test suite", "test automation framework"],
+          "repository_signals": ["tests/automation/", "e2e/"],
+          "risk": "low",
+          "capability_refs": ["engineering-skills:test-automation"],
+          "fallback_pack": "general-test-automation-engineer"
+        },
+        {
+          "id": "security-engineer",
+          "title": "Security Engineer",
+          "phases": ["verify", "design"],
+          "triggers": ["security", "auth", "authorization", "security testing", "vulnerability"],
+          "deliverables": ["security review", "vulnerability fixes", "security recommendations"],
+          "repository_signals": ["security/", "docs/security/"],
+          "risk": "high",
+          "capability_refs": ["engineering-skills:senior-security"],
+          "fallback_pack": "general-security-engineer"
+        },
+        {
+          "id": "penetration-tester",
+          "title": "Penetration Tester",
+          "phases": ["verify"],
+          "triggers": ["pentest", "penetration test", "vulnerability scan", "security assessment"],
+          "deliverables": ["pentest report", "vulnerability findings", "exploits"],
+          "repository_signals": ["security/pentest/"],
+          "risk": "high",
+          "capability_refs": ["engineering-skills:red-team", "engineering-skills:security-pen-testing"],
+          "fallback_pack": "general-pentester"
+        },
+        {
+          "id": "code-reviewer",
+          "title": "Code Reviewer",
+          "phases": ["verify"],
+          "triggers": ["code review", "pull request review", "peer review", "review"],
+          "deliverables": ["review comments", "feedback", "recommendations"],
+          "repository_signals": ["PR/", "pull-requests/"],
+          "risk": "low",
+          "capability_refs": ["engineering-skills:code-reviewer", "engineering-skills:senior-reviewer"],
+          "fallback_pack": "general-code-reviewer"
+        },
+        {
+          "id": "compliance-specialist",
+          "title": "Compliance Specialist",
+          "phases": ["verify"],
+          "triggers": ["compliance", "gdpr", "hipaa", "pci", "audit"],
+          "deliverables": ["compliance report", "audit findings", "remediation plan"],
+          "repository_signals": ["docs/compliance/"],
+          "risk": "high",
+          "capability_refs": [],
+          "fallback_pack": "general-compliance-specialist"
+        },
+        {
+          "id": "auditor",
+          "title": "Auditor",
+          "phases": ["verify"],
+          "triggers": ["audit", "assessment", "review", "evaluation"],
+          "deliverables": ["audit report", "assessment findings"],
+          "repository_signals": ["docs/audit/"],
+          "risk": "medium",
+          "capability_refs": [],
+          "fallback_pack": "general-auditor"
+        },
+        {
+          "id": "security-auditor",
+          "title": "Security Auditor",
+          "phases": ["verify"],
+          "triggers": ["security audit", "security review", "compliance audit"],
+          "deliverables": ["security audit report", "compliance findings"],
+          "repository_signals": ["docs/security/audit/"],
+          "risk": "high",
+          "capability_refs": ["engineering-skills:security-auditor"],
+          "fallback_pack": "general-security-auditor"
+        },
+        {
+          "id": "quality-engineer",
+          "title": "Quality Engineer",
+          "phases": ["verify"],
+          "triggers": ["quality", "quality gate", "quality check", "quality assurance"],
+          "deliverables": ["quality reports", "quality metrics", "quality gates"],
+          "repository_signals": ["docs/quality/"],
+          "risk": "low",
+          "capability_refs": [],
+          "fallback_pack": "general-quality-engineer"
+        },
+        {
+          "id": "bug-hunter",
+          "title": "Bug Hunter",
+          "phases": ["verify"],
+          "triggers": ["debug", "bug hunt", "finding bugs", "issue discovery"],
+          "deliverables": ["bug report", "issue analysis"],
+          "repository_signals": ["issues/", "bugs/"],
+          "risk": "low",
+          "capability_refs": ["engineering-skills:adversarial-reviewer"],
+          "fallback_pack": "general-bug-hunter"
+        }
+      ]
+    },
+    "delivery": {
+      "title": "Delivery and Operations",
+      "roles": [
+        {
+          "id": "devops-engineer",
+          "title": "DevOps Engineer",
+          "phases": ["operate", "learn"],
+          "triggers": ["devops", "ci/cd", "deployment", "kubernetes", "docker"],
+          "deliverables": ["pipelines", "deployments", "monitoring"],
+          "repository_signals": ["docker/", "k8s/", "infrastructure/"],
+          "risk": "high",
+          "capability_refs": ["engineering-skills:senior-devops"],
+          "fallback_pack": "general-devops-engineer"
+        },
+        {
+          "id": "sre-engineer",
+          "title": "SRE Engineer",
+          "phases": ["operate", "learn"],
+          "triggers": ["sre", "site reliability", "oncall", "incidents", "monitoring"],
+          "deliverables": ["runbooks", "incident response", "monitoring"],
+          "repository_signals": ["docs/sre/", "oncall/"],
+          "risk": "high",
+          "capability_refs": ["engineering-skills:senior-devops"],
+          "fallback_pack": "general-sre-engineer"
+        },
+        {
+          "id": "platform-engineer",
+          "title": "Platform Engineer",
+          "phases": ["operate"],
+          "triggers": ["platform", "paaS", "iaas", "fargate", "cloud"],
+          "deliverables": ["platform services", "iaas configuration", "fargate setup"],
+          "repository_signals": ["infrastructure/"],
+          "risk": "high",
+          "capability_refs": ["engineering-skills:senior-devops"],
+          "fallback_pack": "general-platform-engineer"
+        },
+        {
+          "id": "release-engineer",
+          "title": "Release Engineer",
+          "phases": ["release"],
+          "triggers": ["release", "release planning", "release management"],
+          "deliverables": ["release plan", "release notes", "release execution"],
+          "repository_signals": ["release/", "changelog/"],
+          "risk": "medium",
+          "capability_refs": [],
+          "fallback_pack": "general-release-engineer"
+        },
+        {
+          "id": "deployment-engineer",
+          "title": "Deployment Engineer",
+          "phases": ["release"],
+          "triggers": ["deployment", "deploy", "deployment automation"],
+          "deliverables": ["deployment configs", "deployment scripts"],
+          "repository_signals": ["deploy/", "deployment/"],
+          "risk": "high",
+          "capability_refs": ["engineering-skills:senior-devops"],
+          "fallback_pack": "general-deployment-engineer"
+        },
+        {
+          "id": "cmo/engineer",
+          "title": "CMO Engineer",
+          "phases": ["operate"],
+          "triggers": ["cmo", "configuration management", "config", "terraform", "ansible"],
+          "deliverables": ["configs", "terraform code", "ansible playbooks"],
+          "repository_signals": ["terraform/", "ansible/", "deploy/"],
+          "risk": "high",
+          "capability_refs": [],
+          "fallback_pack": "general-cmo-engineer"
+        },
+        {
+          "id": "incident-response-engineer",
+          "title": "Incident Response Engineer",
+          "phases": ["operate"],
+          "triggers": ["incident", "oncall", "incident response", "runbook"],
+          "deliverables": ["runbooks", "incident procedures"],
+          "repository_signals": ["docs/sre/", "runbooks/"],
+          "risk": "high",
+          "capability_refs": [],
+          "fallback_pack": "general-incident-response-engineer"
+        },
+        {
+          "id": "observability-engineer",
+          "title": "Observability Engineer",
+          "phases": ["operate"],
+          "triggers": ["observability", "monitoring", "logging", "tracing", "metrics"],
+          "deliverables": ["dashboards", "alerts", "tracing setup"],
+          "repository_signals": ["monitoring/", "logs/"],
+          "risk": "medium",
+          "capability_refs": ["engineering-skills:observability-designer"],
+          "fallback_pack": "general-observability-engineer"
+        },
+        {
+          "id": "site-reliability-engineer",
+          "title": "Site Reliability Engineer",
+          "phases": ["operate"],
+          "triggers": ["sre", "site reliability", "oncall", "error budget"],
+          "deliverables": ["error budgets", "oncall rotations"],
+          "repository_signals": ["docs/sre/"],
+          "risk": "high",
+          "capability_refs": ["engineering-skills:senior-devops"],
+          "fallback_pack": "general-sre-engineer"
+        },
+        {
+          "id": "delivery-lead",
+          "title": "Delivery Lead",
+          "phases": ["release"],
+          "triggers": ["delivery", "delivery management", "project delivery"],
+          "deliverables": ["delivery plan", "project schedule"],
+          "repository_signals": ["docs/delivery/"],
+          "risk": "medium",
+          "capability_refs": [],
+          "fallback_pack": "general-lead"
+        }
+      ]
+    },
+    "governance": {
+      "title": "Governance and Risk",
+      "roles": [
+        {
+          "id": "product-manager-governance",
+          "title": "Product Manager (Governance)",
+          "phases": ["intake", "define"],
+          "triggers": ["governance", "product governance", "portfolio management"],
+          "deliverables": ["governance decisions", "portfolio oversight"],
+          "repository_signals": ["docs/governance/"],
+          "risk": "low",
+          "capability_refs": [],
+          "fallback_pack": "general-product-manager"
+        },
+        {
+          "id": "enterprise-architect",
+          "title": "Enterprise Architect",
+          "phases": ["design", "plan"],
+          "triggers": ["enterprise architecture", "enterprise design", "enterprise plan"],
+          "deliverables": ["enterprise architecture", "enterprise strategy"],
+          "repository_signals": ["docs/enterprise/"],
+          "risk": "high",
+          "capability_refs": [],
+          "fallback_pack": "general-enterprise-architect"
+        },
+        {
+          "id": "risk-manager",
+          "title": "Risk Manager",
+          "phases": ["intake", "design"],
+          "triggers": ["risk", "risk management", "risk assessment", "risk mitigation"],
+          "deliverables": ["risk register", "risk assessment", "mitigation plan"],
+          "repository_signals": ["docs/risk/"],
+          "risk": "medium",
+          "capability_refs": [],
+          "fallback_pack": "general-risk-manager"
+        },
+        {
+          "id": "compliance-officer",
+          "title": "Compliance Officer",
+          "phases": ["verify"],
+          "triggers": ["compliance", "regulatory compliance", "regulations", "governance"],
+          "deliverables": ["compliance reports", "regulation checks"],
+          "repository_signals": ["docs/compliance/"],
+          "risk": "high",
+          "capability_refs": [],
+          "fallback_pack": "general-compliance-officer"
+        },
+        {
+          "id": "internal-auditor",
+          "title": "Internal Auditor",
+          "phases": ["verify"],
+          "triggers": ["audit", "internal audit", "audit review"],
+          "deliverables": ["audit reports", "audit findings"],
+          "repository_signals": ["docs/audit/"],
+          "risk": "medium",
+          "capability_refs": [],
+          "fallback_pack": "general-internal-auditor"
+        },
+        {
+          "id": "privacy-officer",
+          "title": "Privacy Officer",
+          "phases": ["verify"],
+          "triggers": ["privacy", "gdpr", "privacy policy", "data privacy"],
+          "deliverables": ["privacy assessments", "gdpr compliance"],
+          "repository_signals": ["docs/privacy/"],
+          "risk": "high",
+          "capability_refs": ["ra-qm-skills:gdpr-dsgvo-expert"],
+          "fallback_pack": "general-privacy-officer"
+        },
+        {
+          "id": "data-governance-officer",
+          "title": "Data Governance Officer",
+          "phases": ["verify"],
+          "triggers": ["data governance", "data policy", "data quality"],
+          "deliverables": ["data governance policy", "data quality reports"],
+          "repository_signals": ["docs/data-governance/"],
+          "risk": "high",
+          "capability_refs": [],
+          "fallback_pack": "general-data-governance-officer"
+        },
+        {
+          "id": "governance-lead",
+          "title": "Governance Lead",
+          "phases": ["intake", "define"],
+          "triggers": ["governance lead", "governance oversight", "policy enforcement"],
+          "deliverables": ["policy documents", "governance reports"],
+          "repository_signals": ["docs/governance/"],
+          "risk": "medium",
+          "capability_refs": [],
+          "fallback_pack": "general-lead"
+        },
+        {
+          "id": "policy-manager",
+          "title": "Policy Manager",
+          "phases": ["verify"],
+          "triggers": ["policy", "policy management", "policy enforcement"],
+          "deliverables": ["policy documents", "policy compliance checks"],
+          "repository_signals": ["docs/policy/"],
+          "risk": "high",
+          "capability_refs": [],
+          "fallback_pack": "general-policy-manager"
+        },
+        {
+          "id": "ethics-compliance-officer",
+          "title": "Ethics & Compliance Officer",
+          "phases": ["verify"],
+          "triggers": ["ethics", "ethics compliance", "ethics review"],
+          "deliverables": ["ethics review reports"],
+          "repository_signals": ["docs/ethics/"],
+          "risk": "high",
+          "capability_refs": [],
+          "fallback_pack": "general-ethics-officer"
+        }
+      ]
+    },
+    "growth": {
+      "title": "Growth and Business",
+      "roles": [
+        {
+          "id": "growth-engineer",
+          "title": "Growth Engineer",
+          "phases": ["implement", "operate"],
+          "triggers": ["growth", "growth hacking", "growth", "conversion optimization"],
+          "deliverables": ["growth features", "conversion optimization"],
+          "repository_signals": ["src/growth/", "growth/"],
+          "risk": "medium",
+          "capability_refs": ["engineering-skills:senior-frontend"],
+          "fallback_pack": "general-growth-engineer"
+        },
+        {
+          "id": "growth-hacker",
+          "title": "Growth Hacker",
+          "phases": ["discover"],
+          "triggers": ["growth hacking", "growth", "a/b testing", "growth strategies"],
+          "deliverables": ["growth strategy", "growth experiments"],
+          "repository_signals": ["docs/growth/"],
+          "risk": "medium",
+          "capability_refs": ["marketing-skills:experiment-designer"],
+          "fallback_pack": "general-growth-hacker"
+        },
+        {
+          "id": "monetization-engineer",
+          "title": "Monetization Engineer",
+          "phases": ["implement"],
+          "triggers": ["monetization", "revenue", "freemium", "subscription"],
+          "deliverables": ["monetization features", "pricing integration"],
+          "repository_signals": ["src/money/", "src/payment/"],
+          "risk": "medium",
+          "capability_refs": [],
+          "fallback_pack": "general-monetization-engineer"
+        },
+        {
+          "id": "business-developer",
+          "title": "Business Developer",
+          "phases": ["intake"],
+          "triggers": ["business development", "partnerships", "deals", "acquisition"],
+          "deliverables": ["partnership plans", "deal analysis"],
+          "repository_signals": ["docs/business/"],
+          "risk": "low",
+          "capability_refs": [],
+          "fallback_pack": "general-business-developer"
+        },
+        {
+          "id": "customer-success-manager",
+          "title": "Customer Success Manager",
+          "phases": ["operate", "learn"],
+          "triggers": ["customer success", "onboarding", "churn", "retention"],
+          "deliverables": ["onboarding plans", "churn reduction plans"],
+          "repository_signals": ["docs/customer-success/"],
+          "risk": "low",
+          "capability_refs": [],
+          "fallback_pack": "general-csm"
+        },
+        {
+          "id": "acquisition-engineer",
+          "title": "Acquisition Engineer",
+          "phases": ["implement"],
+          "triggers": ["acquisition", "user acquisition", "marketing campaign"],
+          "deliverables": ["acquisition features", "campaign integration"],
+          "repository_signals": ["src/acquisition/"],
+          "risk": "medium",
+          "capability_refs": [],
+          "fallback_pack": "general-acquisition-engineer"
+        },
+        {
+          "id": "churn-reduction-specialist",
+          "title": "Churn Reduction Specialist",
+          "phases": ["learn"],
+          "triggers": ["churn reduction", "retention", "user engagement"],
+          "deliverables": ["retention strategies", "churn reduction plans"],
+          "repository_signals": ["docs/churn/"],
+          "risk": "medium",
+          "capability_refs": [],
+          "fallback_pack": "general-churn-reduction-specialist"
+        },
+        {
+          "id": "customer-advocate",
+          "title": "Customer Advocate",
+          "phases": ["intake"],
+          "triggers": ["customer advocate", "customer voice", "user feedback"],
+          "deliverables": ["user feedback reports", "customer insights"],
+          "repository_signals": ["docs/customer-advocate/"],
+          "risk": "low",
+          "capability_refs": [],
+          "fallback_pack": "general-customer-advocate"
+        },
+        {
+          "id": "revenue-growth-manager",
+          "title": "Revenue Growth Manager",
+          "phases": ["learn"],
+          "triggers": ["revenue growth", "revenue", "sales"],
+          "deliverables": ["revenue growth plans"],
+          "repository_signals": ["docs/revenue/"],
+          "risk": "medium",
+          "capability_refs": [],
+          "fallback_pack": "general-revenue-manager"
+        },
+        {
+          "id": "growth-lead",
+          "title": "Growth Lead",
+          "phases": ["discover", "learn"],
+          "triggers": ["growth lead", "growth strategy", "growth management"],
+          "deliverables": ["growth strategy", "growth reports"],
+          "repository_signals": ["docs/growth/"],
+          "risk": "medium",
+          "capability_refs": [],
+          "fallback_pack": "general-lead"
+        }
+      ]
+    },
+    "executive": {
+      "title": "Executive and Domain",
+      "roles": [
+        {
+          "id": "cto-advisor",
+          "title": "CTO Advisor",
+          "phases": ["intake", "design"],
+          "triggers": ["cto", "technology strategy", "tech strategy", "technology decisions"],
+          "deliverables": ["technology strategy", "tech roadmap"],
+          "repository_signals": ["docs/cto/"],
+          "risk": "medium",
+          "capability_refs": ["c-level-skills:cto-advisor"],
+          "fallback_pack": "general-cto-advisor"
+        },
+        {
+          "id": "cio-advisor",
+          "title": "CIO Advisor",
+          "phases": ["intake", "design"],
+          "triggers": ["cio", "it strategy", "it decisions", "enterprise tech"],
+          "deliverables": ["it strategy", "cio guidance"],
+          "repository_signals": ["docs/cio/"],
+          "risk": "medium",
+          "capability_refs": ["c-level-skills:cio-advisor"],
+          "fallback_pack": "general-cio-advisor"
+        },
+        {
+          "id": "cfo-advisor",
+          "title": "CFO Advisor",
+          "phases": ["intake"],
+          "triggers": ["cfo", "financial decisions", "cost decisions"],
+          "deliverables": ["financial analysis", "cost analysis"],
+          "repository_signals": ["docs/cfo/"],
+          "risk": "medium",
+          "capability_refs": ["c-level-skills:cfo-advisor"],
+          "fallback_pack": "general-cfo-advisor"
+        },
+        {
+          "id": "cro-advisor",
+          "title": "CRO Advisor",
+          "phases": ["intake"],
+          "triggers": ["cro", "revenue decisions", "sales decisions"],
+          "deliverables": ["revenue analysis"],
+          "repository_signals": ["docs/cro/"],
+          "risk": "medium",
+          "capability_refs": ["c-level-skills:cro-advisor"],
+          "fallback_pack": "general-cro-advisor"
+        },
+        {
+          "id": "chro-advisor",
+          "title": "CHRO Advisor",
+          "phases": ["intake"],
+          "triggers": ["chro", "hr decisions", "people decisions"],
+          "deliverables": ["hr analysis"],
+          "repository_signals": ["docs/chro/"],
+          "risk": "medium",
+          "capability_refs": ["c-level-skills:chro-advisor"],
+          "fallback_pack": "general-chro-advisor"
+        },
+        {
+          "id": "cio-lead",
+          "title": "CIO Lead",
+          "phases": ["design"],
+          "triggers": ["cio lead", "cio strategy"],
+          "deliverables": ["cio strategy"],
+          "repository_signals": ["docs/cio/"],
+          "risk": "medium",
+          "capability_refs": [],
+          "fallback_pack": "general-cio-lead"
+        },
+        {
+          "id": "chief-product-officer",
+          "title": "Chief Product Officer",
+          "phases": ["intake"],
+          "triggers": ["cpo", "product strategy"],
+          "deliverables": ["product strategy"],
+          "repository_signals": ["docs/cpo/"],
+          "risk": "medium",
+          "capability_refs": [],
+          "fallback_pack": "general-cpo"
+        },
+        {
+          "id": "chief-engineering-officer",
+          "title": "Chief Engineering Officer",
+          "phases": ["design"],
+          "triggers": ["ceo", "engineering strategy"],
+          "deliverables": ["engineering strategy"],
+          "repository_signals": ["docs/ceo/"],
+          "risk": "medium",
+          "capability_refs": [],
+          "fallback_pack": "general-ceo"
+        },
+        {
+          "id": "domain-expert",
+          "title": "Domain Expert",
+          "phases": ["discover", "define"],
+          "triggers": ["domain", "subject matter", "subject expertise"],
+          "deliverables": ["domain analysis", "subject matter expertise"],
+          "repository_signals": ["docs/domain/"],
+          "risk": "low",
+          "capability_refs": [],
+          "fallback_pack": "general-domain-expert"
+        },
+        {
+          "id": "solution-owner",
+          "title": "Solution Owner",
+          "phases": ["design", "plan"],
+          "triggers": ["solution owner", "solution responsibility"],
+          "deliverables": ["solution ownership", "solution plan"],
+          "repository_signals": ["docs/solution/"],
+          "risk": "medium",
+          "capability_refs": [],
+          "fallback_pack": "general-solution-owner"
+        }
+      ]
+    }
+  }
+}

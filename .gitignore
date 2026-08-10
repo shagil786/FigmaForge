@@ -1,0 +1,43 @@
+# ---------------------------------------------------------------------------
+# FigmaForge .gitignore
+# Items here must NOT be committed or pushed. Add/remove as the project evolves.
+# ---------------------------------------------------------------------------
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.pyright/
+.ruff_cache/
+*.log
+
+# Claude Code local state (never share personal session/config data)
+.claude/settings.local.json
+.claude/worktrees/
+.claude/projects/
+.claude.json
+
+# FigmaForge runtime state (state machine writes .figmaforge/runs/...)
+.figmaforge/
+
+# Backup artifacts (created by the documented backup/rollback workflow)
+repository.bundle
+worktree.tar.gz
+FigmaForge.backups/
+*.backups/
+
+# macOS
+.DS_Store
+
+# Editors / IDEs
+.idea/
+*.iml
