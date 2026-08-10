@@ -1,0 +1,110 @@
+{
+  "name": "FigmaForge Demo — Variant System",
+  "role": "owner",
+  "editorType": "figma",
+  "lastModified": "2026-08-10T12:00:00.000Z",
+  "version": "9988776655",
+  "schemaVersion": 0,
+  "document": {
+    "id": "0:0",
+    "name": "Document",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "name": "Buttons",
+        "type": "CANVAS",
+        "visible": true,
+        "children": [
+          {
+            "id": "1:101",
+            "name": "Button Set",
+            "type": "COMPONENT_SET",
+            "visible": true,
+            "opacity": 1.0,
+            "defaultVariant": "2:3",
+            "children": [
+              { "id": "2:3", "name": "Primary / Large", "type": "COMPONENT", "visible": true },
+              { "id": "2:4", "name": "Primary / Small", "type": "COMPONENT", "visible": true },
+              { "id": "2:5", "name": "Secondary / Large", "type": "COMPONENT", "visible": true }
+            ]
+          },
+          {
+            "id": "3:6",
+            "name": "Primary Button",
+            "type": "INSTANCE",
+            "visible": true,
+            "opacity": 1.0,
+            "componentId": "2:3",
+            "mainComponent": { "id": "2:3", "type": "COMPONENT", "name": "Primary / Large" },
+            "componentProperties": { "Size": "Large", "State": "Default", "Label": "Continue" },
+            "boundVariables": {
+              "fontSize": { "type": "VARIABLE_ALIAS", "id": "1:40" },
+              "paddingLeft": { "type": "VARIABLE_ALIAS", "id": "1:33" }
+            },
+            "absoluteBoundingBox": { "x": 0, "y": 0, "width": 120, "height": 40 },
+            "children": [
+              {
+                "id": "4:7",
+                "name": "Label",
+                "type": "TEXT",
+                "visible": true,
+                "characters": "Continue",
+                "style": { "fontFamily": "Inter", "fontSize": 16, "lineHeightPx": 24 },
+                "boundVariables": { "fontSize": { "type": "VARIABLE_ALIAS", "id": "1:40" } },
+                "fills": [
+                  { "type": "SOLID", "visible": true, "opacity": 1.0, "color": { "r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0 } }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "5:8",
+            "name": "Card",
+            "type": "COMPONENT",
+            "visible": true,
+            "opacity": 1.0,
+            "children": [
+              {
+                "id": "5:9",
+                "name": "Card Title",
+                "type": "TEXT",
+                "visible": true,
+                "characters": "Title",
+                "style": { "fontFamily": "Inter", "fontSize": 18, "lineHeightPx": 24 }
+              }
+            ]
+          },
+          { "id": "5:10", "name": "Icon Slot", "type": "COMPONENT", "visible": true },
+          { "id": "5:11", "name": "Navbar", "type": "COMPONENT", "visible": true },
+          { "id": "6:12", "name": "Desktop 1440", "type": "FRAME", "visible": true, "opacity": 1.0 },
+          { "id": "6:13", "name": "Content Grid", "type": "FRAME", "visible": true, "opacity": 1.0 }
+        ]
+      }
+    ]
+  },
+  "components": {
+    "2:3":  { "key": "2:3",  "name": "Primary / Large", "type": "COMPONENT", "nodeId": "2:3" },
+    "2:4":  { "key": "2:4",  "name": "Primary / Small", "type": "COMPONENT", "nodeId": "2:4" },
+    "2:5":  { "key": "2:5",  "name": "Secondary / Large", "type": "COMPONENT", "nodeId": "2:5" },
+    "5:8":  { "key": "5:8",  "name": "Card", "type": "COMPONENT", "nodeId": "5:8" },
+    "5:10": { "key": "5:10", "name": "Icon Slot", "type": "COMPONENT", "nodeId": "5:10" },
+    "5:11": { "key": "5:11", "name": "Navbar", "type": "COMPONENT", "nodeId": "5:11" }
+  },
+  "componentSets": {
+    "1:101": { "key": "1:101", "name": "Button Set", "type": "COMPONENT_SET", "nodeId": "1:101", "description": "All button variants" }
+  },
+  "styles": {
+    "S:1": { "key": "S:1", "name": "Primary Fill", "styleType": "FILL", "description": "Brand primary" },
+    "S:2": { "key": "S:2", "name": "Body Text", "styleType": "TEXT", "description": "Body copy" },
+    "S:3": { "key": "S:3", "name": "Card Shadow", "styleType": "EFFECT", "description": "Card elevation" }
+  },
+  "variables": {
+    "1:33": { "id": "1:33", "name": "Space / 4", "resolvedType": "FLOAT", "resolvedValue": 16.0 },
+    "1:40": { "id": "1:40", "name": "Typography / Button", "resolvedType": "FLOAT", "resolvedValue": 16.0 },
+    "1:41": { "id": "1:41", "name": "Color / Primary", "resolvedType": "COLOR", "resolvedValue": { "r": 0.08, "g": 0.12, "b": 0.24, "a": 1.0 } },
+    "1:42": { "id": "1:42", "name": "Radius / Card", "resolvedType": "FLOAT", "resolvedValue": 8.0 },
+    "1:43": { "id": "1:43", "name": "Opacity / Disabled", "resolvedType": "FLOAT", "resolvedValue": 0.5 },
+    "1:44": { "id": "1:44", "name": "Motion / Duration", "resolvedType": "STRING", "resolvedValue": "cubic-bezier(0.4, 0, 0.2, 1)" }
+  }
+}

@@ -1,0 +1,270 @@
+{
+  "ambiguous": [
+    {
+      "figma_component": "5:8",
+      "figma_name": "Card",
+      "matches": [
+        "card",
+        "card-container"
+      ],
+      "reason": "2 project components match; refusing to guess",
+      "status": "ambiguous"
+    }
+  ],
+  "counts": {
+    "ambiguous": 1,
+    "instances_missing": 0,
+    "instances_resolved": 1,
+    "missing": 1,
+    "resolved": 2,
+    "semantic_tokens": 11,
+    "token_refs_resolved": 3,
+    "token_refs_unresolved": 0,
+    "unsupported_tokens": 1
+  },
+  "file_key": "vars123",
+  "instances": [
+    {
+      "component_id": "2:3",
+      "is_variant_of": "1:101",
+      "name": "Primary Button",
+      "node_id": "3:6",
+      "resolved_kind": "component",
+      "resolved_name": "Primary / Large",
+      "resolved_to": "2:3",
+      "status": "resolved",
+      "variant_properties": {
+        "Label": "Continue",
+        "Size": "Large",
+        "State": "Default"
+      }
+    }
+  ],
+  "missing": [
+    {
+      "figma_component": "5:11",
+      "figma_name": "Navbar",
+      "matches": [],
+      "reason": "no existing project component matches",
+      "status": "missing"
+    }
+  ],
+  "resolved": [
+    {
+      "figma_component": "5:10",
+      "figma_name": "Icon Slot",
+      "matches": [
+        "icon-slot"
+      ],
+      "reason": "normalized name/alias match",
+      "status": "resolved"
+    },
+    {
+      "figma_component": "1:101",
+      "figma_name": "Button Set",
+      "matches": [
+        "button-set"
+      ],
+      "reason": "normalized name/alias match",
+      "status": "resolved"
+    }
+  ],
+  "schema_version": 1,
+  "tokens": {
+    "breakpoint_matches": [
+      {
+        "breakpoint_token": "breakpoint/breakpoint-lg",
+        "name": "Desktop 1440",
+        "node_id": "6:12"
+      }
+    ],
+    "breakpoint_unmatched": [
+      {
+        "name": "Buttons",
+        "node_id": "0:1"
+      },
+      {
+        "name": "Content Grid",
+        "node_id": "6:13"
+      }
+    ],
+    "node_refs": [
+      {
+        "figma_variable_id": "1:40",
+        "node_id": "3:6",
+        "property": "fontSize",
+        "resolved": true,
+        "token_ref": "typography/typography-button"
+      },
+      {
+        "figma_variable_id": "1:33",
+        "node_id": "3:6",
+        "property": "paddingLeft",
+        "resolved": true,
+        "token_ref": "spacing/spacing-4"
+      },
+      {
+        "figma_variable_id": "1:40",
+        "node_id": "4:7",
+        "property": "fontSize",
+        "resolved": true,
+        "token_ref": "typography/typography-button"
+      }
+    ],
+    "semantic": [
+      {
+        "category": "spacing",
+        "figma_key": "1:33",
+        "key": "spacing/spacing-4",
+        "name": "spacing-4",
+        "resolved": true,
+        "source": "library:spacing-4",
+        "value": 16
+      },
+      {
+        "category": "typography",
+        "figma_key": "1:40",
+        "key": "typography/typography-button",
+        "name": "typography-button",
+        "resolved": true,
+        "source": "library:typography-button",
+        "value": {
+          "family": "Inter",
+          "line_height": 24,
+          "size": 16,
+          "weight": 500
+        }
+      },
+      {
+        "category": "color",
+        "figma_key": "1:41",
+        "key": "color/color-primary",
+        "name": "color-primary",
+        "resolved": true,
+        "source": "library:color-primary",
+        "value": {
+          "a": 1.0,
+          "b": 0.24,
+          "g": 0.12,
+          "r": 0.08
+        }
+      },
+      {
+        "category": "radius",
+        "figma_key": "1:42",
+        "key": "radius/radius-card",
+        "name": "radius-card",
+        "resolved": true,
+        "source": "library:radius-card",
+        "value": 8
+      },
+      {
+        "category": "opacity",
+        "figma_key": "1:43",
+        "key": "opacity/opacity-disabled",
+        "name": "opacity-disabled",
+        "resolved": true,
+        "source": "library:opacity-disabled",
+        "value": 0.5
+      },
+      {
+        "category": "color",
+        "figma_key": "S:1",
+        "key": "color/primary-fill",
+        "name": "Primary Fill",
+        "resolved": false,
+        "source": "figma:style:S:1",
+        "value": null
+      },
+      {
+        "category": "typography",
+        "figma_key": "S:2",
+        "key": "typography/body-text",
+        "name": "Body Text",
+        "resolved": false,
+        "source": "figma:style:S:2",
+        "value": null
+      },
+      {
+        "category": "shadow",
+        "figma_key": "S:3",
+        "key": "shadow/card-shadow",
+        "name": "Card Shadow",
+        "resolved": false,
+        "source": "figma:style:S:3",
+        "value": null
+      },
+      {
+        "category": "breakpoint",
+        "figma_key": null,
+        "key": "breakpoint/breakpoint-sm",
+        "name": "breakpoint-sm",
+        "resolved": true,
+        "source": "library:breakpoint-sm",
+        "value": 640
+      },
+      {
+        "category": "breakpoint",
+        "figma_key": null,
+        "key": "breakpoint/breakpoint-md",
+        "name": "breakpoint-md",
+        "resolved": true,
+        "source": "library:breakpoint-md",
+        "value": 1024
+      },
+      {
+        "category": "breakpoint",
+        "figma_key": null,
+        "key": "breakpoint/breakpoint-lg",
+        "name": "breakpoint-lg",
+        "resolved": true,
+        "source": "library:breakpoint-lg",
+        "value": 1440
+      }
+    ],
+    "unsupported": [
+      {
+        "key": "1:44",
+        "kind": "variable",
+        "name": "Motion / Duration",
+        "reason": "token type 'STRING' is not supported",
+        "token_type": "STRING"
+      }
+    ]
+  },
+  "variants": [
+    {
+      "default_variant": "2:3",
+      "set_key": "1:101",
+      "set_name": "Button Set",
+      "set_node_id": "1:101",
+      "variant_count": 3,
+      "variants": [
+        {
+          "default": true,
+          "name": "Primary / Large",
+          "node_id": "2:3",
+          "properties": {
+            "variant": "Primary / Large"
+          }
+        },
+        {
+          "default": false,
+          "name": "Primary / Small",
+          "node_id": "2:4",
+          "properties": {
+            "variant": "Primary / Small"
+          }
+        },
+        {
+          "default": false,
+          "name": "Secondary / Large",
+          "node_id": "2:5",
+          "properties": {
+            "variant": "Secondary / Large"
+          }
+        }
+      ]
+    }
+  ]
+}

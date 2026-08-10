@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "figmaforge://schema/resolution-report",
+  "title": "FigmaForge Component & Token Resolution Report",
+  "description": "Result of resolving a Design IR against the project's existing component library and tokens (see core/resolver.py).",
+  "type": "object",
+  "required": ["schema_version", "file_key", "counts", "resolved", "ambiguous", "missing", "instances", "variants", "tokens"],
+  "properties": {
+    "schema_version": { "type": "integer" },
+    "file_key": { "type": "string" },
+    "counts": { "type": "object" },
+    "resolved": { "type": "array", "items": { "$ref": "#/definitions/match" } },
+    "ambiguous": { "type": "array", "items": { "$ref": "#/definitions/match" } },
+    "missing": { "type": "array", "items": { "$ref": "#/definitions/match" } },
+    "instances": { "type": "array", "items": { "type": "object" } },
+    "variants": { "type": "array", "items": { "type": "object" } },
+    "tokens": { "$ref": "#/definitions/token_resolution" }
+  },
+  "definitions": {
+    "match": {
+      "type": "object",
+      "required": ["figma_component", "figma_name", "status", "matches", "reason"],
+      "properties": {
+        "figma_component": { "type": "string" },
+        "figma_name": { "type": "string" },
+        "status": { "type": "string", "enum": ["resolved", "ambiguous", "missing"] },
+        "matches": { "type": "array", "items": { "type": "string" } },
+        "reason": { "type": "string" }
+      }
+    },
+    "token_resolution": {
+      "type": "object",
+      "required": ["semantic", "node_refs", "breakpoint_matches", "breakpoint_unmatched", "unsupported"],
+      "properties": {
+        "semantic": { "type": "array", "items": { "$ref": "#/definitions/semantic_token" } },
+        "node_refs": { "type": "array", "items": { "type": "object" } },
+        "breakpoint_matches": { "type": "array", "items": { "type": "object" } },
+        "breakpoint_unmatched": { "type": "array", "items": { "type": "object" } },
+        "unsupported": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "semantic_token": {
+      "type": "object",
+      "required": ["key", "category", "name", "value", "source", "resolved"],
+      "properties": {
+        "key": { "type": "string" },
+        "category": { "type": "string", "enum": ["color", "typography", "spacing", "radius", "shadow", "opacity", "breakpoint"] },
+        "name": { "type": "string" },
+        "value": {},
+        "source": { "type": "string" },
+        "resolved": { "type": "boolean" },
+        "figma_key": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

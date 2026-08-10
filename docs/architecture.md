@@ -220,6 +220,28 @@ raw-node→IR example.
 **Constraint:** The IR is framework-neutral and must never generate React/CSS
 (or any framework) output. Code generation is a later phase.
 
+### 6. Component & Token Resolution (Part 4)
+
+**Status:** Implemented. Input is the Design IR + the project library; no code
+generation yet. See `docs/resolution.md`.
+
+Resolves Figma components, variants, and tokens onto the repository's existing
+library (`library/`), producing a schema-validated JSON report
+(`schemas/resolution-report.schema.json`):
+
+- `core/component_index.py` + `core/variant_resolver.py` — component indexing,
+  instance-to-component resolution, variant extraction.
+- `core/matcher.py` — deterministic mapping (explicit `figma_keys` override,
+  then normalized name/alias) with explicit **resolved / ambiguous / missing**
+  outcomes; never guesses on multiple matches.
+- `core/token_resolver.py` — semantic tokens (color, typography, spacing,
+  radius, shadow, opacity, breakpoint) with token references instead of
+  duplicated values; unsupported token types reported, not dropped.
+- `core/resolver.py` — `Resolver.resolve()` → `ResolutionReport`.
+
+**Constraint:** Matching is deterministic string/key logic; no model-based or
+fuzzy matching, no agent frameworks.
+
 ---
 
 ## Components
