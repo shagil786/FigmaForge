@@ -1,0 +1,335 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "figmaforge://schema/design-ir",
+  "title": "FigmaForge Design IR",
+  "description": "Normalized, framework-neutral design intermediate representation produced from a Figma file response (see core/ir_types.py and core/ir_builder.py).",
+  "type": "object",
+  "required": ["schema_version", "file_key", "name", "root", "pages", "components", "component_sets", "styles", "variables", "assets"],
+  "properties": {
+    "schema_version": { "type": "integer", "description": "IR format version" },
+    "file_key": { "type": "string", "description": "Original Figma file key" },
+    "name": { "type": "string", "description": "File name" },
+    "source": { "$ref": "#/definitions/source", "description": "Source-location metadata" },
+    "root": { "$ref": "#/definitions/node", "description": "Document root node" },
+    "pages": { "type": "array", "items": { "$ref": "#/definitions/node" }, "description": "Top-level pages (CANVAS nodes)" },
+    "components": { "type": "object", "additionalProperties": { "$ref": "#/definitions/component" }, "description": "File-level component map (key -> component)" },
+    "component_sets": { "type": "object", "additionalProperties": { "$ref": "#/definitions/component" }, "description": "File-level component-set map" },
+    "styles": { "type": "object", "additionalProperties": { "$ref": "#/definitions/token" }, "description": "File-level style map (key -> style token)" },
+    "variables": { "type": "object", "additionalProperties": { "$ref": "#/definitions/token" }, "description": "File-level variable map (id -> variable token)" },
+    "assets": { "type": "object", "additionalProperties": { "type": "string" }, "description": "node_id -> rendered asset URL" },
+    "prototype_start_node": { "type": ["string", "null"], "description": "File-level prototypeStartNode" },
+    "unknown": { "type": "object", "description": "Unmapped file-level properties, preserved verbatim" },
+    "raw": { "type": "object", "description": "Complete original file response, for debugging" }
+  },
+  "definitions": {
+    "node": {
+      "type": "object",
+      "required": ["id", "name", "kind", "node_type", "source"],
+      "properties": {
+        "id": { "type": "string", "description": "Original Figma node id" },
+        "name": { "type": "string" },
+        "kind": { "type": "string", "enum": ["document", "page", "frame", "group", "section", "component", "component_set", "instance", "text", "vector", "shape", "node"] },
+        "node_type": { "type": "string", "description": "Original Figma node type" },
+        "source": { "$ref": "#/definitions/source" },
+        "visible": { "type": "boolean" },
+        "opacity": { "type": "number" },
+        "dimensions": { "$ref": "#/definitions/dimensions" },
+        "position": { "$ref": "#/definitions/position" },
+        "layout": { "$ref": "#/definitions/layout" },
+        "style": { "$ref": "#/definitions/style" },
+        "typography": { "$ref": "#/definitions/typography" },
+        "text": { "$ref": "#/definitions/text" },
+        "component": { "$ref": "#/definitions/component" },
+        "instance": { "$ref": "#/definitions/instance" },
+        "tokens": { "$ref": "#/definitions/tokens" },
+        "responsive": { "$ref": "#/definitions/responsive" },
+        "prototype": { "$ref": "#/definitions/prototype" },
+        "annotations": { "$ref": "#/definitions/annotations" },
+        "asset": { "$ref": "#/definitions/asset" },
+        "children": { "type": "array", "items": { "$ref": "#/definitions/node" } },
+        "unknown": { "type": "object", "description": "Unmapped raw node properties, preserved verbatim" },
+        "raw": { "type": "object", "description": "Complete original node dict, for debugging" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": ["file_key", "node_id"],
+      "properties": {
+        "file_key": { "type": "string" },
+        "node_id": { "type": "string" },
+        "node_type": { "type": "string" },
+        "path": { "type": "array", "items": { "type": "string" }, "description": "Ancestor node ids, root first" }
+      }
+    },
+    "dimensions": {
+      "type": "object",
+      "properties": {
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "min_width": { "type": "number" },
+        "max_width": { "type": "number" },
+        "min_height": { "type": "number" },
+        "max_height": { "type": "number" },
+        "sizing_horizontal": { "type": ["string", "null"] },
+        "sizing_vertical": { "type": ["string", "null"] }
+      }
+    },
+    "position": {
+      "type": "object",
+      "required": ["mode"],
+      "properties": {
+        "mode": { "type": "string", "enum": ["auto", "absolute", "relative"] },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "left": { "type": "number" },
+        "right": { "type": "number" },
+        "top": { "type": "number" },
+        "bottom": { "type": "number" }
+      }
+    },
+    "layout": {
+      "type": "object",
+      "required": ["mode"],
+      "properties": {
+        "mode": { "type": "string", "enum": ["none", "auto", "grid"] },
+        "direction": { "type": ["string", "null"], "enum": ["row", "column", null] },
+        "justify": { "type": ["string", "null"] },
+        "align": { "type": ["string", "null"] },
+        "padding": { "$ref": "#/definitions/spacing" },
+        "gap": { "type": "number" },
+        "wrap": { "type": ["string", "null"] },
+        "grow": { "type": "number" },
+        "shrink": { "type": "number" },
+        "align_self": { "type": ["string", "null"] },
+        "sizing_primary": { "type": ["string", "null"] },
+        "sizing_counter": { "type": ["string", "null"] },
+        "grid_columns": { "type": ["object", "null"] }
+      }
+    },
+    "spacing": {
+      "type": "object",
+      "properties": {
+        "top": { "type": "number" },
+        "right": { "type": "number" },
+        "bottom": { "type": "number" },
+        "left": { "type": "number" }
+      }
+    },
+    "style": {
+      "type": "object",
+      "properties": {
+        "fills": { "type": "array", "items": { "$ref": "#/definitions/fill" } },
+        "borders": { "type": "array", "items": { "$ref": "#/definitions/border" } },
+        "shadows": { "type": "array", "items": { "$ref": "#/definitions/shadow" } },
+        "blurs": { "type": "array", "items": { "$ref": "#/definitions/blur" } },
+        "radius": { "type": ["number", "null"] },
+        "corner_radii": { "type": ["array", "null"], "items": { "type": "number" } },
+        "opacity": { "type": "number" }
+      }
+    },
+    "fill": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["solid", "gradient", "image", "none"] },
+        "color": { "$ref": "#/definitions/color" },
+        "opacity": { "type": "number" },
+        "visible": { "type": "boolean" },
+        "image_ref": { "type": ["string", "null"] },
+        "scale_mode": { "type": ["string", "null"] },
+        "blend_mode": { "type": ["string", "null"] },
+        "gradient_stops": { "type": "array", "items": { "$ref": "#/definitions/gradient_stop" } },
+        "token_ref": { "type": ["string", "null"] }
+      }
+    },
+    "gradient_stop": {
+      "type": "object",
+      "properties": {
+        "position": { "type": "number" },
+        "color": { "$ref": "#/definitions/color" }
+      }
+    },
+    "border": {
+      "type": "object",
+      "properties": {
+        "color": { "$ref": "#/definitions/color" },
+        "weight": { "type": "number" },
+        "visible": { "type": "boolean" },
+        "align": { "type": ["string", "null"] },
+        "style": { "type": ["string", "null"] },
+        "token_ref": { "type": ["string", "null"] }
+      }
+    },
+    "shadow": {
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string", "enum": ["drop", "inner"] },
+        "color": { "$ref": "#/definitions/color" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "blur": { "type": "number" },
+        "spread": { "type": "number" },
+        "visible": { "type": "boolean" }
+      }
+    },
+    "blur": {
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string", "enum": ["layer", "background"] },
+        "radius": { "type": "number" },
+        "visible": { "type": "boolean" }
+      }
+    },
+    "color": {
+      "type": "object",
+      "required": ["r", "g", "b", "a"],
+      "properties": {
+        "r": { "type": "number" },
+        "g": { "type": "number" },
+        "b": { "type": "number" },
+        "a": { "type": "number" }
+      }
+    },
+    "typography": {
+      "type": "object",
+      "properties": {
+        "font_family": { "type": ["string", "null"] },
+        "font_postscript_name": { "type": ["string", "null"] },
+        "font_weight": { "type": "number" },
+        "font_size": { "type": "number" },
+        "line_height": { "type": "number" },
+        "letter_spacing": { "type": "number" },
+        "text_case": { "type": ["string", "null"] },
+        "text_decoration": { "type": ["string", "null"] },
+        "text_align": { "type": ["string", "null"] },
+        "vertical_align": { "type": ["string", "null"] },
+        "auto_resize": { "type": ["string", "null"] },
+        "token_refs": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "text": {
+      "type": "object",
+      "required": ["characters"],
+      "properties": {
+        "characters": { "type": "string" },
+        "hyperlink": { "$ref": "#/definitions/link" }
+      }
+    },
+    "link": {
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string", "enum": ["url", "file", "node"] },
+        "url": { "type": ["string", "null"] },
+        "node_id": { "type": ["string", "null"] }
+      }
+    },
+    "component": {
+      "type": "object",
+      "properties": {
+        "key": { "type": ["string", "null"] },
+        "node_id": { "type": ["string", "null"] },
+        "name": { "type": "string" },
+        "kind": { "type": "string", "enum": ["component", "component_set"] },
+        "description": { "type": "string" },
+        "documentation_links": { "type": "array", "items": { "$ref": "#/definitions/link" } }
+      }
+    },
+    "instance": {
+      "type": "object",
+      "properties": {
+        "component_id": { "type": ["string", "null"] },
+        "component_key": { "type": ["string", "null"] },
+        "main_component_id": { "type": ["string", "null"] },
+        "main_component_key": { "type": ["string", "null"] }
+      }
+    },
+    "tokens": {
+      "type": "object",
+      "properties": {
+        "refs": { "type": "array", "items": { "$ref": "#/definitions/token_ref" } },
+        "bound_variables": { "type": "object", "additionalProperties": { "type": "string" } },
+        "style_refs": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
+    "token_ref": {
+      "type": "object",
+      "properties": {
+        "property_name": { "type": "string" },
+        "token_key": { "type": "string" },
+        "kind": { "type": "string", "enum": ["variable", "style"] }
+      }
+    },
+    "responsive": {
+      "type": "object",
+      "properties": {
+        "constraints_horizontal": { "type": ["string", "null"] },
+        "constraints_vertical": { "type": ["string", "null"] },
+        "sizing_horizontal": { "type": ["string", "null"] },
+        "sizing_vertical": { "type": ["string", "null"] },
+        "min_width": { "type": "number" },
+        "max_width": { "type": "number" },
+        "min_height": { "type": "number" },
+        "max_height": { "type": "number" }
+      }
+    },
+    "prototype": {
+      "type": "object",
+      "properties": {
+        "url": { "type": ["string", "null"] },
+        "links": { "type": "array", "items": { "$ref": "#/definitions/link" } },
+        "interactions": { "type": "array", "items": { "$ref": "#/definitions/interaction" } },
+        "start_node": { "type": ["string", "null"] }
+      }
+    },
+    "interaction": {
+      "type": "object",
+      "properties": {
+        "trigger": { "type": ["string", "null"] },
+        "action": { "type": ["string", "null"] },
+        "destination": { "type": ["string", "null"] },
+        "transition": { "type": ["object", "null"] }
+      }
+    },
+    "annotations": {
+      "type": "object",
+      "properties": {
+        "annotation": { "type": ["string", "null"] },
+        "developer_metadata": { "type": "object" }
+      }
+    },
+    "asset": {
+      "type": "object",
+      "properties": {
+        "node_id": { "type": "string" },
+        "url": { "type": ["string", "null"] },
+        "image_ref": { "type": ["string", "null"] },
+        "local_path": { "type": ["string", "null"] }
+      }
+    },
+    "token": {
+      "type": "object",
+      "required": ["kind", "key", "name"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["variable", "style"] },
+        "key": { "type": "string" },
+        "name": { "type": "string" },
+        "token_type": { "type": "string" },
+        "value": {},
+        "description": { "type": "string" },
+        "resolved_type": { "type": ["string", "null"] }
+      }
+    }
+  },
+  "example": {
+    "schema_version": 1,
+    "file_key": "abc123",
+    "name": "FigmaForge Demo — Button System",
+    "root": { "id": "0:0", "name": "Document", "kind": "document", "node_type": "DOCUMENT", "source": { "file_key": "abc123", "node_id": "0:0", "node_type": "DOCUMENT", "path": [] }, "children": [] },
+    "pages": [],
+    "components": {},
+    "component_sets": {},
+    "styles": {},
+    "variables": {},
+    "assets": {}
+  }
+}
