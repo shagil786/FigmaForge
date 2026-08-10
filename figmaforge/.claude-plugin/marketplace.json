@@ -1,0 +1,8 @@
+{
+  "name": "figmaforge-local",
+  "displayName": "FigmaForge (Local Development)",
+  "version": "0.0.1-dev",
+  "description": "Technology-agnostic adaptive engineering platform — local development reference",
+  "source": "./plugin/figmaforge",
+  "type": "local-reference"
+}

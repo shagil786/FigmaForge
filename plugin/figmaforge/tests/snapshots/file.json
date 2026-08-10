@@ -1,0 +1,2988 @@
+{
+  "assets": {
+    "2:3": "https://s3-alpha.figma.com/assets/card.svg",
+    "3:4": "https://s3-alpha.figma.com/assets/click.png"
+  },
+  "component_sets": {
+    "1:101": {
+      "description": "All button variants",
+      "documentation_links": [],
+      "key": "1:101",
+      "kind": "component_set",
+      "name": "Button Set"
+    }
+  },
+  "components": {
+    "1:100": {
+      "description": "Primary action button",
+      "documentation_links": [
+        {
+          "kind": "url",
+          "url": "https://example.com/docs/primary-button"
+        }
+      ],
+      "key": "1:100",
+      "kind": "component",
+      "name": "Primary Button"
+    }
+  },
+  "file_key": "abc123",
+  "name": "FigmaForge Demo \u2014 Button System",
+  "pages": [
+    {
+      "children": [
+        {
+          "children": [],
+          "dimensions": {
+            "height": 40.0,
+            "width": 120.0
+          },
+          "id": "1:2",
+          "instance": {
+            "component_id": "1:100",
+            "main_component_id": "1:100"
+          },
+          "kind": "instance",
+          "layout": {
+            "mode": "none"
+          },
+          "name": "Primary Button",
+          "node_type": "INSTANCE",
+          "opacity": 0.9,
+          "position": {
+            "left": 0.0,
+            "mode": "absolute",
+            "top": 0.0,
+            "x": 0.0,
+            "y": 0.0
+          },
+          "raw": {
+            "absoluteBoundingBox": {
+              "height": 40,
+              "width": 120,
+              "x": 0,
+              "y": 0
+            },
+            "componentId": "1:100",
+            "constraints": {
+              "horizontal": "SCALE",
+              "vertical": "CENTER"
+            },
+            "id": "1:2",
+            "mainComponent": {
+              "id": "1:100",
+              "name": "Primary Button",
+              "type": "COMPONENT"
+            },
+            "name": "Primary Button",
+            "opacity": 0.9,
+            "type": "INSTANCE",
+            "visible": true
+          },
+          "responsive": {
+            "constraints_horizontal": "SCALE",
+            "constraints_vertical": "CENTER"
+          },
+          "source": {
+            "file_key": "abc123",
+            "node_id": "1:2",
+            "node_type": "INSTANCE",
+            "path": [
+              "0:0",
+              "0:1"
+            ]
+          },
+          "style": {
+            "blurs": [],
+            "borders": [],
+            "fills": [],
+            "opacity": 0.9,
+            "shadows": []
+          },
+          "unknown": {},
+          "visible": true
+        },
+        {
+          "asset": {
+            "node_id": "2:3",
+            "url": "https://s3-alpha.figma.com/assets/card.svg"
+          },
+          "children": [
+            {
+              "asset": {
+                "node_id": "3:4",
+                "url": "https://s3-alpha.figma.com/assets/click.png"
+              },
+              "children": [],
+              "dimensions": {},
+              "id": "3:4",
+              "kind": "text",
+              "layout": {
+                "mode": "none"
+              },
+              "name": "Click me",
+              "node_type": "TEXT",
+              "opacity": 1.0,
+              "position": {
+                "mode": "auto"
+              },
+              "prototype": {
+                "interactions": [],
+                "links": [
+                  {
+                    "kind": "url",
+                    "url": "https://example.com/click"
+                  }
+                ]
+              },
+              "raw": {
+                "boundVariables": {
+                  "fontSize": {
+                    "id": "1:40",
+                    "type": "VARIABLE_ALIAS"
+                  }
+                },
+                "characters": "Click me",
+                "fills": [
+                  {
+                    "color": {
+                      "a": 1.0,
+                      "b": 0.1,
+                      "g": 0.4,
+                      "r": 0.9
+                    },
+                    "opacity": 1.0,
+                    "type": "SOLID",
+                    "visible": true
+                  }
+                ],
+                "id": "3:4",
+                "name": "Click me",
+                "style": {
+                  "fontFamily": "Inter",
+                  "fontPostScriptName": "Inter-Regular",
+                  "fontSize": 16,
+                  "fontWeight": 400,
+                  "hyperlink": {
+                    "type": "URL",
+                    "url": "https://example.com/click"
+                  },
+                  "letterSpacing": 0,
+                  "lineHeightPx": 24,
+                  "textCase": "ORIGINAL",
+                  "textDecoration": "NONE"
+                },
+                "type": "TEXT",
+                "visible": true
+              },
+              "responsive": {},
+              "source": {
+                "file_key": "abc123",
+                "node_id": "3:4",
+                "node_type": "TEXT",
+                "path": [
+                  "0:0",
+                  "0:1",
+                  "2:3"
+                ]
+              },
+              "style": {
+                "blurs": [],
+                "borders": [],
+                "fills": [
+                  {
+                    "color": {
+                      "a": 1.0,
+                      "b": 0.1,
+                      "g": 0.4,
+                      "r": 0.9
+                    },
+                    "gradient_stops": [],
+                    "kind": "solid",
+                    "opacity": 1.0,
+                    "visible": true
+                  }
+                ],
+                "opacity": 1.0,
+                "shadows": []
+              },
+              "text": {
+                "characters": "Click me",
+                "hyperlink": {
+                  "kind": "url",
+                  "url": "https://example.com/click"
+                }
+              },
+              "tokens": {
+                "bound_variables": {
+                  "fontSize": "1:40"
+                },
+                "refs": [
+                  {
+                    "kind": "variable",
+                    "property_name": "fontSize",
+                    "token_key": "1:40"
+                  }
+                ],
+                "style_refs": {}
+              },
+              "typography": {
+                "font_family": "Inter",
+                "font_postscript_name": "Inter-Regular",
+                "font_size": 16.0,
+                "font_weight": 400.0,
+                "letter_spacing": 0.0,
+                "line_height": 24.0,
+                "text_case": "ORIGINAL",
+                "text_decoration": "NONE",
+                "token_refs": [
+                  "1:40"
+                ]
+              },
+              "unknown": {},
+              "visible": true
+            },
+            {
+              "children": [
+                {
+                  "children": [],
+                  "dimensions": {},
+                  "id": "5:6",
+                  "kind": "vector",
+                  "layout": {
+                    "mode": "none"
+                  },
+                  "name": "Arrow",
+                  "node_type": "VECTOR",
+                  "opacity": 1.0,
+                  "position": {
+                    "mode": "absolute"
+                  },
+                  "raw": {
+                    "fills": [
+                      {
+                        "color": {
+                          "a": 1.0,
+                          "b": 1.0,
+                          "g": 1.0,
+                          "r": 1.0
+                        },
+                        "opacity": 1.0,
+                        "type": "SOLID",
+                        "visible": true
+                      }
+                    ],
+                    "id": "5:6",
+                    "name": "Arrow",
+                    "opacity": 1.0,
+                    "type": "VECTOR",
+                    "visible": true
+                  },
+                  "responsive": {},
+                  "source": {
+                    "file_key": "abc123",
+                    "node_id": "5:6",
+                    "node_type": "VECTOR",
+                    "path": [
+                      "0:0",
+                      "0:1",
+                      "2:3",
+                      "4:5"
+                    ]
+                  },
+                  "style": {
+                    "blurs": [],
+                    "borders": [],
+                    "fills": [
+                      {
+                        "color": {
+                          "a": 1.0,
+                          "b": 1.0,
+                          "g": 1.0,
+                          "r": 1.0
+                        },
+                        "gradient_stops": [],
+                        "kind": "solid",
+                        "opacity": 1.0,
+                        "visible": true
+                      }
+                    ],
+                    "opacity": 1.0,
+                    "shadows": []
+                  },
+                  "unknown": {},
+                  "visible": true
+                }
+              ],
+              "dimensions": {},
+              "id": "4:5",
+              "kind": "group",
+              "layout": {
+                "mode": "none"
+              },
+              "name": "Icon Slot",
+              "node_type": "GROUP",
+              "opacity": 1.0,
+              "position": {
+                "mode": "auto"
+              },
+              "raw": {
+                "children": [
+                  {
+                    "fills": [
+                      {
+                        "color": {
+                          "a": 1.0,
+                          "b": 1.0,
+                          "g": 1.0,
+                          "r": 1.0
+                        },
+                        "opacity": 1.0,
+                        "type": "SOLID",
+                        "visible": true
+                      }
+                    ],
+                    "id": "5:6",
+                    "name": "Arrow",
+                    "opacity": 1.0,
+                    "type": "VECTOR",
+                    "visible": true
+                  }
+                ],
+                "constraints": {
+                  "horizontal": "SCALE",
+                  "vertical": "SCALE"
+                },
+                "id": "4:5",
+                "name": "Icon Slot",
+                "opacity": 1.0,
+                "type": "GROUP",
+                "visible": true
+              },
+              "responsive": {
+                "constraints_horizontal": "SCALE",
+                "constraints_vertical": "SCALE"
+              },
+              "source": {
+                "file_key": "abc123",
+                "node_id": "4:5",
+                "node_type": "GROUP",
+                "path": [
+                  "0:0",
+                  "0:1",
+                  "2:3"
+                ]
+              },
+              "style": {
+                "blurs": [],
+                "borders": [],
+                "fills": [],
+                "opacity": 1.0,
+                "shadows": []
+              },
+              "unknown": {},
+              "visible": true
+            }
+          ],
+          "dimensions": {
+            "height": 200.0,
+            "sizing_horizontal": "FIXED",
+            "sizing_vertical": "AUTO",
+            "width": 320.0
+          },
+          "id": "2:3",
+          "kind": "frame",
+          "layout": {
+            "align": "CENTER",
+            "direction": "column",
+            "gap": 8.0,
+            "justify": "CENTER",
+            "mode": "auto",
+            "padding": {
+              "bottom": 16.0,
+              "left": 16.0,
+              "right": 16.0,
+              "top": 16.0
+            },
+            "sizing_counter": "AUTO",
+            "sizing_primary": "FIXED"
+          },
+          "name": "Button Card",
+          "node_type": "FRAME",
+          "opacity": 1.0,
+          "position": {
+            "left": 0.0,
+            "mode": "absolute",
+            "top": 60.0,
+            "x": 0.0,
+            "y": 60.0
+          },
+          "raw": {
+            "absoluteBoundingBox": {
+              "height": 200,
+              "width": 320,
+              "x": 0,
+              "y": 60
+            },
+            "backgroundColor": {
+              "a": 1.0,
+              "b": 1.0,
+              "g": 1.0,
+              "r": 1.0
+            },
+            "boundVariables": {
+              "paddingLeft": {
+                "id": "1:33",
+                "type": "VARIABLE_ALIAS"
+              }
+            },
+            "children": [
+              {
+                "boundVariables": {
+                  "fontSize": {
+                    "id": "1:40",
+                    "type": "VARIABLE_ALIAS"
+                  }
+                },
+                "characters": "Click me",
+                "fills": [
+                  {
+                    "color": {
+                      "a": 1.0,
+                      "b": 0.1,
+                      "g": 0.4,
+                      "r": 0.9
+                    },
+                    "opacity": 1.0,
+                    "type": "SOLID",
+                    "visible": true
+                  }
+                ],
+                "id": "3:4",
+                "name": "Click me",
+                "style": {
+                  "fontFamily": "Inter",
+                  "fontPostScriptName": "Inter-Regular",
+                  "fontSize": 16,
+                  "fontWeight": 400,
+                  "hyperlink": {
+                    "type": "URL",
+                    "url": "https://example.com/click"
+                  },
+                  "letterSpacing": 0,
+                  "lineHeightPx": 24,
+                  "textCase": "ORIGINAL",
+                  "textDecoration": "NONE"
+                },
+                "type": "TEXT",
+                "visible": true
+              },
+              {
+                "children": [
+                  {
+                    "fills": [
+                      {
+                        "color": {
+                          "a": 1.0,
+                          "b": 1.0,
+                          "g": 1.0,
+                          "r": 1.0
+                        },
+                        "opacity": 1.0,
+                        "type": "SOLID",
+                        "visible": true
+                      }
+                    ],
+                    "id": "5:6",
+                    "name": "Arrow",
+                    "opacity": 1.0,
+                    "type": "VECTOR",
+                    "visible": true
+                  }
+                ],
+                "constraints": {
+                  "horizontal": "SCALE",
+                  "vertical": "SCALE"
+                },
+                "id": "4:5",
+                "name": "Icon Slot",
+                "opacity": 1.0,
+                "type": "GROUP",
+                "visible": true
+              }
+            ],
+            "constraints": {
+              "horizontal": "LEFT",
+              "vertical": "TOP"
+            },
+            "counterAxisAlignItems": "CENTER",
+            "counterAxisSizingMode": "AUTO",
+            "effects": [
+              {
+                "color": {
+                  "a": 0.25,
+                  "b": 0,
+                  "g": 0,
+                  "r": 0
+                },
+                "offset": {
+                  "x": 0,
+                  "y": 4
+                },
+                "radius": 8,
+                "spread": 0,
+                "type": "DROP_SHADOW",
+                "visible": true
+              }
+            ],
+            "fills": [
+              {
+                "blendMode": "NORMAL",
+                "color": {
+                  "a": 1.0,
+                  "b": 0.24,
+                  "g": 0.12,
+                  "r": 0.08
+                },
+                "opacity": 1.0,
+                "type": "SOLID",
+                "visible": true
+              }
+            ],
+            "id": "2:3",
+            "itemSpacing": 8,
+            "layoutMode": "VERTICAL",
+            "layoutSizingHorizontal": "FIXED",
+            "layoutSizingVertical": "AUTO",
+            "name": "Button Card",
+            "opacity": 1.0,
+            "paddingBottom": 16,
+            "paddingLeft": 16,
+            "paddingRight": 16,
+            "paddingTop": 16,
+            "primaryAxisAlignItems": "CENTER",
+            "primaryAxisSizingMode": "FIXED",
+            "strokes": [
+              {
+                "color": {
+                  "a": 1.0,
+                  "b": 0.95,
+                  "g": 0.92,
+                  "r": 0.9
+                },
+                "opacity": 1.0,
+                "type": "SOLID",
+                "visible": true
+              }
+            ],
+            "type": "FRAME",
+            "visible": true
+          },
+          "responsive": {
+            "constraints_horizontal": "LEFT",
+            "constraints_vertical": "TOP",
+            "sizing_horizontal": "FIXED",
+            "sizing_vertical": "AUTO"
+          },
+          "source": {
+            "file_key": "abc123",
+            "node_id": "2:3",
+            "node_type": "FRAME",
+            "path": [
+              "0:0",
+              "0:1"
+            ]
+          },
+          "style": {
+            "blurs": [],
+            "borders": [
+              {
+                "color": {
+                  "a": 1.0,
+                  "b": 0.95,
+                  "g": 0.92,
+                  "r": 0.9
+                },
+                "visible": true
+              }
+            ],
+            "fills": [
+              {
+                "blend_mode": "NORMAL",
+                "color": {
+                  "a": 1.0,
+                  "b": 0.24,
+                  "g": 0.12,
+                  "r": 0.08
+                },
+                "gradient_stops": [],
+                "kind": "solid",
+                "opacity": 1.0,
+                "visible": true
+              }
+            ],
+            "opacity": 1.0,
+            "shadows": [
+              {
+                "blur": 8.0,
+                "color": {
+                  "a": 0.25,
+                  "b": 0.0,
+                  "g": 0.0,
+                  "r": 0.0
+                },
+                "kind": "drop",
+                "spread": 0.0,
+                "visible": true,
+                "x": 0.0,
+                "y": 4.0
+              }
+            ]
+          },
+          "tokens": {
+            "bound_variables": {
+              "paddingLeft": "1:33"
+            },
+            "refs": [
+              {
+                "kind": "variable",
+                "property_name": "paddingLeft",
+                "token_key": "1:33"
+              }
+            ],
+            "style_refs": {}
+          },
+          "typography": {
+            "token_refs": []
+          },
+          "unknown": {
+            "backgroundColor": {
+              "a": 1.0,
+              "b": 1.0,
+              "g": 1.0,
+              "r": 1.0
+            }
+          },
+          "visible": true
+        }
+      ],
+      "dimensions": {},
+      "id": "0:1",
+      "kind": "page",
+      "layout": {
+        "mode": "none"
+      },
+      "name": "Buttons",
+      "node_type": "CANVAS",
+      "opacity": 1.0,
+      "position": {
+        "mode": "absolute"
+      },
+      "raw": {
+        "children": [
+          {
+            "absoluteBoundingBox": {
+              "height": 40,
+              "width": 120,
+              "x": 0,
+              "y": 0
+            },
+            "componentId": "1:100",
+            "constraints": {
+              "horizontal": "SCALE",
+              "vertical": "CENTER"
+            },
+            "id": "1:2",
+            "mainComponent": {
+              "id": "1:100",
+              "name": "Primary Button",
+              "type": "COMPONENT"
+            },
+            "name": "Primary Button",
+            "opacity": 0.9,
+            "type": "INSTANCE",
+            "visible": true
+          },
+          {
+            "absoluteBoundingBox": {
+              "height": 200,
+              "width": 320,
+              "x": 0,
+              "y": 60
+            },
+            "backgroundColor": {
+              "a": 1.0,
+              "b": 1.0,
+              "g": 1.0,
+              "r": 1.0
+            },
+            "boundVariables": {
+              "paddingLeft": {
+                "id": "1:33",
+                "type": "VARIABLE_ALIAS"
+              }
+            },
+            "children": [
+              {
+                "boundVariables": {
+                  "fontSize": {
+                    "id": "1:40",
+                    "type": "VARIABLE_ALIAS"
+                  }
+                },
+                "characters": "Click me",
+                "fills": [
+                  {
+                    "color": {
+                      "a": 1.0,
+                      "b": 0.1,
+                      "g": 0.4,
+                      "r": 0.9
+                    },
+                    "opacity": 1.0,
+                    "type": "SOLID",
+                    "visible": true
+                  }
+                ],
+                "id": "3:4",
+                "name": "Click me",
+                "style": {
+                  "fontFamily": "Inter",
+                  "fontPostScriptName": "Inter-Regular",
+                  "fontSize": 16,
+                  "fontWeight": 400,
+                  "hyperlink": {
+                    "type": "URL",
+                    "url": "https://example.com/click"
+                  },
+                  "letterSpacing": 0,
+                  "lineHeightPx": 24,
+                  "textCase": "ORIGINAL",
+                  "textDecoration": "NONE"
+                },
+                "type": "TEXT",
+                "visible": true
+              },
+              {
+                "children": [
+                  {
+                    "fills": [
+                      {
+                        "color": {
+                          "a": 1.0,
+                          "b": 1.0,
+                          "g": 1.0,
+                          "r": 1.0
+                        },
+                        "opacity": 1.0,
+                        "type": "SOLID",
+                        "visible": true
+                      }
+                    ],
+                    "id": "5:6",
+                    "name": "Arrow",
+                    "opacity": 1.0,
+                    "type": "VECTOR",
+                    "visible": true
+                  }
+                ],
+                "constraints": {
+                  "horizontal": "SCALE",
+                  "vertical": "SCALE"
+                },
+                "id": "4:5",
+                "name": "Icon Slot",
+                "opacity": 1.0,
+                "type": "GROUP",
+                "visible": true
+              }
+            ],
+            "constraints": {
+              "horizontal": "LEFT",
+              "vertical": "TOP"
+            },
+            "counterAxisAlignItems": "CENTER",
+            "counterAxisSizingMode": "AUTO",
+            "effects": [
+              {
+                "color": {
+                  "a": 0.25,
+                  "b": 0,
+                  "g": 0,
+                  "r": 0
+                },
+                "offset": {
+                  "x": 0,
+                  "y": 4
+                },
+                "radius": 8,
+                "spread": 0,
+                "type": "DROP_SHADOW",
+                "visible": true
+              }
+            ],
+            "fills": [
+              {
+                "blendMode": "NORMAL",
+                "color": {
+                  "a": 1.0,
+                  "b": 0.24,
+                  "g": 0.12,
+                  "r": 0.08
+                },
+                "opacity": 1.0,
+                "type": "SOLID",
+                "visible": true
+              }
+            ],
+            "id": "2:3",
+            "itemSpacing": 8,
+            "layoutMode": "VERTICAL",
+            "layoutSizingHorizontal": "FIXED",
+            "layoutSizingVertical": "AUTO",
+            "name": "Button Card",
+            "opacity": 1.0,
+            "paddingBottom": 16,
+            "paddingLeft": 16,
+            "paddingRight": 16,
+            "paddingTop": 16,
+            "primaryAxisAlignItems": "CENTER",
+            "primaryAxisSizingMode": "FIXED",
+            "strokes": [
+              {
+                "color": {
+                  "a": 1.0,
+                  "b": 0.95,
+                  "g": 0.92,
+                  "r": 0.9
+                },
+                "opacity": 1.0,
+                "type": "SOLID",
+                "visible": true
+              }
+            ],
+            "type": "FRAME",
+            "visible": true
+          }
+        ],
+        "id": "0:1",
+        "name": "Buttons",
+        "type": "CANVAS",
+        "visible": true
+      },
+      "responsive": {},
+      "source": {
+        "file_key": "abc123",
+        "node_id": "0:1",
+        "node_type": "CANVAS",
+        "path": [
+          "0:0"
+        ]
+      },
+      "style": {
+        "blurs": [],
+        "borders": [],
+        "fills": [],
+        "opacity": 1.0,
+        "shadows": []
+      },
+      "unknown": {},
+      "visible": true
+    },
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "annotations": {
+                    "annotation": "The default call-to-action label.",
+                    "developer_metadata": {}
+                  },
+                  "children": [],
+                  "dimensions": {},
+                  "id": "8:10",
+                  "kind": "text",
+                  "layout": {
+                    "mode": "none"
+                  },
+                  "name": "Primary Text",
+                  "node_type": "TEXT",
+                  "opacity": 1.0,
+                  "position": {
+                    "mode": "absolute"
+                  },
+                  "raw": {
+                    "annotation": "The default call-to-action label.",
+                    "characters": "Primary",
+                    "id": "8:10",
+                    "name": "Primary Text",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontPostScriptName": "Inter-Medium",
+                      "fontSize": 14,
+                      "fontWeight": 500,
+                      "letterSpacing": 0,
+                      "lineHeightPx": 20,
+                      "textCase": "UPPER",
+                      "textDecoration": "NONE"
+                    },
+                    "type": "TEXT",
+                    "visible": true
+                  },
+                  "responsive": {},
+                  "source": {
+                    "file_key": "abc123",
+                    "node_id": "8:10",
+                    "node_type": "TEXT",
+                    "path": [
+                      "0:0",
+                      "0:7",
+                      "6:8",
+                      "7:9"
+                    ]
+                  },
+                  "style": {
+                    "blurs": [],
+                    "borders": [],
+                    "fills": [],
+                    "opacity": 1.0,
+                    "shadows": []
+                  },
+                  "text": {
+                    "characters": "Primary"
+                  },
+                  "typography": {
+                    "font_family": "Inter",
+                    "font_postscript_name": "Inter-Medium",
+                    "font_size": 14.0,
+                    "font_weight": 500.0,
+                    "letter_spacing": 0.0,
+                    "line_height": 20.0,
+                    "text_case": "UPPER",
+                    "text_decoration": "NONE",
+                    "token_refs": []
+                  },
+                  "unknown": {},
+                  "visible": true
+                }
+              ],
+              "component": {
+                "description": "",
+                "documentation_links": [],
+                "kind": "component",
+                "name": "Primary",
+                "node_id": "7:9"
+              },
+              "dimensions": {},
+              "id": "7:9",
+              "kind": "component",
+              "layout": {
+                "mode": "none"
+              },
+              "name": "Primary",
+              "node_type": "COMPONENT",
+              "opacity": 1.0,
+              "position": {
+                "mode": "absolute"
+              },
+              "prototype": {
+                "interactions": [],
+                "links": [],
+                "url": "https://www.figma.com/design/demo/primary"
+              },
+              "raw": {
+                "children": [
+                  {
+                    "annotation": "The default call-to-action label.",
+                    "characters": "Primary",
+                    "id": "8:10",
+                    "name": "Primary Text",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontPostScriptName": "Inter-Medium",
+                      "fontSize": 14,
+                      "fontWeight": 500,
+                      "letterSpacing": 0,
+                      "lineHeightPx": 20,
+                      "textCase": "UPPER",
+                      "textDecoration": "NONE"
+                    },
+                    "type": "TEXT",
+                    "visible": true
+                  }
+                ],
+                "id": "7:9",
+                "name": "Primary",
+                "opacity": 1.0,
+                "type": "COMPONENT",
+                "url": "https://www.figma.com/design/demo/primary",
+                "visible": true
+              },
+              "responsive": {},
+              "source": {
+                "file_key": "abc123",
+                "node_id": "7:9",
+                "node_type": "COMPONENT",
+                "path": [
+                  "0:0",
+                  "0:7",
+                  "6:8"
+                ]
+              },
+              "style": {
+                "blurs": [],
+                "borders": [],
+                "fills": [],
+                "opacity": 1.0,
+                "shadows": []
+              },
+              "unknown": {},
+              "visible": true
+            }
+          ],
+          "component": {
+            "description": "",
+            "documentation_links": [],
+            "kind": "component_set",
+            "name": "Button Set",
+            "node_id": "6:8"
+          },
+          "dimensions": {},
+          "id": "6:8",
+          "kind": "component_set",
+          "layout": {
+            "mode": "none"
+          },
+          "name": "Button Set",
+          "node_type": "COMPONENT_SET",
+          "opacity": 1.0,
+          "position": {
+            "mode": "absolute"
+          },
+          "raw": {
+            "children": [
+              {
+                "children": [
+                  {
+                    "annotation": "The default call-to-action label.",
+                    "characters": "Primary",
+                    "id": "8:10",
+                    "name": "Primary Text",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontPostScriptName": "Inter-Medium",
+                      "fontSize": 14,
+                      "fontWeight": 500,
+                      "letterSpacing": 0,
+                      "lineHeightPx": 20,
+                      "textCase": "UPPER",
+                      "textDecoration": "NONE"
+                    },
+                    "type": "TEXT",
+                    "visible": true
+                  }
+                ],
+                "id": "7:9",
+                "name": "Primary",
+                "opacity": 1.0,
+                "type": "COMPONENT",
+                "url": "https://www.figma.com/design/demo/primary",
+                "visible": true
+              }
+            ],
+            "id": "6:8",
+            "name": "Button Set",
+            "opacity": 1.0,
+            "type": "COMPONENT_SET",
+            "visible": true
+          },
+          "responsive": {},
+          "source": {
+            "file_key": "abc123",
+            "node_id": "6:8",
+            "node_type": "COMPONENT_SET",
+            "path": [
+              "0:0",
+              "0:7"
+            ]
+          },
+          "style": {
+            "blurs": [],
+            "borders": [],
+            "fills": [],
+            "opacity": 1.0,
+            "shadows": []
+          },
+          "unknown": {},
+          "visible": true
+        }
+      ],
+      "dimensions": {},
+      "id": "0:7",
+      "kind": "page",
+      "layout": {
+        "mode": "none"
+      },
+      "name": "Fundamentals",
+      "node_type": "CANVAS",
+      "opacity": 1.0,
+      "position": {
+        "mode": "absolute"
+      },
+      "raw": {
+        "children": [
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "annotation": "The default call-to-action label.",
+                    "characters": "Primary",
+                    "id": "8:10",
+                    "name": "Primary Text",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontPostScriptName": "Inter-Medium",
+                      "fontSize": 14,
+                      "fontWeight": 500,
+                      "letterSpacing": 0,
+                      "lineHeightPx": 20,
+                      "textCase": "UPPER",
+                      "textDecoration": "NONE"
+                    },
+                    "type": "TEXT",
+                    "visible": true
+                  }
+                ],
+                "id": "7:9",
+                "name": "Primary",
+                "opacity": 1.0,
+                "type": "COMPONENT",
+                "url": "https://www.figma.com/design/demo/primary",
+                "visible": true
+              }
+            ],
+            "id": "6:8",
+            "name": "Button Set",
+            "opacity": 1.0,
+            "type": "COMPONENT_SET",
+            "visible": true
+          }
+        ],
+        "id": "0:7",
+        "name": "Fundamentals",
+        "type": "CANVAS",
+        "visible": true
+      },
+      "responsive": {},
+      "source": {
+        "file_key": "abc123",
+        "node_id": "0:7",
+        "node_type": "CANVAS",
+        "path": [
+          "0:0"
+        ]
+      },
+      "style": {
+        "blurs": [],
+        "borders": [],
+        "fills": [],
+        "opacity": 1.0,
+        "shadows": []
+      },
+      "unknown": {},
+      "visible": true
+    }
+  ],
+  "raw": {
+    "componentSets": {
+      "1:101": {
+        "description": "All button variants",
+        "key": "1:101",
+        "name": "Button Set",
+        "type": "COMPONENT_SET"
+      }
+    },
+    "components": {
+      "1:100": {
+        "description": "Primary action button",
+        "documentationLinks": [
+          {
+            "name": "Docs",
+            "url": "https://example.com/docs/primary-button"
+          }
+        ],
+        "key": "1:100",
+        "name": "Primary Button",
+        "type": "COMPONENT"
+      }
+    },
+    "document": {
+      "children": [
+        {
+          "children": [
+            {
+              "absoluteBoundingBox": {
+                "height": 40,
+                "width": 120,
+                "x": 0,
+                "y": 0
+              },
+              "componentId": "1:100",
+              "constraints": {
+                "horizontal": "SCALE",
+                "vertical": "CENTER"
+              },
+              "id": "1:2",
+              "mainComponent": {
+                "id": "1:100",
+                "name": "Primary Button",
+                "type": "COMPONENT"
+              },
+              "name": "Primary Button",
+              "opacity": 0.9,
+              "type": "INSTANCE",
+              "visible": true
+            },
+            {
+              "absoluteBoundingBox": {
+                "height": 200,
+                "width": 320,
+                "x": 0,
+                "y": 60
+              },
+              "backgroundColor": {
+                "a": 1.0,
+                "b": 1.0,
+                "g": 1.0,
+                "r": 1.0
+              },
+              "boundVariables": {
+                "paddingLeft": {
+                  "id": "1:33",
+                  "type": "VARIABLE_ALIAS"
+                }
+              },
+              "children": [
+                {
+                  "boundVariables": {
+                    "fontSize": {
+                      "id": "1:40",
+                      "type": "VARIABLE_ALIAS"
+                    }
+                  },
+                  "characters": "Click me",
+                  "fills": [
+                    {
+                      "color": {
+                        "a": 1.0,
+                        "b": 0.1,
+                        "g": 0.4,
+                        "r": 0.9
+                      },
+                      "opacity": 1.0,
+                      "type": "SOLID",
+                      "visible": true
+                    }
+                  ],
+                  "id": "3:4",
+                  "name": "Click me",
+                  "style": {
+                    "fontFamily": "Inter",
+                    "fontPostScriptName": "Inter-Regular",
+                    "fontSize": 16,
+                    "fontWeight": 400,
+                    "hyperlink": {
+                      "type": "URL",
+                      "url": "https://example.com/click"
+                    },
+                    "letterSpacing": 0,
+                    "lineHeightPx": 24,
+                    "textCase": "ORIGINAL",
+                    "textDecoration": "NONE"
+                  },
+                  "type": "TEXT",
+                  "visible": true
+                },
+                {
+                  "children": [
+                    {
+                      "fills": [
+                        {
+                          "color": {
+                            "a": 1.0,
+                            "b": 1.0,
+                            "g": 1.0,
+                            "r": 1.0
+                          },
+                          "opacity": 1.0,
+                          "type": "SOLID",
+                          "visible": true
+                        }
+                      ],
+                      "id": "5:6",
+                      "name": "Arrow",
+                      "opacity": 1.0,
+                      "type": "VECTOR",
+                      "visible": true
+                    }
+                  ],
+                  "constraints": {
+                    "horizontal": "SCALE",
+                    "vertical": "SCALE"
+                  },
+                  "id": "4:5",
+                  "name": "Icon Slot",
+                  "opacity": 1.0,
+                  "type": "GROUP",
+                  "visible": true
+                }
+              ],
+              "constraints": {
+                "horizontal": "LEFT",
+                "vertical": "TOP"
+              },
+              "counterAxisAlignItems": "CENTER",
+              "counterAxisSizingMode": "AUTO",
+              "effects": [
+                {
+                  "color": {
+                    "a": 0.25,
+                    "b": 0,
+                    "g": 0,
+                    "r": 0
+                  },
+                  "offset": {
+                    "x": 0,
+                    "y": 4
+                  },
+                  "radius": 8,
+                  "spread": 0,
+                  "type": "DROP_SHADOW",
+                  "visible": true
+                }
+              ],
+              "fills": [
+                {
+                  "blendMode": "NORMAL",
+                  "color": {
+                    "a": 1.0,
+                    "b": 0.24,
+                    "g": 0.12,
+                    "r": 0.08
+                  },
+                  "opacity": 1.0,
+                  "type": "SOLID",
+                  "visible": true
+                }
+              ],
+              "id": "2:3",
+              "itemSpacing": 8,
+              "layoutMode": "VERTICAL",
+              "layoutSizingHorizontal": "FIXED",
+              "layoutSizingVertical": "AUTO",
+              "name": "Button Card",
+              "opacity": 1.0,
+              "paddingBottom": 16,
+              "paddingLeft": 16,
+              "paddingRight": 16,
+              "paddingTop": 16,
+              "primaryAxisAlignItems": "CENTER",
+              "primaryAxisSizingMode": "FIXED",
+              "strokes": [
+                {
+                  "color": {
+                    "a": 1.0,
+                    "b": 0.95,
+                    "g": 0.92,
+                    "r": 0.9
+                  },
+                  "opacity": 1.0,
+                  "type": "SOLID",
+                  "visible": true
+                }
+              ],
+              "type": "FRAME",
+              "visible": true
+            }
+          ],
+          "id": "0:1",
+          "name": "Buttons",
+          "type": "CANVAS",
+          "visible": true
+        },
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "children": [
+                    {
+                      "annotation": "The default call-to-action label.",
+                      "characters": "Primary",
+                      "id": "8:10",
+                      "name": "Primary Text",
+                      "style": {
+                        "fontFamily": "Inter",
+                        "fontPostScriptName": "Inter-Medium",
+                        "fontSize": 14,
+                        "fontWeight": 500,
+                        "letterSpacing": 0,
+                        "lineHeightPx": 20,
+                        "textCase": "UPPER",
+                        "textDecoration": "NONE"
+                      },
+                      "type": "TEXT",
+                      "visible": true
+                    }
+                  ],
+                  "id": "7:9",
+                  "name": "Primary",
+                  "opacity": 1.0,
+                  "type": "COMPONENT",
+                  "url": "https://www.figma.com/design/demo/primary",
+                  "visible": true
+                }
+              ],
+              "id": "6:8",
+              "name": "Button Set",
+              "opacity": 1.0,
+              "type": "COMPONENT_SET",
+              "visible": true
+            }
+          ],
+          "id": "0:7",
+          "name": "Fundamentals",
+          "type": "CANVAS",
+          "visible": true
+        }
+      ],
+      "id": "0:0",
+      "name": "Document",
+      "type": "DOCUMENT"
+    },
+    "editorType": "figma",
+    "lastModified": "2026-08-01T12:00:00.000Z",
+    "name": "FigmaForge Demo \u2014 Button System",
+    "role": "owner",
+    "schemaVersion": 0,
+    "styles": {
+      "S:1": {
+        "description": "Brand primary",
+        "key": "S:1",
+        "name": "Primary Fill",
+        "styleType": "FILL"
+      },
+      "S:2": {
+        "description": "Body copy",
+        "key": "S:2",
+        "name": "Body Text",
+        "styleType": "TEXT"
+      }
+    },
+    "thumbnailUrl": "https://s3-alpha.figma.com/thumbnails/demo/thumb.png",
+    "variables": {
+      "1:33": {
+        "id": "1:33",
+        "name": "Space / 4",
+        "resolvedType": "FLOAT",
+        "resolvedValue": 16.0
+      },
+      "1:40": {
+        "id": "1:40",
+        "name": "Type / Button",
+        "resolvedType": "FLOAT",
+        "resolvedValue": 16.0
+      }
+    },
+    "version": "1234567890"
+  },
+  "root": {
+    "children": [
+      {
+        "children": [
+          {
+            "children": [],
+            "dimensions": {
+              "height": 40.0,
+              "width": 120.0
+            },
+            "id": "1:2",
+            "instance": {
+              "component_id": "1:100",
+              "main_component_id": "1:100"
+            },
+            "kind": "instance",
+            "layout": {
+              "mode": "none"
+            },
+            "name": "Primary Button",
+            "node_type": "INSTANCE",
+            "opacity": 0.9,
+            "position": {
+              "left": 0.0,
+              "mode": "absolute",
+              "top": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "raw": {
+              "absoluteBoundingBox": {
+                "height": 40,
+                "width": 120,
+                "x": 0,
+                "y": 0
+              },
+              "componentId": "1:100",
+              "constraints": {
+                "horizontal": "SCALE",
+                "vertical": "CENTER"
+              },
+              "id": "1:2",
+              "mainComponent": {
+                "id": "1:100",
+                "name": "Primary Button",
+                "type": "COMPONENT"
+              },
+              "name": "Primary Button",
+              "opacity": 0.9,
+              "type": "INSTANCE",
+              "visible": true
+            },
+            "responsive": {
+              "constraints_horizontal": "SCALE",
+              "constraints_vertical": "CENTER"
+            },
+            "source": {
+              "file_key": "abc123",
+              "node_id": "1:2",
+              "node_type": "INSTANCE",
+              "path": [
+                "0:0",
+                "0:1"
+              ]
+            },
+            "style": {
+              "blurs": [],
+              "borders": [],
+              "fills": [],
+              "opacity": 0.9,
+              "shadows": []
+            },
+            "unknown": {},
+            "visible": true
+          },
+          {
+            "asset": {
+              "node_id": "2:3",
+              "url": "https://s3-alpha.figma.com/assets/card.svg"
+            },
+            "children": [
+              {
+                "asset": {
+                  "node_id": "3:4",
+                  "url": "https://s3-alpha.figma.com/assets/click.png"
+                },
+                "children": [],
+                "dimensions": {},
+                "id": "3:4",
+                "kind": "text",
+                "layout": {
+                  "mode": "none"
+                },
+                "name": "Click me",
+                "node_type": "TEXT",
+                "opacity": 1.0,
+                "position": {
+                  "mode": "auto"
+                },
+                "prototype": {
+                  "interactions": [],
+                  "links": [
+                    {
+                      "kind": "url",
+                      "url": "https://example.com/click"
+                    }
+                  ]
+                },
+                "raw": {
+                  "boundVariables": {
+                    "fontSize": {
+                      "id": "1:40",
+                      "type": "VARIABLE_ALIAS"
+                    }
+                  },
+                  "characters": "Click me",
+                  "fills": [
+                    {
+                      "color": {
+                        "a": 1.0,
+                        "b": 0.1,
+                        "g": 0.4,
+                        "r": 0.9
+                      },
+                      "opacity": 1.0,
+                      "type": "SOLID",
+                      "visible": true
+                    }
+                  ],
+                  "id": "3:4",
+                  "name": "Click me",
+                  "style": {
+                    "fontFamily": "Inter",
+                    "fontPostScriptName": "Inter-Regular",
+                    "fontSize": 16,
+                    "fontWeight": 400,
+                    "hyperlink": {
+                      "type": "URL",
+                      "url": "https://example.com/click"
+                    },
+                    "letterSpacing": 0,
+                    "lineHeightPx": 24,
+                    "textCase": "ORIGINAL",
+                    "textDecoration": "NONE"
+                  },
+                  "type": "TEXT",
+                  "visible": true
+                },
+                "responsive": {},
+                "source": {
+                  "file_key": "abc123",
+                  "node_id": "3:4",
+                  "node_type": "TEXT",
+                  "path": [
+                    "0:0",
+                    "0:1",
+                    "2:3"
+                  ]
+                },
+                "style": {
+                  "blurs": [],
+                  "borders": [],
+                  "fills": [
+                    {
+                      "color": {
+                        "a": 1.0,
+                        "b": 0.1,
+                        "g": 0.4,
+                        "r": 0.9
+                      },
+                      "gradient_stops": [],
+                      "kind": "solid",
+                      "opacity": 1.0,
+                      "visible": true
+                    }
+                  ],
+                  "opacity": 1.0,
+                  "shadows": []
+                },
+                "text": {
+                  "characters": "Click me",
+                  "hyperlink": {
+                    "kind": "url",
+                    "url": "https://example.com/click"
+                  }
+                },
+                "tokens": {
+                  "bound_variables": {
+                    "fontSize": "1:40"
+                  },
+                  "refs": [
+                    {
+                      "kind": "variable",
+                      "property_name": "fontSize",
+                      "token_key": "1:40"
+                    }
+                  ],
+                  "style_refs": {}
+                },
+                "typography": {
+                  "font_family": "Inter",
+                  "font_postscript_name": "Inter-Regular",
+                  "font_size": 16.0,
+                  "font_weight": 400.0,
+                  "letter_spacing": 0.0,
+                  "line_height": 24.0,
+                  "text_case": "ORIGINAL",
+                  "text_decoration": "NONE",
+                  "token_refs": [
+                    "1:40"
+                  ]
+                },
+                "unknown": {},
+                "visible": true
+              },
+              {
+                "children": [
+                  {
+                    "children": [],
+                    "dimensions": {},
+                    "id": "5:6",
+                    "kind": "vector",
+                    "layout": {
+                      "mode": "none"
+                    },
+                    "name": "Arrow",
+                    "node_type": "VECTOR",
+                    "opacity": 1.0,
+                    "position": {
+                      "mode": "absolute"
+                    },
+                    "raw": {
+                      "fills": [
+                        {
+                          "color": {
+                            "a": 1.0,
+                            "b": 1.0,
+                            "g": 1.0,
+                            "r": 1.0
+                          },
+                          "opacity": 1.0,
+                          "type": "SOLID",
+                          "visible": true
+                        }
+                      ],
+                      "id": "5:6",
+                      "name": "Arrow",
+                      "opacity": 1.0,
+                      "type": "VECTOR",
+                      "visible": true
+                    },
+                    "responsive": {},
+                    "source": {
+                      "file_key": "abc123",
+                      "node_id": "5:6",
+                      "node_type": "VECTOR",
+                      "path": [
+                        "0:0",
+                        "0:1",
+                        "2:3",
+                        "4:5"
+                      ]
+                    },
+                    "style": {
+                      "blurs": [],
+                      "borders": [],
+                      "fills": [
+                        {
+                          "color": {
+                            "a": 1.0,
+                            "b": 1.0,
+                            "g": 1.0,
+                            "r": 1.0
+                          },
+                          "gradient_stops": [],
+                          "kind": "solid",
+                          "opacity": 1.0,
+                          "visible": true
+                        }
+                      ],
+                      "opacity": 1.0,
+                      "shadows": []
+                    },
+                    "unknown": {},
+                    "visible": true
+                  }
+                ],
+                "dimensions": {},
+                "id": "4:5",
+                "kind": "group",
+                "layout": {
+                  "mode": "none"
+                },
+                "name": "Icon Slot",
+                "node_type": "GROUP",
+                "opacity": 1.0,
+                "position": {
+                  "mode": "auto"
+                },
+                "raw": {
+                  "children": [
+                    {
+                      "fills": [
+                        {
+                          "color": {
+                            "a": 1.0,
+                            "b": 1.0,
+                            "g": 1.0,
+                            "r": 1.0
+                          },
+                          "opacity": 1.0,
+                          "type": "SOLID",
+                          "visible": true
+                        }
+                      ],
+                      "id": "5:6",
+                      "name": "Arrow",
+                      "opacity": 1.0,
+                      "type": "VECTOR",
+                      "visible": true
+                    }
+                  ],
+                  "constraints": {
+                    "horizontal": "SCALE",
+                    "vertical": "SCALE"
+                  },
+                  "id": "4:5",
+                  "name": "Icon Slot",
+                  "opacity": 1.0,
+                  "type": "GROUP",
+                  "visible": true
+                },
+                "responsive": {
+                  "constraints_horizontal": "SCALE",
+                  "constraints_vertical": "SCALE"
+                },
+                "source": {
+                  "file_key": "abc123",
+                  "node_id": "4:5",
+                  "node_type": "GROUP",
+                  "path": [
+                    "0:0",
+                    "0:1",
+                    "2:3"
+                  ]
+                },
+                "style": {
+                  "blurs": [],
+                  "borders": [],
+                  "fills": [],
+                  "opacity": 1.0,
+                  "shadows": []
+                },
+                "unknown": {},
+                "visible": true
+              }
+            ],
+            "dimensions": {
+              "height": 200.0,
+              "sizing_horizontal": "FIXED",
+              "sizing_vertical": "AUTO",
+              "width": 320.0
+            },
+            "id": "2:3",
+            "kind": "frame",
+            "layout": {
+              "align": "CENTER",
+              "direction": "column",
+              "gap": 8.0,
+              "justify": "CENTER",
+              "mode": "auto",
+              "padding": {
+                "bottom": 16.0,
+                "left": 16.0,
+                "right": 16.0,
+                "top": 16.0
+              },
+              "sizing_counter": "AUTO",
+              "sizing_primary": "FIXED"
+            },
+            "name": "Button Card",
+            "node_type": "FRAME",
+            "opacity": 1.0,
+            "position": {
+              "left": 0.0,
+              "mode": "absolute",
+              "top": 60.0,
+              "x": 0.0,
+              "y": 60.0
+            },
+            "raw": {
+              "absoluteBoundingBox": {
+                "height": 200,
+                "width": 320,
+                "x": 0,
+                "y": 60
+              },
+              "backgroundColor": {
+                "a": 1.0,
+                "b": 1.0,
+                "g": 1.0,
+                "r": 1.0
+              },
+              "boundVariables": {
+                "paddingLeft": {
+                  "id": "1:33",
+                  "type": "VARIABLE_ALIAS"
+                }
+              },
+              "children": [
+                {
+                  "boundVariables": {
+                    "fontSize": {
+                      "id": "1:40",
+                      "type": "VARIABLE_ALIAS"
+                    }
+                  },
+                  "characters": "Click me",
+                  "fills": [
+                    {
+                      "color": {
+                        "a": 1.0,
+                        "b": 0.1,
+                        "g": 0.4,
+                        "r": 0.9
+                      },
+                      "opacity": 1.0,
+                      "type": "SOLID",
+                      "visible": true
+                    }
+                  ],
+                  "id": "3:4",
+                  "name": "Click me",
+                  "style": {
+                    "fontFamily": "Inter",
+                    "fontPostScriptName": "Inter-Regular",
+                    "fontSize": 16,
+                    "fontWeight": 400,
+                    "hyperlink": {
+                      "type": "URL",
+                      "url": "https://example.com/click"
+                    },
+                    "letterSpacing": 0,
+                    "lineHeightPx": 24,
+                    "textCase": "ORIGINAL",
+                    "textDecoration": "NONE"
+                  },
+                  "type": "TEXT",
+                  "visible": true
+                },
+                {
+                  "children": [
+                    {
+                      "fills": [
+                        {
+                          "color": {
+                            "a": 1.0,
+                            "b": 1.0,
+                            "g": 1.0,
+                            "r": 1.0
+                          },
+                          "opacity": 1.0,
+                          "type": "SOLID",
+                          "visible": true
+                        }
+                      ],
+                      "id": "5:6",
+                      "name": "Arrow",
+                      "opacity": 1.0,
+                      "type": "VECTOR",
+                      "visible": true
+                    }
+                  ],
+                  "constraints": {
+                    "horizontal": "SCALE",
+                    "vertical": "SCALE"
+                  },
+                  "id": "4:5",
+                  "name": "Icon Slot",
+                  "opacity": 1.0,
+                  "type": "GROUP",
+                  "visible": true
+                }
+              ],
+              "constraints": {
+                "horizontal": "LEFT",
+                "vertical": "TOP"
+              },
+              "counterAxisAlignItems": "CENTER",
+              "counterAxisSizingMode": "AUTO",
+              "effects": [
+                {
+                  "color": {
+                    "a": 0.25,
+                    "b": 0,
+                    "g": 0,
+                    "r": 0
+                  },
+                  "offset": {
+                    "x": 0,
+                    "y": 4
+                  },
+                  "radius": 8,
+                  "spread": 0,
+                  "type": "DROP_SHADOW",
+                  "visible": true
+                }
+              ],
+              "fills": [
+                {
+                  "blendMode": "NORMAL",
+                  "color": {
+                    "a": 1.0,
+                    "b": 0.24,
+                    "g": 0.12,
+                    "r": 0.08
+                  },
+                  "opacity": 1.0,
+                  "type": "SOLID",
+                  "visible": true
+                }
+              ],
+              "id": "2:3",
+              "itemSpacing": 8,
+              "layoutMode": "VERTICAL",
+              "layoutSizingHorizontal": "FIXED",
+              "layoutSizingVertical": "AUTO",
+              "name": "Button Card",
+              "opacity": 1.0,
+              "paddingBottom": 16,
+              "paddingLeft": 16,
+              "paddingRight": 16,
+              "paddingTop": 16,
+              "primaryAxisAlignItems": "CENTER",
+              "primaryAxisSizingMode": "FIXED",
+              "strokes": [
+                {
+                  "color": {
+                    "a": 1.0,
+                    "b": 0.95,
+                    "g": 0.92,
+                    "r": 0.9
+                  },
+                  "opacity": 1.0,
+                  "type": "SOLID",
+                  "visible": true
+                }
+              ],
+              "type": "FRAME",
+              "visible": true
+            },
+            "responsive": {
+              "constraints_horizontal": "LEFT",
+              "constraints_vertical": "TOP",
+              "sizing_horizontal": "FIXED",
+              "sizing_vertical": "AUTO"
+            },
+            "source": {
+              "file_key": "abc123",
+              "node_id": "2:3",
+              "node_type": "FRAME",
+              "path": [
+                "0:0",
+                "0:1"
+              ]
+            },
+            "style": {
+              "blurs": [],
+              "borders": [
+                {
+                  "color": {
+                    "a": 1.0,
+                    "b": 0.95,
+                    "g": 0.92,
+                    "r": 0.9
+                  },
+                  "visible": true
+                }
+              ],
+              "fills": [
+                {
+                  "blend_mode": "NORMAL",
+                  "color": {
+                    "a": 1.0,
+                    "b": 0.24,
+                    "g": 0.12,
+                    "r": 0.08
+                  },
+                  "gradient_stops": [],
+                  "kind": "solid",
+                  "opacity": 1.0,
+                  "visible": true
+                }
+              ],
+              "opacity": 1.0,
+              "shadows": [
+                {
+                  "blur": 8.0,
+                  "color": {
+                    "a": 0.25,
+                    "b": 0.0,
+                    "g": 0.0,
+                    "r": 0.0
+                  },
+                  "kind": "drop",
+                  "spread": 0.0,
+                  "visible": true,
+                  "x": 0.0,
+                  "y": 4.0
+                }
+              ]
+            },
+            "tokens": {
+              "bound_variables": {
+                "paddingLeft": "1:33"
+              },
+              "refs": [
+                {
+                  "kind": "variable",
+                  "property_name": "paddingLeft",
+                  "token_key": "1:33"
+                }
+              ],
+              "style_refs": {}
+            },
+            "typography": {
+              "token_refs": []
+            },
+            "unknown": {
+              "backgroundColor": {
+                "a": 1.0,
+                "b": 1.0,
+                "g": 1.0,
+                "r": 1.0
+              }
+            },
+            "visible": true
+          }
+        ],
+        "dimensions": {},
+        "id": "0:1",
+        "kind": "page",
+        "layout": {
+          "mode": "none"
+        },
+        "name": "Buttons",
+        "node_type": "CANVAS",
+        "opacity": 1.0,
+        "position": {
+          "mode": "absolute"
+        },
+        "raw": {
+          "children": [
+            {
+              "absoluteBoundingBox": {
+                "height": 40,
+                "width": 120,
+                "x": 0,
+                "y": 0
+              },
+              "componentId": "1:100",
+              "constraints": {
+                "horizontal": "SCALE",
+                "vertical": "CENTER"
+              },
+              "id": "1:2",
+              "mainComponent": {
+                "id": "1:100",
+                "name": "Primary Button",
+                "type": "COMPONENT"
+              },
+              "name": "Primary Button",
+              "opacity": 0.9,
+              "type": "INSTANCE",
+              "visible": true
+            },
+            {
+              "absoluteBoundingBox": {
+                "height": 200,
+                "width": 320,
+                "x": 0,
+                "y": 60
+              },
+              "backgroundColor": {
+                "a": 1.0,
+                "b": 1.0,
+                "g": 1.0,
+                "r": 1.0
+              },
+              "boundVariables": {
+                "paddingLeft": {
+                  "id": "1:33",
+                  "type": "VARIABLE_ALIAS"
+                }
+              },
+              "children": [
+                {
+                  "boundVariables": {
+                    "fontSize": {
+                      "id": "1:40",
+                      "type": "VARIABLE_ALIAS"
+                    }
+                  },
+                  "characters": "Click me",
+                  "fills": [
+                    {
+                      "color": {
+                        "a": 1.0,
+                        "b": 0.1,
+                        "g": 0.4,
+                        "r": 0.9
+                      },
+                      "opacity": 1.0,
+                      "type": "SOLID",
+                      "visible": true
+                    }
+                  ],
+                  "id": "3:4",
+                  "name": "Click me",
+                  "style": {
+                    "fontFamily": "Inter",
+                    "fontPostScriptName": "Inter-Regular",
+                    "fontSize": 16,
+                    "fontWeight": 400,
+                    "hyperlink": {
+                      "type": "URL",
+                      "url": "https://example.com/click"
+                    },
+                    "letterSpacing": 0,
+                    "lineHeightPx": 24,
+                    "textCase": "ORIGINAL",
+                    "textDecoration": "NONE"
+                  },
+                  "type": "TEXT",
+                  "visible": true
+                },
+                {
+                  "children": [
+                    {
+                      "fills": [
+                        {
+                          "color": {
+                            "a": 1.0,
+                            "b": 1.0,
+                            "g": 1.0,
+                            "r": 1.0
+                          },
+                          "opacity": 1.0,
+                          "type": "SOLID",
+                          "visible": true
+                        }
+                      ],
+                      "id": "5:6",
+                      "name": "Arrow",
+                      "opacity": 1.0,
+                      "type": "VECTOR",
+                      "visible": true
+                    }
+                  ],
+                  "constraints": {
+                    "horizontal": "SCALE",
+                    "vertical": "SCALE"
+                  },
+                  "id": "4:5",
+                  "name": "Icon Slot",
+                  "opacity": 1.0,
+                  "type": "GROUP",
+                  "visible": true
+                }
+              ],
+              "constraints": {
+                "horizontal": "LEFT",
+                "vertical": "TOP"
+              },
+              "counterAxisAlignItems": "CENTER",
+              "counterAxisSizingMode": "AUTO",
+              "effects": [
+                {
+                  "color": {
+                    "a": 0.25,
+                    "b": 0,
+                    "g": 0,
+                    "r": 0
+                  },
+                  "offset": {
+                    "x": 0,
+                    "y": 4
+                  },
+                  "radius": 8,
+                  "spread": 0,
+                  "type": "DROP_SHADOW",
+                  "visible": true
+                }
+              ],
+              "fills": [
+                {
+                  "blendMode": "NORMAL",
+                  "color": {
+                    "a": 1.0,
+                    "b": 0.24,
+                    "g": 0.12,
+                    "r": 0.08
+                  },
+                  "opacity": 1.0,
+                  "type": "SOLID",
+                  "visible": true
+                }
+              ],
+              "id": "2:3",
+              "itemSpacing": 8,
+              "layoutMode": "VERTICAL",
+              "layoutSizingHorizontal": "FIXED",
+              "layoutSizingVertical": "AUTO",
+              "name": "Button Card",
+              "opacity": 1.0,
+              "paddingBottom": 16,
+              "paddingLeft": 16,
+              "paddingRight": 16,
+              "paddingTop": 16,
+              "primaryAxisAlignItems": "CENTER",
+              "primaryAxisSizingMode": "FIXED",
+              "strokes": [
+                {
+                  "color": {
+                    "a": 1.0,
+                    "b": 0.95,
+                    "g": 0.92,
+                    "r": 0.9
+                  },
+                  "opacity": 1.0,
+                  "type": "SOLID",
+                  "visible": true
+                }
+              ],
+              "type": "FRAME",
+              "visible": true
+            }
+          ],
+          "id": "0:1",
+          "name": "Buttons",
+          "type": "CANVAS",
+          "visible": true
+        },
+        "responsive": {},
+        "source": {
+          "file_key": "abc123",
+          "node_id": "0:1",
+          "node_type": "CANVAS",
+          "path": [
+            "0:0"
+          ]
+        },
+        "style": {
+          "blurs": [],
+          "borders": [],
+          "fills": [],
+          "opacity": 1.0,
+          "shadows": []
+        },
+        "unknown": {},
+        "visible": true
+      },
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "annotations": {
+                      "annotation": "The default call-to-action label.",
+                      "developer_metadata": {}
+                    },
+                    "children": [],
+                    "dimensions": {},
+                    "id": "8:10",
+                    "kind": "text",
+                    "layout": {
+                      "mode": "none"
+                    },
+                    "name": "Primary Text",
+                    "node_type": "TEXT",
+                    "opacity": 1.0,
+                    "position": {
+                      "mode": "absolute"
+                    },
+                    "raw": {
+                      "annotation": "The default call-to-action label.",
+                      "characters": "Primary",
+                      "id": "8:10",
+                      "name": "Primary Text",
+                      "style": {
+                        "fontFamily": "Inter",
+                        "fontPostScriptName": "Inter-Medium",
+                        "fontSize": 14,
+                        "fontWeight": 500,
+                        "letterSpacing": 0,
+                        "lineHeightPx": 20,
+                        "textCase": "UPPER",
+                        "textDecoration": "NONE"
+                      },
+                      "type": "TEXT",
+                      "visible": true
+                    },
+                    "responsive": {},
+                    "source": {
+                      "file_key": "abc123",
+                      "node_id": "8:10",
+                      "node_type": "TEXT",
+                      "path": [
+                        "0:0",
+                        "0:7",
+                        "6:8",
+                        "7:9"
+                      ]
+                    },
+                    "style": {
+                      "blurs": [],
+                      "borders": [],
+                      "fills": [],
+                      "opacity": 1.0,
+                      "shadows": []
+                    },
+                    "text": {
+                      "characters": "Primary"
+                    },
+                    "typography": {
+                      "font_family": "Inter",
+                      "font_postscript_name": "Inter-Medium",
+                      "font_size": 14.0,
+                      "font_weight": 500.0,
+                      "letter_spacing": 0.0,
+                      "line_height": 20.0,
+                      "text_case": "UPPER",
+                      "text_decoration": "NONE",
+                      "token_refs": []
+                    },
+                    "unknown": {},
+                    "visible": true
+                  }
+                ],
+                "component": {
+                  "description": "",
+                  "documentation_links": [],
+                  "kind": "component",
+                  "name": "Primary",
+                  "node_id": "7:9"
+                },
+                "dimensions": {},
+                "id": "7:9",
+                "kind": "component",
+                "layout": {
+                  "mode": "none"
+                },
+                "name": "Primary",
+                "node_type": "COMPONENT",
+                "opacity": 1.0,
+                "position": {
+                  "mode": "absolute"
+                },
+                "prototype": {
+                  "interactions": [],
+                  "links": [],
+                  "url": "https://www.figma.com/design/demo/primary"
+                },
+                "raw": {
+                  "children": [
+                    {
+                      "annotation": "The default call-to-action label.",
+                      "characters": "Primary",
+                      "id": "8:10",
+                      "name": "Primary Text",
+                      "style": {
+                        "fontFamily": "Inter",
+                        "fontPostScriptName": "Inter-Medium",
+                        "fontSize": 14,
+                        "fontWeight": 500,
+                        "letterSpacing": 0,
+                        "lineHeightPx": 20,
+                        "textCase": "UPPER",
+                        "textDecoration": "NONE"
+                      },
+                      "type": "TEXT",
+                      "visible": true
+                    }
+                  ],
+                  "id": "7:9",
+                  "name": "Primary",
+                  "opacity": 1.0,
+                  "type": "COMPONENT",
+                  "url": "https://www.figma.com/design/demo/primary",
+                  "visible": true
+                },
+                "responsive": {},
+                "source": {
+                  "file_key": "abc123",
+                  "node_id": "7:9",
+                  "node_type": "COMPONENT",
+                  "path": [
+                    "0:0",
+                    "0:7",
+                    "6:8"
+                  ]
+                },
+                "style": {
+                  "blurs": [],
+                  "borders": [],
+                  "fills": [],
+                  "opacity": 1.0,
+                  "shadows": []
+                },
+                "unknown": {},
+                "visible": true
+              }
+            ],
+            "component": {
+              "description": "",
+              "documentation_links": [],
+              "kind": "component_set",
+              "name": "Button Set",
+              "node_id": "6:8"
+            },
+            "dimensions": {},
+            "id": "6:8",
+            "kind": "component_set",
+            "layout": {
+              "mode": "none"
+            },
+            "name": "Button Set",
+            "node_type": "COMPONENT_SET",
+            "opacity": 1.0,
+            "position": {
+              "mode": "absolute"
+            },
+            "raw": {
+              "children": [
+                {
+                  "children": [
+                    {
+                      "annotation": "The default call-to-action label.",
+                      "characters": "Primary",
+                      "id": "8:10",
+                      "name": "Primary Text",
+                      "style": {
+                        "fontFamily": "Inter",
+                        "fontPostScriptName": "Inter-Medium",
+                        "fontSize": 14,
+                        "fontWeight": 500,
+                        "letterSpacing": 0,
+                        "lineHeightPx": 20,
+                        "textCase": "UPPER",
+                        "textDecoration": "NONE"
+                      },
+                      "type": "TEXT",
+                      "visible": true
+                    }
+                  ],
+                  "id": "7:9",
+                  "name": "Primary",
+                  "opacity": 1.0,
+                  "type": "COMPONENT",
+                  "url": "https://www.figma.com/design/demo/primary",
+                  "visible": true
+                }
+              ],
+              "id": "6:8",
+              "name": "Button Set",
+              "opacity": 1.0,
+              "type": "COMPONENT_SET",
+              "visible": true
+            },
+            "responsive": {},
+            "source": {
+              "file_key": "abc123",
+              "node_id": "6:8",
+              "node_type": "COMPONENT_SET",
+              "path": [
+                "0:0",
+                "0:7"
+              ]
+            },
+            "style": {
+              "blurs": [],
+              "borders": [],
+              "fills": [],
+              "opacity": 1.0,
+              "shadows": []
+            },
+            "unknown": {},
+            "visible": true
+          }
+        ],
+        "dimensions": {},
+        "id": "0:7",
+        "kind": "page",
+        "layout": {
+          "mode": "none"
+        },
+        "name": "Fundamentals",
+        "node_type": "CANVAS",
+        "opacity": 1.0,
+        "position": {
+          "mode": "absolute"
+        },
+        "raw": {
+          "children": [
+            {
+              "children": [
+                {
+                  "children": [
+                    {
+                      "annotation": "The default call-to-action label.",
+                      "characters": "Primary",
+                      "id": "8:10",
+                      "name": "Primary Text",
+                      "style": {
+                        "fontFamily": "Inter",
+                        "fontPostScriptName": "Inter-Medium",
+                        "fontSize": 14,
+                        "fontWeight": 500,
+                        "letterSpacing": 0,
+                        "lineHeightPx": 20,
+                        "textCase": "UPPER",
+                        "textDecoration": "NONE"
+                      },
+                      "type": "TEXT",
+                      "visible": true
+                    }
+                  ],
+                  "id": "7:9",
+                  "name": "Primary",
+                  "opacity": 1.0,
+                  "type": "COMPONENT",
+                  "url": "https://www.figma.com/design/demo/primary",
+                  "visible": true
+                }
+              ],
+              "id": "6:8",
+              "name": "Button Set",
+              "opacity": 1.0,
+              "type": "COMPONENT_SET",
+              "visible": true
+            }
+          ],
+          "id": "0:7",
+          "name": "Fundamentals",
+          "type": "CANVAS",
+          "visible": true
+        },
+        "responsive": {},
+        "source": {
+          "file_key": "abc123",
+          "node_id": "0:7",
+          "node_type": "CANVAS",
+          "path": [
+            "0:0"
+          ]
+        },
+        "style": {
+          "blurs": [],
+          "borders": [],
+          "fills": [],
+          "opacity": 1.0,
+          "shadows": []
+        },
+        "unknown": {},
+        "visible": true
+      }
+    ],
+    "dimensions": {},
+    "id": "0:0",
+    "kind": "document",
+    "layout": {
+      "mode": "none"
+    },
+    "name": "Document",
+    "node_type": "DOCUMENT",
+    "opacity": 1.0,
+    "position": {
+      "mode": "absolute"
+    },
+    "raw": {
+      "children": [
+        {
+          "children": [
+            {
+              "absoluteBoundingBox": {
+                "height": 40,
+                "width": 120,
+                "x": 0,
+                "y": 0
+              },
+              "componentId": "1:100",
+              "constraints": {
+                "horizontal": "SCALE",
+                "vertical": "CENTER"
+              },
+              "id": "1:2",
+              "mainComponent": {
+                "id": "1:100",
+                "name": "Primary Button",
+                "type": "COMPONENT"
+              },
+              "name": "Primary Button",
+              "opacity": 0.9,
+              "type": "INSTANCE",
+              "visible": true
+            },
+            {
+              "absoluteBoundingBox": {
+                "height": 200,
+                "width": 320,
+                "x": 0,
+                "y": 60
+              },
+              "backgroundColor": {
+                "a": 1.0,
+                "b": 1.0,
+                "g": 1.0,
+                "r": 1.0
+              },
+              "boundVariables": {
+                "paddingLeft": {
+                  "id": "1:33",
+                  "type": "VARIABLE_ALIAS"
+                }
+              },
+              "children": [
+                {
+                  "boundVariables": {
+                    "fontSize": {
+                      "id": "1:40",
+                      "type": "VARIABLE_ALIAS"
+                    }
+                  },
+                  "characters": "Click me",
+                  "fills": [
+                    {
+                      "color": {
+                        "a": 1.0,
+                        "b": 0.1,
+                        "g": 0.4,
+                        "r": 0.9
+                      },
+                      "opacity": 1.0,
+                      "type": "SOLID",
+                      "visible": true
+                    }
+                  ],
+                  "id": "3:4",
+                  "name": "Click me",
+                  "style": {
+                    "fontFamily": "Inter",
+                    "fontPostScriptName": "Inter-Regular",
+                    "fontSize": 16,
+                    "fontWeight": 400,
+                    "hyperlink": {
+                      "type": "URL",
+                      "url": "https://example.com/click"
+                    },
+                    "letterSpacing": 0,
+                    "lineHeightPx": 24,
+                    "textCase": "ORIGINAL",
+                    "textDecoration": "NONE"
+                  },
+                  "type": "TEXT",
+                  "visible": true
+                },
+                {
+                  "children": [
+                    {
+                      "fills": [
+                        {
+                          "color": {
+                            "a": 1.0,
+                            "b": 1.0,
+                            "g": 1.0,
+                            "r": 1.0
+                          },
+                          "opacity": 1.0,
+                          "type": "SOLID",
+                          "visible": true
+                        }
+                      ],
+                      "id": "5:6",
+                      "name": "Arrow",
+                      "opacity": 1.0,
+                      "type": "VECTOR",
+                      "visible": true
+                    }
+                  ],
+                  "constraints": {
+                    "horizontal": "SCALE",
+                    "vertical": "SCALE"
+                  },
+                  "id": "4:5",
+                  "name": "Icon Slot",
+                  "opacity": 1.0,
+                  "type": "GROUP",
+                  "visible": true
+                }
+              ],
+              "constraints": {
+                "horizontal": "LEFT",
+                "vertical": "TOP"
+              },
+              "counterAxisAlignItems": "CENTER",
+              "counterAxisSizingMode": "AUTO",
+              "effects": [
+                {
+                  "color": {
+                    "a": 0.25,
+                    "b": 0,
+                    "g": 0,
+                    "r": 0
+                  },
+                  "offset": {
+                    "x": 0,
+                    "y": 4
+                  },
+                  "radius": 8,
+                  "spread": 0,
+                  "type": "DROP_SHADOW",
+                  "visible": true
+                }
+              ],
+              "fills": [
+                {
+                  "blendMode": "NORMAL",
+                  "color": {
+                    "a": 1.0,
+                    "b": 0.24,
+                    "g": 0.12,
+                    "r": 0.08
+                  },
+                  "opacity": 1.0,
+                  "type": "SOLID",
+                  "visible": true
+                }
+              ],
+              "id": "2:3",
+              "itemSpacing": 8,
+              "layoutMode": "VERTICAL",
+              "layoutSizingHorizontal": "FIXED",
+              "layoutSizingVertical": "AUTO",
+              "name": "Button Card",
+              "opacity": 1.0,
+              "paddingBottom": 16,
+              "paddingLeft": 16,
+              "paddingRight": 16,
+              "paddingTop": 16,
+              "primaryAxisAlignItems": "CENTER",
+              "primaryAxisSizingMode": "FIXED",
+              "strokes": [
+                {
+                  "color": {
+                    "a": 1.0,
+                    "b": 0.95,
+                    "g": 0.92,
+                    "r": 0.9
+                  },
+                  "opacity": 1.0,
+                  "type": "SOLID",
+                  "visible": true
+                }
+              ],
+              "type": "FRAME",
+              "visible": true
+            }
+          ],
+          "id": "0:1",
+          "name": "Buttons",
+          "type": "CANVAS",
+          "visible": true
+        },
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "children": [
+                    {
+                      "annotation": "The default call-to-action label.",
+                      "characters": "Primary",
+                      "id": "8:10",
+                      "name": "Primary Text",
+                      "style": {
+                        "fontFamily": "Inter",
+                        "fontPostScriptName": "Inter-Medium",
+                        "fontSize": 14,
+                        "fontWeight": 500,
+                        "letterSpacing": 0,
+                        "lineHeightPx": 20,
+                        "textCase": "UPPER",
+                        "textDecoration": "NONE"
+                      },
+                      "type": "TEXT",
+                      "visible": true
+                    }
+                  ],
+                  "id": "7:9",
+                  "name": "Primary",
+                  "opacity": 1.0,
+                  "type": "COMPONENT",
+                  "url": "https://www.figma.com/design/demo/primary",
+                  "visible": true
+                }
+              ],
+              "id": "6:8",
+              "name": "Button Set",
+              "opacity": 1.0,
+              "type": "COMPONENT_SET",
+              "visible": true
+            }
+          ],
+          "id": "0:7",
+          "name": "Fundamentals",
+          "type": "CANVAS",
+          "visible": true
+        }
+      ],
+      "id": "0:0",
+      "name": "Document",
+      "type": "DOCUMENT"
+    },
+    "responsive": {},
+    "source": {
+      "file_key": "abc123",
+      "node_id": "0:0",
+      "node_type": "DOCUMENT",
+      "path": []
+    },
+    "style": {
+      "blurs": [],
+      "borders": [],
+      "fills": [],
+      "opacity": 1.0,
+      "shadows": []
+    },
+    "unknown": {},
+    "visible": true
+  },
+  "schema_version": 1,
+  "source": {
+    "file_key": "abc123",
+    "node_id": "0:0",
+    "node_type": "DOCUMENT",
+    "path": []
+  },
+  "styles": {
+    "S:1": {
+      "description": "Brand primary",
+      "key": "S:1",
+      "kind": "style",
+      "name": "Primary Fill",
+      "token_type": "FILL"
+    },
+    "S:2": {
+      "description": "Body copy",
+      "key": "S:2",
+      "kind": "style",
+      "name": "Body Text",
+      "token_type": "TEXT"
+    }
+  },
+  "unknown": {},
+  "variables": {
+    "1:33": {
+      "description": "",
+      "key": "1:33",
+      "kind": "variable",
+      "name": "Space / 4",
+      "resolved_type": "FLOAT",
+      "token_type": "FLOAT",
+      "value": 16.0
+    },
+    "1:40": {
+      "description": "",
+      "key": "1:40",
+      "kind": "variable",
+      "name": "Type / Button",
+      "resolved_type": "FLOAT",
+      "token_type": "FLOAT",
+      "value": 16.0
+    }
+  }
+}

@@ -1,0 +1,213 @@
+{
+  "name": "FigmaForge Demo — Button System",
+  "role": "owner",
+  "editorType": "figma",
+  "lastModified": "2026-08-01T12:00:00.000Z",
+  "thumbnailUrl": "https://s3-alpha.figma.com/thumbnails/demo/thumb.png",
+  "version": "1234567890",
+  "schemaVersion": 0,
+  "document": {
+    "id": "0:0",
+    "name": "Document",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "name": "Buttons",
+        "type": "CANVAS",
+        "visible": true,
+        "children": [
+          {
+            "id": "1:2",
+            "name": "Primary Button",
+            "type": "INSTANCE",
+            "visible": true,
+            "opacity": 0.9,
+            "componentId": "1:100",
+            "mainComponent": {"id": "1:100", "type": "COMPONENT", "name": "Primary Button"},
+            "absoluteBoundingBox": {"x": 0, "y": 0, "width": 120, "height": 40},
+            "constraints": {"vertical": "CENTER", "horizontal": "SCALE"}
+          },
+          {
+            "id": "2:3",
+            "name": "Button Card",
+            "type": "FRAME",
+            "visible": true,
+            "opacity": 1.0,
+            "absoluteBoundingBox": {"x": 0, "y": 60, "width": 320, "height": 200},
+            "constraints": {"vertical": "TOP", "horizontal": "LEFT"},
+            "backgroundColor": {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0},
+            "fills": [
+              {
+                "type": "SOLID",
+                "visible": true,
+                "opacity": 1.0,
+                "color": {"r": 0.08, "g": 0.12, "b": 0.24, "a": 1.0},
+                "blendMode": "NORMAL"
+              }
+            ],
+            "strokes": [
+              {
+                "type": "SOLID",
+                "visible": true,
+                "opacity": 1.0,
+                "color": {"r": 0.9, "g": 0.92, "b": 0.95, "a": 1.0}
+              }
+            ],
+            "effects": [
+              {
+                "type": "DROP_SHADOW",
+                "visible": true,
+                "radius": 8,
+                "spread": 0,
+                "color": {"r": 0, "g": 0, "b": 0, "a": 0.25},
+                "offset": {"x": 0, "y": 4}
+              }
+            ],
+            "layoutMode": "VERTICAL",
+            "layoutSizingHorizontal": "FIXED",
+            "layoutSizingVertical": "AUTO",
+            "primaryAxisAlignItems": "CENTER",
+            "counterAxisAlignItems": "CENTER",
+            "primaryAxisSizingMode": "FIXED",
+            "counterAxisSizingMode": "AUTO",
+            "paddingTop": 16,
+            "paddingRight": 16,
+            "paddingBottom": 16,
+            "paddingLeft": 16,
+            "itemSpacing": 8,
+            "boundVariables": {"paddingLeft": {"type": "VARIABLE_ALIAS", "id": "1:33"}},
+            "children": [
+              {
+                "id": "3:4",
+                "name": "Click me",
+                "type": "TEXT",
+                "visible": true,
+                "characters": "Click me",
+                "style": {
+                  "fontFamily": "Inter",
+                  "fontPostScriptName": "Inter-Regular",
+                  "fontWeight": 400,
+                  "fontSize": 16,
+                  "lineHeightPx": 24,
+                  "letterSpacing": 0,
+                  "textCase": "ORIGINAL",
+                  "textDecoration": "NONE",
+                  "hyperlink": {"type": "URL", "url": "https://example.com/click"}
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "opacity": 1.0,
+                    "color": {"r": 0.9, "g": 0.4, "b": 0.1, "a": 1.0}
+                  }
+                ],
+                "boundVariables": {
+                  "fontSize": {"type": "VARIABLE_ALIAS", "id": "1:40"}
+                }
+              },
+              {
+                "id": "4:5",
+                "name": "Icon Slot",
+                "type": "GROUP",
+                "visible": true,
+                "opacity": 1.0,
+                "constraints": {"vertical": "SCALE", "horizontal": "SCALE"},
+                "children": [
+                  {
+                    "id": "5:6",
+                    "name": "Arrow",
+                    "type": "VECTOR",
+                    "visible": true,
+                    "opacity": 1.0,
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "opacity": 1.0,
+                        "color": {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "0:7",
+        "name": "Fundamentals",
+        "type": "CANVAS",
+        "visible": true,
+        "children": [
+          {
+            "id": "6:8",
+            "name": "Button Set",
+            "type": "COMPONENT_SET",
+            "visible": true,
+            "opacity": 1.0,
+            "children": [
+              {
+                "id": "7:9",
+                "name": "Primary",
+                "type": "COMPONENT",
+                "visible": true,
+                "opacity": 1.0,
+                "url": "https://www.figma.com/design/demo/primary",
+                "children": [
+                  {
+                    "id": "8:10",
+                    "name": "Primary Text",
+                    "type": "TEXT",
+                    "visible": true,
+                    "characters": "Primary",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontPostScriptName": "Inter-Medium",
+                      "fontWeight": 500,
+                      "fontSize": 14,
+                      "lineHeightPx": 20,
+                      "letterSpacing": 0,
+                      "textCase": "UPPER",
+                      "textDecoration": "NONE"
+                    },
+                    "annotation": "The default call-to-action label."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "components": {
+    "1:100": {
+      "key": "1:100",
+      "name": "Primary Button",
+      "type": "COMPONENT",
+      "description": "Primary action button",
+      "documentationLinks": [
+        {"name": "Docs", "url": "https://example.com/docs/primary-button"}
+      ]
+    }
+  },
+  "componentSets": {
+    "1:101": {
+      "key": "1:101",
+      "name": "Button Set",
+      "type": "COMPONENT_SET",
+      "description": "All button variants"
+    }
+  },
+  "styles": {
+    "S:1": {"key": "S:1", "name": "Primary Fill", "styleType": "FILL", "description": "Brand primary"},
+    "S:2": {"key": "S:2", "name": "Body Text", "styleType": "TEXT", "description": "Body copy"}
+  },
+  "variables": {
+    "1:33": {"id": "1:33", "name": "Space / 4", "resolvedType": "FLOAT", "resolvedValue": 16.0},
+    "1:40": {"id": "1:40", "name": "Type / Button", "resolvedType": "FLOAT", "resolvedValue": 16.0}
+  }
+}

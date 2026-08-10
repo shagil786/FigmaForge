@@ -1,0 +1,95 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Repository Detection Result",
+  "description": "Structured assessment of a repository's stack and characteristics",
+  "type": "object",
+  "required": ["status", "root", "languages", "package_managers", "frameworks", "test_commands", "build_commands", "lsp_candidates", "confidence", "evidence"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["unclassified", "classified"],
+      "description": "Whether the repository has been classified by language/module detection"
+    },
+    "root": {
+      "type": "string",
+      "description": "Repository root path"
+    },
+    "languages": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["javascript", "typescript", "python", "go", "rust", "java", "kotlin", "csharp", "php", "ruby", "swift", "c", "cpp", "lua", "shell", "sql", "haskell", "elixir", "r", "matlab"]
+      },
+      "description": "Detected programming languages"
+    },
+    "package_managers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["npm", "pnpm", "yarn", "bun", "pip", "poetry", "uv", "go", "cargo", "composer", "gem", "mix", "npm", "pnpm", "yarn"]
+      },
+      "description": "Package managers detected"
+    },
+    "frameworks": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Framework/library detection (React, Express, FastAPI, etc.)"
+    },
+    "test_commands": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Test runner commands from configuration"
+    },
+    "build_commands": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Build system commands from configuration"
+    },
+    "lsp_candidates": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Available language server binaries on PATH (for reference, not auto-activation)"
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Overall detection confidence score (0.0 to 1.0)"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of file paths/matches that contributed to detection"
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Warnings about ambiguous or weak signals"
+    }
+  },
+  "example": {
+    "status": "classified",
+    "root": "/path/to/repo",
+    "languages": ["typescript", "python"],
+    "package_managers": ["pnpm", "poetry"],
+    "frameworks": ["react", "fastapi"],
+    "test_commands": ["test"],
+    "build_commands": ["vite build", "uvicorn"],
+    "lsp_candidates": ["typescript-language-server", "pyright-langserver"],
+    "confidence": 0.75,
+    "evidence": ["package.json exists", "pyproject.toml exists", "src/ has 10 .ts files"],
+    "warnings": []
+  }
+}

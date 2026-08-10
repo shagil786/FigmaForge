@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Custom LSP Server Template",
+  "description": "Template for custom .lsp.json configuration (for unsupported languages only)",
+  "template": {
+    "name": "custom-language-server",
+    "languages": ["language-code"],
+    "type": "stdio",
+    "command": "language-server-binary",
+    "args": ["--stdio"],
+    "settings": {
+      "exampleSetting": "example-value"
+    }
+  }
+}

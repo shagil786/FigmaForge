@@ -1,0 +1,84 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Official LSP Plugin Matrix",
+  "description": "Mapping of languages to official Claude Code LSP plugins and required binaries",
+  "plugins": [
+    {
+      "language": "C/C++",
+      "plugin": "clangd-lsp",
+      "binary": "clangd",
+      "command": "claude mcp install clangd-lsp",
+      "scope": "local"
+    },
+    {
+      "language": "C#",
+      "plugin": "csharp-lsp",
+      "binary": "csharp-ls",
+      "command": "claude mcp install csharp-lsp",
+      "scope": "local"
+    },
+    {
+      "language": "Go",
+      "plugin": "gopls-lsp",
+      "binary": "gopls",
+      "command": "claude mcp install gopls-lsp",
+      "scope": "local"
+    },
+    {
+      "language": "Java",
+      "plugin": "jdtls-lsp",
+      "binary": "jdtls",
+      "command": "claude mcp install jdtls-lsp",
+      "scope": "local"
+    },
+    {
+      "language": "Kotlin",
+      "plugin": "kotlin-lsp",
+      "binary": "kotlin-language-server",
+      "command": "claude mcp install kotlin-lsp",
+      "scope": "local"
+    },
+    {
+      "language": "Lua",
+      "plugin": "lua-lsp",
+      "binary": "lua-language-server",
+      "command": "claude mcp install lua-lsp",
+      "scope": "local"
+    },
+    {
+      "language": "PHP",
+      "plugin": "php-lsp",
+      "binary": "intelephense",
+      "command": "claude mcp install php-lsp",
+      "scope": "local"
+    },
+    {
+      "language": "Python",
+      "plugin": "pyright-lsp",
+      "binary": "pyright-langserver",
+      "command": "claude mcp install pyright-lsp",
+      "scope": "local"
+    },
+    {
+      "language": "Rust",
+      "plugin": "rust-analyzer-lsp",
+      "binary": "rust-analyzer",
+      "command": "claude mcp install rust-analyzer-lsp",
+      "scope": "local"
+    },
+    {
+      "language": "Swift",
+      "plugin": "swift-lsp",
+      "binary": "sourcekit-lsp",
+      "command": "claude mcp install swift-lsp",
+      "scope": "local"
+    },
+    {
+      "language": "TypeScript",
+      "plugin": "typescript-lsp",
+      "binary": "typescript-language-server",
+      "command": "claude mcp install typescript-lsp",
+      "scope": "local"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "Test File",
+  "document": {
+    "id": "1:0",
+    "name": "Page 1",
+    "type": "CANVAS",
+    "children": [
+      {
+        "id": "1:1",
+        "name": "Frame 1",
+        "type": "FRAME",
+        "absoluteBoundingBox": {"x": 0, "y": 0, "width": 100, "height": 100}
+      }
+    ]
+  }
+}

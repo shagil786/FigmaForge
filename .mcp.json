@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "pinchtab": {
+      "type": "stdio",
+      "command": "pinchtab",
+      "args": [
+        "mcp"
+      ],
+      "env": {}
+    }
+  }
+}

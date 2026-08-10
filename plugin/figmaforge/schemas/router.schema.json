@@ -1,0 +1,97 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Router Result",
+  "description": "Role selection and execution mode based on request and repository evidence",
+  "type": "object",
+  "required": ["phases", "roles", "external_skills", "execution_mode", "stack_status", "approval_gates", "unloaded_modules"],
+  "properties": {
+    "phases": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["intake", "discover", "define", "design", "plan", "implement", "verify", "release", "operate", "learn"]
+      },
+      "description": "Selected lifecycle phases for the request"
+    },
+    "roles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "domain", "score", "reason"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Role catalog ID"
+          },
+          "title": {
+            "type": "string",
+            "description": "Human-readable role title"
+          },
+          "domain": {
+            "type": "string",
+            "description": "Domain name (discovery, architecture, application, etc.)"
+          },
+          "score": {
+            "type": "number",
+            "description": "Score used for role selection"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why this role was selected"
+          }
+        }
+      },
+      "maxItems": 3,
+      "description": "Up to 3 selected roles"
+    },
+    "external_skills": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Installed plugin skills to invoke (from engineering-skills, product-skills, etc.)"
+    },
+    "execution_mode": {
+      "type": "string",
+      "enum": ["direct", "isolated_scout", "isolated_planner", "fresh_verifier"],
+      "description": "How to execute the request"
+    },
+    "stack_status": {
+      "type": "string",
+      "enum": ["unclassified", "classified"],
+      "description": "Repository classification status"
+    },
+    "approval_gates": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["external_mutation", "stack_selection", "language_activation", "project_approval"]
+      },
+      "description": "Gates that require explicit approval"
+    },
+    "unloaded_modules": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Language modules that are not loaded due to absence of evidence"
+    }
+  },
+  "example": {
+    "phases": ["define", "design", "plan"],
+    "roles": [
+      {
+        "id": "requirements-architect",
+        "title": "Requirements Architect",
+        "domain": "architecture",
+        "score": 9,
+        "reason": "Explicit trigger 'requirements' matches role; repository signals favor architecture domain"
+      }
+    ],
+    "external_skills": ["engineering-skills:senior-security"],
+    "execution_mode": "direct",
+    "stack_status": "classified",
+    "approval_gates": ["external_mutation"],
+    "unloaded_modules": ["python", "go"]
+  }
+}
