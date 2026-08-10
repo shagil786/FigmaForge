@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "description": "The project's existing component library. The resolution layer maps Figma components onto these and PREFERS them over creating new components.",
+  "components": [
+    {
+      "id": "button",
+      "name": "Button",
+      "kind": "component",
+      "aliases": ["primary-button", "secondary-button"],
+      "source": "src/components/Button.tsx",
+      "props": ["label", "variant", "size", "disabled"]
+    },
+    {
+      "id": "button-set",
+      "name": "ButtonSet",
+      "kind": "component_set",
+      "aliases": ["button-set", "button group"],
+      "source": "src/components/ButtonSet.tsx",
+      "props": ["size", "orientation"]
+    },
+    {
+      "id": "card",
+      "name": "Card",
+      "kind": "component",
+      "aliases": [],
+      "source": "src/components/Card.tsx",
+      "props": ["title", "footer", "padding"]
+    },
+    {
+      "id": "card-container",
+      "name": "CardContainer",
+      "kind": "component",
+      "aliases": ["card"],
+      "source": "src/components/CardContainer.tsx",
+      "props": ["layout"]
+    },
+    {
+      "id": "icon-slot",
+      "name": "IconSlot",
+      "kind": "component",
+      "aliases": ["icon-slot", "icon"],
+      "source": "src/components/IconSlot.tsx",
+      "props": ["icon", "size"]
+    }
+  ]
+}
