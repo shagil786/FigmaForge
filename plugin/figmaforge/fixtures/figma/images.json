@@ -1,0 +1,13 @@
+{
+  "err": null,
+  "images": {
+    "3:4": "https://s3-alpha.figma.com/assets/click.png",
+    "2:3": "https://s3-alpha.figma.com/assets/card.svg"
+  },
+  "meta": {
+    "images": {
+      "3:4": "https://s3-alpha.figma.com/assets/click.png",
+      "2:3": "https://s3-alpha.figma.com/assets/card.svg"
+    }
+  }
+}
