@@ -1,0 +1,106 @@
+{
+  "name": "FigmaForge Layout — Desktop 1440",
+  "role": "owner",
+  "editorType": "figma",
+  "version": "1440000001",
+  "document": {
+    "id": "0:0",
+    "name": "Document",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "name": "Desktop",
+        "type": "CANVAS",
+        "visible": true,
+        "children": [
+          {
+            "id": "d:1",
+            "name": "Desktop 1440",
+            "type": "FRAME",
+            "visible": true,
+            "opacity": 1.0,
+            "absoluteBoundingBox": { "x": 0, "y": 0, "width": 1440, "height": 144 },
+            "constraints": { "horizontal": "LEFT", "vertical": "TOP" },
+            "layoutMode": "VERTICAL",
+            "primaryAxisAlignItems": "MIN",
+            "counterAxisAlignItems": "MIN",
+            "paddingTop": 24,
+            "paddingRight": 24,
+            "paddingBottom": 24,
+            "paddingLeft": 24,
+            "itemSpacing": 16,
+            "layoutSizingHorizontal": "FIXED",
+            "layoutSizingVertical": "FIXED",
+            "children": [
+              {
+                "id": "d:2",
+                "name": "Header",
+                "type": "FRAME",
+                "visible": true,
+                "opacity": 1.0,
+                "absoluteBoundingBox": { "x": 24, "y": 24, "width": 1392, "height": 40 },
+                "layoutMode": "HORIZONTAL",
+                "primaryAxisAlignItems": "MIN",
+                "counterAxisAlignItems": "MIN",
+                "itemSpacing": 0,
+                "layoutSizingHorizontal": "FILL",
+                "layoutSizingVertical": "FIXED",
+                "children": [
+                  {
+                    "id": "d:3",
+                    "name": "Brand",
+                    "type": "TEXT",
+                    "visible": true,
+                    "opacity": 1.0,
+                    "layoutSizingHorizontal": "AUTO",
+                    "layoutSizingVertical": "AUTO",
+                    "absoluteBoundingBox": { "x": 24, "y": 24, "width": 44.0, "height": 24 },
+                    "characters": "Brand",
+                    "style": { "fontFamily": "Inter", "fontSize": 16, "lineHeightPx": 24 }
+                  },
+                  {
+                    "id": "d:4",
+                    "name": "Docs",
+                    "type": "TEXT",
+                    "visible": true,
+                    "opacity": 1.0,
+                    "absoluteBoundingBox": { "x": 68.0, "y": 24, "width": 35.2, "height": 24 },
+                    "characters": "Docs",
+                    "style": { "fontFamily": "Inter", "fontSize": 16, "lineHeightPx": 24 }
+                  }
+                ]
+              },
+              {
+                "id": "d:5",
+                "name": "Footer",
+                "type": "FRAME",
+                "visible": true,
+                "opacity": 1.0,
+                "absoluteBoundingBox": { "x": 24, "y": 80, "width": 1392, "height": 40 },
+                "layoutMode": "HORIZONTAL",
+                "primaryAxisAlignItems": "MIN",
+                "counterAxisAlignItems": "CENTER",
+                "itemSpacing": 0,
+                "layoutSizingHorizontal": "FILL",
+                "layoutSizingVertical": "FIXED",
+                "children": [
+                  {
+                    "id": "d:6",
+                    "name": "Legal",
+                    "type": "TEXT",
+                    "visible": true,
+                    "opacity": 1.0,
+                    "absoluteBoundingBox": { "x": 24, "y": 88, "width": 96.8, "height": 24 },
+                    "characters": "© 2026 Acme",
+                    "style": { "fontFamily": "Inter", "fontSize": 16, "lineHeightPx": 24 }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

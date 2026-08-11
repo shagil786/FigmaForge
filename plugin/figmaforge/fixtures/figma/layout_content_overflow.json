@@ -1,0 +1,74 @@
+{
+  "name": "FigmaForge Layout — Content Overflow",
+  "role": "owner",
+  "editorType": "figma",
+  "version": "2000000005",
+  "document": {
+    "id": "0:0",
+    "name": "Document",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "name": "Overflow",
+        "type": "CANVAS",
+        "visible": true,
+        "children": [
+          {
+            "id": "o:1",
+            "name": "Overflow",
+            "type": "FRAME",
+            "visible": true,
+            "opacity": 1.0,
+            "absoluteBoundingBox": { "x": 0, "y": 0, "width": 200, "height": 60 },
+            "constraints": { "horizontal": "LEFT", "vertical": "TOP" },
+            "layoutMode": "VERTICAL",
+            "primaryAxisAlignItems": "MIN",
+            "counterAxisAlignItems": "MIN",
+            "paddingTop": 4,
+            "paddingRight": 4,
+            "paddingBottom": 4,
+            "paddingLeft": 4,
+            "itemSpacing": 4,
+            "layoutWrap": "NONE",
+            "layoutSizingHorizontal": "FIXED",
+            "layoutSizingVertical": "FIXED",
+            "children": [
+              {
+                "id": "o:2",
+                "name": "Body",
+                "type": "TEXT",
+                "visible": true,
+                "opacity": 1.0,
+                "absoluteBoundingBox": { "x": 4, "y": 4, "width": 192, "height": 52 },
+                "characters": "This is a very long text that is designed to overflow the small container and get clipped at the boundary",
+                "style": { "fontFamily": "Inter", "fontSize": 14, "lineHeightPx": 21 },
+                "layoutSizingHorizontal": "FIXED",
+                "layoutSizingVertical": "FIXED"
+              },
+              {
+                "id": "o:3",
+                "name": "Pill",
+                "type": "RECTANGLE",
+                "visible": true,
+                "opacity": 1.0,
+                "absoluteBoundingBox": { "x": 4, "y": 60, "width": 120, "height": 20 }
+              },
+              {
+                "id": "o:4",
+                "name": "Bad",
+                "type": "RECTANGLE",
+                "visible": true,
+                "opacity": 1.0,
+                "absoluteBoundingBox": { "x": 4, "y": 4, "width": 100, "height": 20 },
+                "layoutPositioning": "ABSOLUTE",
+                "minWidth": 120,
+                "maxWidth": 80
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

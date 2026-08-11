@@ -1,0 +1,94 @@
+{
+  "name": "FigmaForge Layout — Nested & Absolute",
+  "role": "owner",
+  "editorType": "figma",
+  "version": "3000000004",
+  "document": {
+    "id": "0:0",
+    "name": "Document",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "name": "Nested",
+        "type": "CANVAS",
+        "visible": true,
+        "children": [
+          {
+            "id": "n:1",
+            "name": "Nested",
+            "type": "FRAME",
+            "visible": true,
+            "opacity": 1.0,
+            "absoluteBoundingBox": { "x": 0, "y": 0, "width": 300, "height": 320 },
+            "constraints": { "horizontal": "LEFT", "vertical": "TOP" },
+            "layoutMode": "VERTICAL",
+            "primaryAxisAlignItems": "MIN",
+            "counterAxisAlignItems": "MIN",
+            "paddingTop": 16,
+            "paddingRight": 16,
+            "paddingBottom": 16,
+            "paddingLeft": 16,
+            "itemSpacing": 8,
+            "layoutSizingHorizontal": "FIXED",
+            "layoutSizingVertical": "FIXED",
+            "children": [
+              {
+                "id": "n:2",
+                "name": "Group",
+                "type": "FRAME",
+                "visible": true,
+                "opacity": 1.0,
+                "absoluteBoundingBox": { "x": 16, "y": 16, "width": 268, "height": 64 },
+                "layoutMode": "VERTICAL",
+                "primaryAxisAlignItems": "MIN",
+                "counterAxisAlignItems": "MIN",
+                "paddingTop": 8,
+                "paddingRight": 8,
+                "paddingBottom": 8,
+                "paddingLeft": 8,
+                "itemSpacing": 4,
+                "layoutSizingHorizontal": "FILL",
+                "layoutSizingVertical": "AUTO",
+                "children": [
+                  {
+                    "id": "n:3",
+                    "name": "Title",
+                    "type": "TEXT",
+                    "visible": true,
+                    "opacity": 1.0,
+                    "layoutSizingHorizontal": "AUTO",
+                    "layoutSizingVertical": "AUTO",
+                    "absoluteBoundingBox": { "x": 24, "y": 24, "width": 44.0, "height": 20 },
+                    "characters": "Title",
+                    "style": { "fontFamily": "Inter", "fontSize": 16, "lineHeightPx": 20 }
+                  },
+                  {
+                    "id": "n:4",
+                    "name": "Icon",
+                    "type": "RECTANGLE",
+                    "visible": true,
+                    "opacity": 1.0,
+                    "absoluteBoundingBox": { "x": 24, "y": 48, "width": 24, "height": 24 }
+                  }
+                ]
+              },
+              {
+                "id": "n:5",
+                "name": "Badge",
+                "type": "FRAME",
+                "visible": true,
+                "opacity": 1.0,
+                "absoluteBoundingBox": { "x": 232, "y": 16, "width": 32, "height": 20 },
+                "layoutPositioning": "ABSOLUTE",
+                "constraints": { "horizontal": "MAX", "vertical": "TOP" },
+                "layoutSizingHorizontal": "FIXED",
+                "layoutSizingVertical": "FIXED"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
