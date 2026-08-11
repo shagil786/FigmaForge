@@ -1,0 +1,162 @@
+{
+  "name": "FigmaForge Layout \u2014 Tablet 1024",
+  "role": "owner",
+  "editorType": "figma",
+  "version": "1024000002",
+  "document": {
+    "id": "0:0",
+    "name": "Document",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "name": "Tablet",
+        "type": "CANVAS",
+        "visible": true,
+        "children": [
+          {
+            "id": "t:1",
+            "name": "Tablet 1024",
+            "type": "FRAME",
+            "visible": true,
+            "opacity": 1.0,
+            "absoluteBoundingBox": {
+              "x": 0,
+              "y": 0,
+              "width": 1024,
+              "height": 144
+            },
+            "constraints": {
+              "horizontal": "LEFT",
+              "vertical": "TOP"
+            },
+            "layoutMode": "VERTICAL",
+            "primaryAxisAlignItems": "MIN",
+            "counterAxisAlignItems": "MIN",
+            "paddingTop": 24,
+            "paddingRight": 24,
+            "paddingBottom": 24,
+            "paddingLeft": 24,
+            "itemSpacing": 16,
+            "layoutSizingHorizontal": "FILL",
+            "layoutSizingVertical": "FIXED",
+            "children": [
+              {
+                "id": "t:2",
+                "name": "Header",
+                "type": "FRAME",
+                "visible": true,
+                "opacity": 1.0,
+                "absoluteBoundingBox": {
+                  "x": 24,
+                  "y": 24,
+                  "width": 976,
+                  "height": 40
+                },
+                "layoutMode": "HORIZONTAL",
+                "primaryAxisAlignItems": "MIN",
+                "counterAxisAlignItems": "MIN",
+                "itemSpacing": 8,
+                "layoutSizingHorizontal": "FILL",
+                "layoutSizingVertical": "FIXED",
+                "children": [
+                  {
+                    "id": "t:3",
+                    "name": "Brand",
+                    "type": "TEXT",
+                    "visible": true,
+                    "opacity": 1.0,
+                    "absoluteBoundingBox": {
+                      "x": 24,
+                      "y": 24,
+                      "width": 44.0,
+                      "height": 24
+                    },
+                    "characters": "Brand",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontSize": 16,
+                      "lineHeightPx": 24
+                    }
+                  },
+                  {
+                    "id": "t:4",
+                    "name": "Menu",
+                    "type": "TEXT",
+                    "visible": true,
+                    "opacity": 1.0,
+                    "absoluteBoundingBox": {
+                      "x": 76.0,
+                      "y": 24,
+                      "width": 35.2,
+                      "height": 24
+                    },
+                    "characters": "Menu",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontSize": 16,
+                      "lineHeightPx": 24
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "t:5",
+                "name": "Cards",
+                "type": "FRAME",
+                "visible": true,
+                "opacity": 1.0,
+                "absoluteBoundingBox": {
+                  "x": 24,
+                  "y": 80,
+                  "width": 976,
+                  "height": 40
+                },
+                "layoutMode": "HORIZONTAL",
+                "primaryAxisAlignItems": "MIN",
+                "counterAxisAlignItems": "MIN",
+                "itemSpacing": 16,
+                "layoutSizingHorizontal": "FILL",
+                "layoutSizingVertical": "FIXED",
+                "children": [
+                  {
+                    "id": "t:6",
+                    "name": "Card A",
+                    "type": "FRAME",
+                    "visible": true,
+                    "opacity": 1.0,
+                    "absoluteBoundingBox": {
+                      "x": 24,
+                      "y": 80,
+                      "width": 480,
+                      "height": 40
+                    },
+                    "layoutGrow": 1,
+                    "layoutSizingHorizontal": "FILL",
+                    "layoutSizingVertical": "FIXED"
+                  },
+                  {
+                    "id": "t:7",
+                    "name": "Card B",
+                    "type": "FRAME",
+                    "visible": true,
+                    "opacity": 1.0,
+                    "absoluteBoundingBox": {
+                      "x": 520,
+                      "y": 80,
+                      "width": 480,
+                      "height": 40
+                    },
+                    "layoutGrow": 1,
+                    "layoutSizingHorizontal": "FILL",
+                    "layoutSizingVertical": "FIXED"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

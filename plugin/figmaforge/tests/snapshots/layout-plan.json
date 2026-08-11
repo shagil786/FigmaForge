@@ -1,0 +1,640 @@
+{
+  "base_width": 1440.0,
+  "breakpoints": {
+    "breakpoints": [
+      {
+        "breakpoint": "sm",
+        "width": 640.0
+      },
+      {
+        "breakpoint": "md",
+        "width": 1024.0
+      },
+      {
+        "breakpoint": "lg",
+        "width": 1440.0
+      }
+    ],
+    "changes": [],
+    "counts": {
+      "breakpoints": 3,
+      "changes": 0,
+      "no_change": 7
+    },
+    "no_change": [
+      "0:1",
+      "d:1",
+      "d:2",
+      "d:3",
+      "d:4",
+      "d:5",
+      "d:6"
+    ]
+  },
+  "confidence": {
+    "high": 4,
+    "low": 0,
+    "mean": 0.8714,
+    "medium": 3,
+    "min": 0.7
+  },
+  "constraints": {
+    "contradictions": [],
+    "derived": 2,
+    "grounding": 14,
+    "total": 16,
+    "underdetermined": [
+      {
+        "axis": "horizontal",
+        "kind": "underdetermined",
+        "message": "horizontal absolute node has no explicit box, min, or STRETCH anchor; it cannot be placed or sized"
+      },
+      {
+        "axis": "vertical",
+        "kind": "underdetermined",
+        "message": "vertical absolute node has no explicit box, min, or STRETCH anchor; it cannot be placed or sized"
+      }
+    ],
+    "unsupported": []
+  },
+  "counts": {
+    "absolute": 1,
+    "bounds_mismatch": 0,
+    "clipped_content": 0,
+    "contradictions": 0,
+    "fill": 2,
+    "fixed": 3,
+    "flex": 3,
+    "grid": 0,
+    "hug": 2,
+    "nodes": 7,
+    "percent": 0,
+    "static": 3,
+    "text_nodes": 3,
+    "underdetermined": 2,
+    "wrapped_text": 0
+  },
+  "diagnostics": [
+    {
+      "code": "unsupported",
+      "message": "native overflow:scroll is not represented in the Design IR; overflow is modeled as visible/clip and scroll is never inferred",
+      "severity": "info"
+    }
+  ],
+  "file_key": "lay1440",
+  "schema_version": 1,
+  "screens": [
+    {
+      "alignment": {},
+      "anchors": {
+        "horizontal": "min",
+        "vertical": "min"
+      },
+      "assumptions": [],
+      "box": {
+        "height": 144.0,
+        "width": 1440.0,
+        "x": 0.0,
+        "y": 0.0
+      },
+      "breakpoints": [],
+      "children": [
+        {
+          "alignment": {
+            "align": "MIN",
+            "justify": "MIN"
+          },
+          "anchors": {
+            "horizontal": "min",
+            "vertical": "min"
+          },
+          "assumptions": [],
+          "bounds_delta": 0.0,
+          "box": {
+            "height": 144.0,
+            "width": 1440.0,
+            "x": 0.0,
+            "y": 0.0
+          },
+          "breakpoints": [],
+          "children": [
+            {
+              "alignment": {
+                "align": "MIN",
+                "justify": "MIN"
+              },
+              "anchors": {
+                "bottom": 120.0,
+                "horizontal": "min",
+                "left": 68.0,
+                "right": 1372.0,
+                "top": 24.0,
+                "vertical": "min"
+              },
+              "assumptions": [],
+              "bounds_delta": 0.0,
+              "box": {
+                "height": 40.0,
+                "width": 1392.0,
+                "x": 24.0,
+                "y": 24.0
+              },
+              "breakpoints": [],
+              "children": [
+                {
+                  "alignment": {},
+                  "anchors": {
+                    "bottom": 40.0,
+                    "horizontal": "min",
+                    "left": 0.0,
+                    "right": 1392.0,
+                    "top": 0.0,
+                    "vertical": "min"
+                  },
+                  "assumptions": [
+                    "text_width_heuristic"
+                  ],
+                  "bounds_delta": 0.0,
+                  "box": {
+                    "height": 24.0,
+                    "width": 44.0,
+                    "x": 24.0,
+                    "y": 24.0
+                  },
+                  "breakpoints": [],
+                  "children": [],
+                  "confidence": 0.7,
+                  "constraints": {
+                    "contradictions": [],
+                    "derived": 0,
+                    "grounding": 2,
+                    "total": 2,
+                    "underdetermined": [],
+                    "unsupported": []
+                  },
+                  "diagnostics": [
+                    {
+                      "code": "assumption:text_width_heuristic",
+                      "message": "text_width_heuristic",
+                      "node_id": "d:3",
+                      "severity": "info"
+                    }
+                  ],
+                  "display": "none",
+                  "figma_box": {
+                    "height": 24.0,
+                    "width": 44.0,
+                    "x": 24.0,
+                    "y": 24.0
+                  },
+                  "kind": "text",
+                  "name": "Brand",
+                  "node_id": "d:3",
+                  "order": 0,
+                  "overflow": {
+                    "clipped_content": false,
+                    "wrap": "nowrap",
+                    "x": "visible",
+                    "y": "visible"
+                  },
+                  "sizing": {
+                    "horizontal": {
+                      "explicit": true,
+                      "measured": 44.0,
+                      "mode": "hug"
+                    },
+                    "vertical": {
+                      "explicit": true,
+                      "measured": 24.0,
+                      "mode": "hug"
+                    }
+                  },
+                  "spacing": {},
+                  "text": {
+                    "approximate": true,
+                    "characters": "Brand",
+                    "font_size": 16.0,
+                    "lines": [
+                      "Brand"
+                    ],
+                    "measured_height": 24.0,
+                    "measured_width": 44.0,
+                    "wrapped": false
+                  }
+                },
+                {
+                  "alignment": {},
+                  "anchors": {
+                    "bottom": 40.0,
+                    "horizontal": "min",
+                    "left": 44.0,
+                    "right": 1348.0,
+                    "top": 0.0,
+                    "vertical": "min"
+                  },
+                  "assumptions": [
+                    "text_width_heuristic"
+                  ],
+                  "bounds_delta": 0.0,
+                  "box": {
+                    "height": 24.0,
+                    "width": 35.2,
+                    "x": 68.0,
+                    "y": 24.0
+                  },
+                  "breakpoints": [],
+                  "children": [],
+                  "confidence": 0.7,
+                  "constraints": {
+                    "contradictions": [],
+                    "derived": 0,
+                    "grounding": 2,
+                    "total": 2,
+                    "underdetermined": [],
+                    "unsupported": []
+                  },
+                  "diagnostics": [
+                    {
+                      "code": "assumption:text_width_heuristic",
+                      "message": "text_width_heuristic",
+                      "node_id": "d:4",
+                      "severity": "info"
+                    }
+                  ],
+                  "display": "none",
+                  "figma_box": {
+                    "height": 24.0,
+                    "width": 35.2,
+                    "x": 68.0,
+                    "y": 24.0
+                  },
+                  "kind": "text",
+                  "name": "Docs",
+                  "node_id": "d:4",
+                  "order": 1,
+                  "overflow": {
+                    "clipped_content": false,
+                    "wrap": "nowrap",
+                    "x": "visible",
+                    "y": "visible"
+                  },
+                  "sizing": {
+                    "horizontal": {
+                      "explicit": true,
+                      "measured": 35.2,
+                      "mode": "fixed",
+                      "value": 35.2
+                    },
+                    "vertical": {
+                      "explicit": true,
+                      "measured": 24.0,
+                      "mode": "fixed",
+                      "value": 24.0
+                    }
+                  },
+                  "spacing": {},
+                  "text": {
+                    "approximate": true,
+                    "characters": "Docs",
+                    "font_size": 16.0,
+                    "lines": [
+                      "Docs"
+                    ],
+                    "measured_height": 24.0,
+                    "measured_width": 35.2,
+                    "wrapped": false
+                  }
+                }
+              ],
+              "confidence": 1.0,
+              "constraints": {
+                "contradictions": [],
+                "derived": 0,
+                "grounding": 2,
+                "total": 2,
+                "underdetermined": [],
+                "unsupported": []
+              },
+              "diagnostics": [],
+              "direction": "row",
+              "display": "flex",
+              "figma_box": {
+                "height": 40.0,
+                "width": 1392.0,
+                "x": 24.0,
+                "y": 24.0
+              },
+              "kind": "frame",
+              "name": "Header",
+              "node_id": "d:2",
+              "order": 0,
+              "overflow": {
+                "clipped_content": false,
+                "wrap": "nowrap",
+                "x": "visible",
+                "y": "visible"
+              },
+              "sizing": {
+                "horizontal": {
+                  "explicit": true,
+                  "mode": "fill"
+                },
+                "vertical": {
+                  "explicit": true,
+                  "measured": 40.0,
+                  "mode": "fixed",
+                  "value": 40.0
+                }
+              },
+              "spacing": {
+                "gap": 0.0
+              }
+            },
+            {
+              "alignment": {
+                "align": "CENTER",
+                "justify": "MIN"
+              },
+              "anchors": {
+                "bottom": 56.0,
+                "horizontal": "min",
+                "left": 24.0,
+                "right": 1416.0,
+                "top": 88.0,
+                "vertical": "min"
+              },
+              "assumptions": [],
+              "bounds_delta": 0.0,
+              "box": {
+                "height": 40.0,
+                "width": 1392.0,
+                "x": 24.0,
+                "y": 80.0
+              },
+              "breakpoints": [],
+              "children": [
+                {
+                  "alignment": {},
+                  "anchors": {
+                    "bottom": 32.0,
+                    "horizontal": "min",
+                    "left": 0.0,
+                    "right": 1392.0,
+                    "top": 8.0,
+                    "vertical": "min"
+                  },
+                  "assumptions": [
+                    "text_width_heuristic"
+                  ],
+                  "bounds_delta": 0.0,
+                  "box": {
+                    "height": 24.0,
+                    "width": 96.8,
+                    "x": 24.0,
+                    "y": 88.0
+                  },
+                  "breakpoints": [],
+                  "children": [],
+                  "confidence": 0.7,
+                  "constraints": {
+                    "contradictions": [],
+                    "derived": 0,
+                    "grounding": 2,
+                    "total": 2,
+                    "underdetermined": [],
+                    "unsupported": []
+                  },
+                  "diagnostics": [
+                    {
+                      "code": "assumption:text_width_heuristic",
+                      "message": "text_width_heuristic",
+                      "node_id": "d:6",
+                      "severity": "info"
+                    }
+                  ],
+                  "display": "none",
+                  "figma_box": {
+                    "height": 24.0,
+                    "width": 96.8,
+                    "x": 24.0,
+                    "y": 88.0
+                  },
+                  "kind": "text",
+                  "name": "Legal",
+                  "node_id": "d:6",
+                  "order": 0,
+                  "overflow": {
+                    "clipped_content": false,
+                    "wrap": "nowrap",
+                    "x": "visible",
+                    "y": "visible"
+                  },
+                  "sizing": {
+                    "horizontal": {
+                      "explicit": true,
+                      "measured": 96.8,
+                      "mode": "fixed",
+                      "value": 96.8
+                    },
+                    "vertical": {
+                      "explicit": true,
+                      "measured": 24.0,
+                      "mode": "fixed",
+                      "value": 24.0
+                    }
+                  },
+                  "spacing": {},
+                  "text": {
+                    "approximate": true,
+                    "characters": "\u00a9 2026 Acme",
+                    "font_size": 16.0,
+                    "lines": [
+                      "\u00a9 2026 Acme"
+                    ],
+                    "measured_height": 24.0,
+                    "measured_width": 96.8,
+                    "wrapped": false
+                  }
+                }
+              ],
+              "confidence": 1.0,
+              "constraints": {
+                "contradictions": [],
+                "derived": 0,
+                "grounding": 2,
+                "total": 2,
+                "underdetermined": [],
+                "unsupported": []
+              },
+              "diagnostics": [],
+              "direction": "row",
+              "display": "flex",
+              "figma_box": {
+                "height": 40.0,
+                "width": 1392.0,
+                "x": 24.0,
+                "y": 80.0
+              },
+              "kind": "frame",
+              "name": "Footer",
+              "node_id": "d:5",
+              "order": 1,
+              "overflow": {
+                "clipped_content": false,
+                "wrap": "nowrap",
+                "x": "visible",
+                "y": "visible"
+              },
+              "sizing": {
+                "horizontal": {
+                  "explicit": true,
+                  "mode": "fill"
+                },
+                "vertical": {
+                  "explicit": true,
+                  "measured": 40.0,
+                  "mode": "fixed",
+                  "value": 40.0
+                }
+              },
+              "spacing": {
+                "gap": 0.0
+              }
+            }
+          ],
+          "confidence": 1.0,
+          "constraints": {
+            "contradictions": [],
+            "derived": 0,
+            "grounding": 4,
+            "total": 4,
+            "underdetermined": [],
+            "unsupported": []
+          },
+          "diagnostics": [],
+          "direction": "column",
+          "display": "flex",
+          "figma_box": {
+            "height": 144.0,
+            "width": 1440.0,
+            "x": 0.0,
+            "y": 0.0
+          },
+          "kind": "frame",
+          "name": "Desktop 1440",
+          "node_id": "d:1",
+          "order": 0,
+          "overflow": {
+            "clipped_content": false,
+            "wrap": "nowrap",
+            "x": "visible",
+            "y": "visible"
+          },
+          "sizing": {
+            "horizontal": {
+              "explicit": true,
+              "measured": 1440.0,
+              "mode": "fixed",
+              "value": 1440.0
+            },
+            "vertical": {
+              "explicit": true,
+              "measured": 144.0,
+              "mode": "fixed",
+              "value": 144.0
+            }
+          },
+          "spacing": {
+            "gap": 16.0,
+            "margin": {
+              "bottom": 0.0,
+              "left": 0.0,
+              "right": 0.0,
+              "top": 0.0
+            },
+            "margin_source": "absolute_offset",
+            "padding": {
+              "bottom": 24.0,
+              "left": 24.0,
+              "right": 24.0,
+              "top": 24.0
+            }
+          }
+        }
+      ],
+      "confidence": 1.0,
+      "constraints": {
+        "contradictions": [],
+        "derived": 2,
+        "grounding": 0,
+        "total": 2,
+        "underdetermined": [
+          {
+            "axis": "horizontal",
+            "kind": "underdetermined",
+            "message": "horizontal absolute node has no explicit box, min, or STRETCH anchor; it cannot be placed or sized"
+          },
+          {
+            "axis": "vertical",
+            "kind": "underdetermined",
+            "message": "vertical absolute node has no explicit box, min, or STRETCH anchor; it cannot be placed or sized"
+          }
+        ],
+        "unsupported": []
+      },
+      "diagnostics": [
+        {
+          "code": "underdetermined",
+          "message": "horizontal absolute node has no explicit box, min, or STRETCH anchor; it cannot be placed or sized",
+          "node_id": "0:1",
+          "severity": "warning"
+        },
+        {
+          "code": "underdetermined",
+          "message": "vertical absolute node has no explicit box, min, or STRETCH anchor; it cannot be placed or sized",
+          "node_id": "0:1",
+          "severity": "warning"
+        }
+      ],
+      "display": "absolute",
+      "kind": "page",
+      "name": "Desktop",
+      "node_id": "0:1",
+      "order": 0,
+      "overflow": {
+        "clipped_content": false,
+        "wrap": "nowrap",
+        "x": "visible",
+        "y": "visible"
+      },
+      "sizing": {
+        "horizontal": {
+          "explicit": false,
+          "measured": 1440.0,
+          "mode": "hug"
+        },
+        "vertical": {
+          "explicit": false,
+          "measured": 144.0,
+          "mode": "hug"
+        }
+      },
+      "spacing": {
+        "margin": {
+          "bottom": 0.0,
+          "left": 0.0,
+          "right": 0.0,
+          "top": 0.0
+        },
+        "margin_source": "absolute_offset"
+      }
+    }
+  ],
+  "source": {
+    "file_key": "lay1440",
+    "node_id": "0:0",
+    "node_type": "DOCUMENT",
+    "path": []
+  },
+  "viewport": 1440.0
+}

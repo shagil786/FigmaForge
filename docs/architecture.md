@@ -242,6 +242,32 @@ library (`library/`), producing a schema-validated JSON report
 **Constraint:** Matching is deterministic string/key logic; no model-based or
 fuzzy matching, no agent frameworks.
 
+### 7. Responsive Layout & Constraint Solver (Part 5)
+
+**Status:** Implemented. Input is the Design IR + the resolved project library;
+no code generation yet. See `docs/layout.md`.
+
+Lays a Design IR out into a framework-neutral `LayoutPlan` (the seam a future
+code generator consumes):
+
+- `core/layout_engine.py` — flex/grid/absolute inference, per-axis sizing
+  (fixed/fill/hug/percent), min/max, spacing, alignment, anchoring, text
+  wrapping + content sizing (heuristic, flagged approximate), overflow/clip,
+  nested propagation.
+- `core/constraint_model.py` — deterministic constraint extraction and the two
+  failure classes that are **reported, never resolved**: contradictions
+  (e.g. `min_width > max_width`) and underdetermined bounds.
+- `core/breakpoint_model.py` — numeric breakpoints from library tokens
+  (sm 640 / md 1024 / lg 1440); changes emitted only when measured across widths.
+- `core/layout_analyzer.py` — `LayoutAnalyzer.analyze()` → `LayoutPlan`
+  (counts, confidence, diagnostics, flattened constraint report).
+- `schemas/layout-plan.schema.json` + `tests/test_layout_engine.py`,
+  `test_layout_property.py`, `test_layout_snapshot.py`.
+
+**Constraint:** framework-neutral plan only — never React/CSS (or any framework)
+output. All ambiguous/approximate/unsupported layout cases are surfaced in the
+report, never silently guessed.
+
 ---
 
 ## Components

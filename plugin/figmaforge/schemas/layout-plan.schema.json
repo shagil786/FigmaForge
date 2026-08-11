@@ -1,0 +1,195 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "figmaforge://schema/layout-plan",
+  "title": "FigmaForge Responsive Layout Plan",
+  "description": "Framework-neutral layout plan produced by the layout analyzer (core/layout_analyzer.py) from a Design IR — the seam a future code generator consumes. No code generation happens here.",
+  "type": "object",
+  "required": [
+    "schema_version", "file_key", "viewport", "base_width",
+    "screens", "breakpoints", "constraints", "counts", "confidence", "diagnostics"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer" },
+    "file_key": { "type": "string" },
+    "viewport": { "type": "number" },
+    "base_width": { "type": "number" },
+    "source": { "type": ["object", "null"] },
+    "screens": { "type": "array", "items": { "$ref": "#/definitions/node" } },
+    "breakpoints": { "$ref": "#/definitions/breakpoint_plan" },
+    "constraints": { "$ref": "#/definitions/constraint_report" },
+    "counts": { "type": "object" },
+    "confidence": { "type": "object" },
+    "diagnostics": { "type": "array", "items": { "$ref": "#/definitions/diagnostic" } }
+  },
+  "definitions": {
+    "box": {
+      "type": "object",
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "type": "number" },
+        "height": { "type": "number" }
+      }
+    },
+    "axis_sizing": {
+      "type": "object",
+      "required": ["mode"],
+      "properties": {
+        "mode": { "type": "string", "enum": ["fixed", "fill", "hug", "percent"] },
+        "value": { "type": ["number", "null"] },
+        "min": { "type": ["number", "null"] },
+        "max": { "type": ["number", "null"] },
+        "measured": { "type": ["number", "null"] },
+        "explicit": { "type": "boolean" }
+      }
+    },
+    "sizing": {
+      "type": "object",
+      "properties": {
+        "horizontal": { "$ref": "#/definitions/axis_sizing" },
+        "vertical": { "$ref": "#/definitions/axis_sizing" }
+      }
+    },
+    "edge_offsets": {
+      "type": "object",
+      "properties": {
+        "top": { "type": ["number", "null"] },
+        "right": { "type": ["number", "null"] },
+        "bottom": { "type": ["number", "null"] },
+        "left": { "type": ["number", "null"] }
+      }
+    },
+    "spacing": {
+      "type": "object",
+      "properties": {
+        "padding": { "$ref": "#/definitions/edge_offsets" },
+        "margin": { "$ref": "#/definitions/edge_offsets" },
+        "margin_source": { "type": ["string", "null"] },
+        "gap": { "type": ["number", "null"] }
+      }
+    },
+    "alignment": {
+      "type": "object",
+      "properties": {
+        "justify": { "type": ["string", "null"] },
+        "align": { "type": ["string", "null"] },
+        "align_self": { "type": ["string", "null"] }
+      }
+    },
+    "anchoring": {
+      "type": "object",
+      "properties": {
+        "horizontal": { "type": ["string", "null"] },
+        "vertical": { "type": ["string", "null"] },
+        "left": { "type": ["number", "null"] },
+        "right": { "type": ["number", "null"] },
+        "top": { "type": ["number", "null"] },
+        "bottom": { "type": ["number", "null"] }
+      }
+    },
+    "text": {
+      "type": "object",
+      "required": ["characters", "approximate"],
+      "properties": {
+        "characters": { "type": "string" },
+        "font_size": { "type": ["number", "null"] },
+        "measured_width": { "type": ["number", "null"] },
+        "measured_height": { "type": ["number", "null"] },
+        "wrapped": { "type": "boolean" },
+        "lines": { "type": "array", "items": { "type": "string" } },
+        "approximate": { "type": "boolean" }
+      }
+    },
+    "overflow": {
+      "type": "object",
+      "properties": {
+        "x": { "type": "string", "enum": ["visible", "clip", "scroll"] },
+        "y": { "type": "string", "enum": ["visible", "clip", "scroll"] },
+        "wrap": { "type": ["string", "null"], "enum": ["nowrap", "wrap"] },
+        "clipped_content": { "type": ["boolean", "null"] }
+      }
+    },
+    "breakpoint_change": {
+      "type": "object",
+      "required": ["width", "property", "evidence"],
+      "properties": {
+        "breakpoint": { "type": "string" },
+        "width": { "type": "number" },
+        "node_id": { "type": ["string", "null"] },
+        "property": { "type": "string" },
+        "before": { "type": ["string", "null"] },
+        "after": { "type": ["string", "null"] },
+        "evidence": { "type": "string" }
+      }
+    },
+    "constraint_issue": {
+      "type": "object",
+      "required": ["kind", "message"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["contradiction", "underdetermined", "unsupported"] },
+        "axis": { "type": ["string", "null"], "enum": ["horizontal", "vertical"] },
+        "message": { "type": "string" }
+      }
+    },
+    "constraint_report": {
+      "type": "object",
+      "required": ["total", "grounding", "derived", "contradictions", "underdetermined", "unsupported"],
+      "properties": {
+        "total": { "type": "integer" },
+        "grounding": { "type": "integer" },
+        "derived": { "type": "integer" },
+        "contradictions": { "type": "array", "items": { "$ref": "#/definitions/constraint_issue" } },
+        "underdetermined": { "type": "array", "items": { "$ref": "#/definitions/constraint_issue" } },
+        "unsupported": { "type": "array", "items": { "$ref": "#/definitions/constraint_issue" } }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "required": ["severity", "code", "message"],
+      "properties": {
+        "severity": { "type": "string", "enum": ["info", "warning", "error"] },
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "node_id": { "type": ["string", "null"] }
+      }
+    },
+    "node": {
+      "type": "object",
+      "required": ["node_id", "name", "kind", "display", "order", "confidence", "children"],
+      "properties": {
+        "node_id": { "type": "string" },
+        "name": { "type": "string" },
+        "kind": { "type": "string" },
+        "display": { "type": "string", "enum": ["flex", "grid", "absolute", "none"] },
+        "direction": { "type": ["string", "null"] },
+        "order": { "type": "integer" },
+        "box": { "$ref": "#/definitions/box" },
+        "figma_box": { "$ref": "#/definitions/box" },
+        "bounds_delta": { "type": ["number", "null"] },
+        "sizing": { "$ref": "#/definitions/sizing" },
+        "spacing": { "$ref": "#/definitions/spacing" },
+        "alignment": { "$ref": "#/definitions/alignment" },
+        "anchors": { "$ref": "#/definitions/anchoring" },
+        "text": { "$ref": "#/definitions/text" },
+        "overflow": { "$ref": "#/definitions/overflow" },
+        "breakpoints": { "type": "array", "items": { "$ref": "#/definitions/breakpoint_change" } },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "assumptions": { "type": "array", "items": { "type": "string" } },
+        "constraints": { "$ref": "#/definitions/constraint_report" },
+        "diagnostics": { "type": "array", "items": { "$ref": "#/definitions/diagnostic" } },
+        "children": { "type": "array", "items": { "$ref": "#/definitions/node" } }
+      }
+    },
+    "breakpoint_plan": {
+      "type": "object",
+      "required": ["breakpoints", "changes", "no_change", "counts"],
+      "properties": {
+        "breakpoints": { "type": "array", "items": { "type": "object" } },
+        "changes": { "type": "array", "items": { "$ref": "#/definitions/breakpoint_change" } },
+        "no_change": { "type": "array", "items": { "type": "string" } },
+        "counts": { "type": "object" }
+      }
+    }
+  }
+}

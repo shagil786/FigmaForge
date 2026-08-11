@@ -1,0 +1,122 @@
+{
+  "name": "FigmaForge Layout — Mobile 375",
+  "role": "owner",
+  "editorType": "figma",
+  "version": "3750000003",
+  "document": {
+    "id": "0:0",
+    "name": "Document",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "name": "Mobile",
+        "type": "CANVAS",
+        "visible": true,
+        "children": [
+          {
+            "id": "m:1",
+            "name": "Mobile 375",
+            "type": "FRAME",
+            "visible": true,
+            "opacity": 1.0,
+            "absoluteBoundingBox": { "x": 0, "y": 0, "width": 375, "height": 177 },
+            "constraints": { "horizontal": "LEFT", "vertical": "TOP" },
+            "layoutMode": "VERTICAL",
+            "primaryAxisAlignItems": "MIN",
+            "counterAxisAlignItems": "MIN",
+            "paddingTop": 16,
+            "paddingRight": 16,
+            "paddingBottom": 16,
+            "paddingLeft": 16,
+            "itemSpacing": 12,
+            "layoutSizingHorizontal": "FIXED",
+            "layoutSizingVertical": "FIXED",
+            "children": [
+              {
+                "id": "m:2",
+                "name": "Header",
+                "type": "FRAME",
+                "visible": true,
+                "opacity": 1.0,
+                "absoluteBoundingBox": { "x": 16, "y": 16, "width": 343, "height": 40 },
+                "layoutMode": "HORIZONTAL",
+                "primaryAxisAlignItems": "MIN",
+                "counterAxisAlignItems": "MIN",
+                "itemSpacing": 8,
+                "layoutSizingHorizontal": "FILL",
+                "layoutSizingVertical": "FIXED",
+                "children": [
+                  {
+                    "id": "m:3",
+                    "name": "Brand",
+                    "type": "TEXT",
+                    "visible": true,
+                    "opacity": 1.0,
+                    "absoluteBoundingBox": { "x": 16, "y": 16, "width": 38.5, "height": 21 },
+                    "characters": "Brand",
+                    "style": { "fontFamily": "Inter", "fontSize": 14, "lineHeightPx": 21 }
+                  },
+                  {
+                    "id": "m:4",
+                    "name": "Menu",
+                    "type": "TEXT",
+                    "visible": true,
+                    "opacity": 1.0,
+                    "absoluteBoundingBox": { "x": 62.5, "y": 16, "width": 30.8, "height": 21 },
+                    "characters": "Menu",
+                    "style": { "fontFamily": "Inter", "fontSize": 14, "lineHeightPx": 21 }
+                  }
+                ]
+              },
+              {
+                "id": "m:5",
+                "name": "Card",
+                "type": "FRAME",
+                "visible": true,
+                "opacity": 1.0,
+                "absoluteBoundingBox": { "x": 16, "y": 68, "width": 343, "height": 93 },
+                "layoutMode": "VERTICAL",
+                "primaryAxisAlignItems": "MIN",
+                "counterAxisAlignItems": "MIN",
+                "paddingTop": 12,
+                "paddingRight": 12,
+                "paddingBottom": 12,
+                "paddingLeft": 12,
+                "itemSpacing": 6,
+                "layoutSizingHorizontal": "FILL",
+                "layoutSizingVertical": "FIXED",
+                "children": [
+                  {
+                    "id": "m:6",
+                    "name": "Title",
+                    "type": "TEXT",
+                    "visible": true,
+                    "opacity": 1.0,
+                    "layoutSizingHorizontal": "AUTO",
+                    "layoutSizingVertical": "AUTO",
+                    "absoluteBoundingBox": { "x": 28, "y": 80, "width": 84.7, "height": 21 },
+                    "characters": "Mobile Card",
+                    "style": { "fontFamily": "Inter", "fontSize": 14, "lineHeightPx": 21 }
+                  },
+                  {
+                    "id": "m:7",
+                    "name": "Body",
+                    "type": "TEXT",
+                    "visible": true,
+                    "opacity": 1.0,
+                    "layoutSizingHorizontal": "AUTO",
+                    "layoutSizingVertical": "AUTO",
+                    "absoluteBoundingBox": { "x": 28, "y": 107, "width": 292.6, "height": 42 },
+                    "characters": "Build your first automation in minutes with guided flows",
+                    "style": { "fontFamily": "Inter", "fontSize": 14, "lineHeightPx": 21 }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
