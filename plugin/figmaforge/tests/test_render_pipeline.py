@@ -1,13 +1,31 @@
 #!/usr/bin/env python3
 """
-Rendering Pipeline Tests (Part 7).
+Rendering Pipeline Tests (Part 7; browser render guarded in Part 11).
 """
+import shutil
 import unittest
 from pathlib import Path
-import shutil
 
 from core.asset_manager import AssetManager
 from core.render_harness import RenderHarness
+
+
+def _chromium_available() -> bool:
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return False
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            browser.close()
+        return True
+    except Exception:
+        return False
+
+
+CHROMIUM_AVAILABLE = _chromium_available()
+
 
 class TestRenderPipeline(unittest.TestCase):
     def setUp(self):
@@ -34,10 +52,22 @@ class TestRenderPipeline(unittest.TestCase):
         h = self.am.ingest(safe, "good", "svg", "svg")
         self.assertIn(h, self.am.manifest.assets)
 
+    @unittest.skipUnless(
+        CHROMIUM_AVAILABLE,
+        "headless chromium not available — install with: "
+        "pip install playwright && playwright install chromium",
+    )
     def test_harness_determinism(self):
-        # Placeholder for harness tests
-        res = self.harness.render("<html></html>", {"w": 320, "h": 640}, "build1")
+        # Part 11: the harness now performs a real browser render.
+        res = self.harness.render(
+            '<html><body><div data-node-id="n1"></div></body></html>',
+            {"w": 320, "h": 640},
+            "build1",
+        )
         self.assertTrue(res.screenshot_path.exists())
+        self.assertGreater(res.screenshot_path.stat().st_size, 0)
+        self.assertIsInstance(res.layout_metadata, dict)
+
 
 if __name__ == "__main__":
     unittest.main()
