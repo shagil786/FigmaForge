@@ -298,5 +298,65 @@ class TestDiffEngineRaster(unittest.TestCase):
         self.assertEqual(report.mismatches, [])
 
 
+class TestRasterOptionsValidation(unittest.TestCase):
+    def test_rejects_negative_color_threshold(self):
+        with self.assertRaises(ValueError):
+            RasterOptions(color_threshold=-1)
+
+    def test_rejects_negative_min_region_area(self):
+        with self.assertRaises(ValueError):
+            RasterOptions(min_region_area=-1)
+
+    def test_rejects_noise_floor_below_zero(self):
+        with self.assertRaises(ValueError):
+            RasterOptions(noise_floor=-0.01)
+
+    def test_rejects_noise_floor_above_one(self):
+        with self.assertRaises(ValueError):
+            RasterOptions(noise_floor=1.5)
+
+    def test_rejects_pixel_weight_below_zero(self):
+        with self.assertRaises(ValueError):
+            RasterOptions(pixel_weight=-0.1)
+
+    def test_rejects_pixel_weight_above_one(self):
+        with self.assertRaises(ValueError):
+            RasterOptions(pixel_weight=1.5)
+
+    def test_accepts_boundary_pixel_weights(self):
+        self.assertEqual(RasterOptions(pixel_weight=0.0).pixel_weight, 0.0)
+        self.assertEqual(RasterOptions(pixel_weight=1.0).pixel_weight, 1.0)
+
+
+class TestDiffEnginePixelWeightBoundaries(unittest.TestCase):
+    def _report(self, pixel_weight):
+        # Geometry mismatch (render width off by 5) → structural = 0.0 for a
+        # one-node plan; raster diff → diffRatio = 1/24 → pixels = 23/24.
+        plan = _MockPlan([_MockNode("n1", 0, 0, 200, 100)])
+        render_meta = {"n1": {"x": 0, "y": 0, "width": 205, "height": 100}}
+        shot_bytes = _solid_png_bytes(
+            800, 600, (255, 255, 255), rect=(0, 0, 200, 100, (255, 0, 0))
+        )
+        base_bytes = _solid_png_bytes(800, 600, (255, 255, 255))
+        with _RasterTmp() as tmp:
+            shot = tmp.write("shot.png", shot_bytes)
+            base = tmp.write("base.png", base_bytes)
+            return DiffEngine().diff(
+                plan, render_meta,
+                render_screenshot=str(shot), baseline_png=str(base),
+                raster_options=RasterOptions(pixel_weight=pixel_weight),
+            )
+
+    def test_pixel_weight_zero_is_pure_structural(self):
+        report = self._report(0.0)
+        self.assertAlmostEqual(report.categories["pixels"], 1.0 - 1 / 24)
+        self.assertAlmostEqual(report.similarity_score, 0.0)
+
+    def test_pixel_weight_one_is_pure_pixel(self):
+        report = self._report(1.0)
+        self.assertAlmostEqual(report.categories["geometry"], 0.0)
+        self.assertAlmostEqual(report.similarity_score, 1.0 - 1 / 24)
+
+
 if __name__ == "__main__":
     unittest.main()

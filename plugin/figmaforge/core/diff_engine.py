@@ -32,6 +32,24 @@ class RasterOptions:
     min_region_area: int = DEFAULT_MIN_REGION_AREA
     pixel_weight: float = DEFAULT_PIXEL_WEIGHT
 
+    def __post_init__(self) -> None:
+        if self.color_threshold < 0:
+            raise ValueError(
+                f"color_threshold must be >= 0, got {self.color_threshold}"
+            )
+        if self.min_region_area < 0:
+            raise ValueError(
+                f"min_region_area must be >= 0, got {self.min_region_area}"
+            )
+        if not 0.0 <= self.noise_floor <= 1.0:
+            raise ValueError(
+                f"noise_floor must be within [0, 1], got {self.noise_floor}"
+            )
+        if not 0.0 <= self.pixel_weight <= 1.0:
+            raise ValueError(
+                f"pixel_weight must be within [0, 1], got {self.pixel_weight}"
+            )
+
 
 @dataclass
 class DiffReport:
@@ -115,7 +133,9 @@ class DiffEngine:
                 + options.pixel_weight * pixel_score
             )
         else:
-            pixel_score = 1.0 - (len(raster_mismatches) / total) if total > 0 else 1.0
+            # No raster diff ran: raster_mismatches is always empty here,
+            # so the legacy pixels category is the constant 1.0.
+            pixel_score = 1.0
             raw_score = 1.0 - (len(mismatches) / total) if total > 0 else 1.0
 
         return DiffReport(
