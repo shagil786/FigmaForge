@@ -8,12 +8,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-import shutil
 from pathlib import Path
-from typing import Optional
 
 from .asset_types import AssetManifest, AssetMetadata
-
 
 class AssetManager:
     """Stores assets by SHA256 content hash."""
@@ -45,7 +42,7 @@ class AssetManager:
         if kind == "svg":
             self._validate_svg(raw_data)
 
-        # Store
+        # Store in content-addressed structure (2-level prefixing)
         dest = self.storage_dir / content_hash[:2] / content_hash
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(raw_data)
@@ -61,8 +58,23 @@ class AssetManager:
         return content_hash
 
     def _validate_svg(self, data: bytes) -> None:
-        """Basic SVG security: detect embedded scripts."""
-        # Simple scan to reject blatant unsafe content
+        """Basic SVG security: detect embedded scripts and dangerous elements."""
         text = data.decode("utf-8", errors="ignore").lower()
-        if "<script" in text or "javascript:" in text:
-            raise ValueError("Unsafe SVG content detected")
+        dangerous_patterns = [
+            "<script",
+            "javascript:",
+            "data:text/html",
+            "<iframe",
+            "<embed",
+            "<object",
+            "onload=",
+            "onerror=",
+            "onclick=",
+            "onmouseover=",
+            "onfocus=",
+            "onblur=",
+            "xlink:href=\"data:",
+        ]
+        for pattern in dangerous_patterns:
+            if pattern in text:
+                raise ValueError(f"Unsafe SVG content detected: {pattern!r}")

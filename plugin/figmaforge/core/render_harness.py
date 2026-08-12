@@ -22,8 +22,6 @@ class RenderHarness:
     def __init__(self, output_dir: Path):
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        # Note: Playwright requires installable browser binaries.
-        # Ensure 'playwright install' has been run in the target env.
 
     def render(self, content_html: str, viewport_spec: Dict[str, int], build_id: str) -> RenderResult:
         """

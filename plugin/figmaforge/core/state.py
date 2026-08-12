@@ -447,5 +447,5 @@ class StateMachine:
         except ValueError:
             return False
 
-        # Only allow forward movement (to_idx > from_idx)
-        return to_idx > from_idx
+        # Only allow forward movement to the immediately next phase.
+        return to_idx == from_idx + 1

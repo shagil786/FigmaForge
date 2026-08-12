@@ -22,15 +22,26 @@ This is a complete platform implementation (version 0.0.1-dev), containing a 100
 - `.claude/settings.json` — Minimal configurations mapping for Claude Code (no secrets).
 - `.mcp.json` — Contains a project-scoped mapping (`stdio` server `pinchtab`).
 - `plugin/figmaforge/` — The primary source code and content:
-  - `core/` (Python): `detector.py`, `router.py`, `catalog.py`, `state.py` and structural hooks.
-  - `catalog/`: `roles.json` (100 roles across 10 domains).
+  - `core/` (Python): The full Figma-to-Code pipeline:
+    - **Ingestion:** `figma_client.py`, `figma_types.py`, `figma_errors.py`, `figma_fixtures.py`, `normalizer.py`
+    - **IR Pipeline:** `ir_types.py`, `ir_builder.py`, `ir_validator.py` (stdlib-only JSON-Schema draft-07)
+    - **Resolution:** `resolver.py`, `matcher.py`, `component_index.py`, `variant_resolver.py`, `token_resolver.py`, `library_types.py`
+    - **Layout:** `layout_engine.py` (988 lines), `layout_types.py`, `layout_analyzer.py`, `constraint_model.py`, `breakpoint_model.py`
+    - **Generators:** `react_generator.py` (wired to ResolutionReport), `css_generator.py` (all sizing modes), `generator_types.py`
+    - **Platform:** `detector.py`, `router.py` (trigger→phase + language→domain scoring), `catalog.py`, `state.py` (adjacent-only transitions)
+    - **Assets & Diff:** `asset_handler.py`, `asset_manager.py` (content-addressed, SVG security), `render_harness.py`, `diff_engine.py` (per-category scoring)
+    - **Hooks:** `hooks/session_detector.py`, `hooks/external_mutation_gate.py` (regex matching), `hooks/post_edit_validator.py` (executes validators)
+  - `catalog/`: `roles.json` (100 roles across 10 domains), `roles.json`.
   - `agents/`: `context-scout.md`, `lifecycle-planner.md`, `fresh-verifier.md`.
   - `skills/`: `route.md`, `lifecycle.md`, `doctor.md`, `mcp-template.md`, `lsp-template.md`, `demo.md`.
   - `hooks/`: `hooks.json` mapping.
-  - `schemas/`: Custom validation schemas.
+  - `schemas/`: `design-ir.schema.json`, `layout-plan.schema.json`, `resolution-report.schema.json`, `detection.schema.json`, `router.schema.json`, `task-state.schema.json`.
   - `templates/`: Inert examples for MCP and LSP configurations.
-  - `tests/`: Basic validation scripts.
+  - `library/`: `components.json` (5 project components), `tokens.json` (12 design tokens).
+  - `tests/` (20 test files, 184 tests): Unit, integration, snapshot, and property-based tests.
 - `docs/architecture.md` — In-depth architectural blueprint.
+- `docs/DEVELOPMENT_LOG.md` — Part-by-part development log with decisions and verification.
+- `docs/design-ir.md`, `docs/layout.md`, `docs/resolution.md` — Module-specific design docs.
 
 Nested `CLAUDE.md` files should NOT be created. The structure is global to the plugin domain.
 
@@ -45,14 +56,19 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 
 ## 5. Verified Development Commands
 
-* **Validation:** 
+* **Run all tests (184 tests):**
+  `cd plugin/figmaforge && python3 -m unittest discover -s tests -v`
+* **Run a specific test module:**
+  `python3 -m unittest tests.test_router -v`
+  `python3 -m unittest tests.test_css_generator -v`
+  `python3 -m unittest tests.test_state_machine -v`
+  `python3 -m unittest tests.test_diff_engine -v`
+* **Regenerate golden-file snapshots:**
+  `REWRITE_SNAPSHOTS=1 python3 -m unittest tests.test_ir_snapshot tests.test_layout_snapshot tests.test_resolution_snapshot tests.test_generator_snapshot`
+* **Plugin validation:**
   `claude plugin validate --strict plugin/figmaforge`
-* **Test the Detector:**
-  `python3 plugin/figmaforge/tests/test_detector.py`
-  `python3 plugin/figmaforge/tests/test_integration.py`
-* **Test the Implementation:**
-  Load with: `claude --plugin-dir ./plugin/figmaforge`
-  Invoke via: `claude --plugin-dir ./plugin/figmaforge -p '/figmaforge:route Design a secure CLI feature'`
+* **Load plugin:**
+  `claude --plugin-dir ./plugin/figmaforge`
 
 ## 6. Coding Conventions
 
@@ -63,8 +79,11 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 
 ## 7. Testing Requirements
 
-- The test scripts (`plugin/figmaforge/tests/*.py`) must successfully execute (`0` return code).
-- Adding a new module or role requires verifying the schema matches (`claude plugin validate --strict`).
+- All 184 tests across 20 test files must pass (`python3 -m unittest discover -s tests`).
+- Test categories: unit tests, integration tests, golden-file snapshot tests, property-based tests.
+- Snapshot tests use `REWRITE_SNAPSHOTS=1` to regenerate golden files after intentional output changes.
+- Adding a new module requires corresponding test coverage.
+- Adding a new role requires verifying the schema matches (`claude plugin validate --strict`).
 
 ## 8. Safety Rules
 
@@ -76,15 +95,17 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 ## 9. Change Workflow
 
 1. Discuss architecture impact (review `docs/architecture.md`).
-2. Run standard validations on current tree (`python3 plugin/figmaforge/tests/test_integration.py`).
+2. Run full test suite (`python3 -m unittest discover -s tests` from `plugin/figmaforge/`).
 3. Make atomic, minimal coherent changes explicitly matching schemas.
-4. Verify tests and the plugin definition pass successfully.
-5. Only document verified, executable routines.
+4. Verify all 184 tests pass and regenerate snapshots if output changed intentionally.
+5. Update `docs/DEVELOPMENT_LOG.md` with the change entry.
+6. Only document verified, executable routines.
 
 ## 10. Definition of Done
 
 - Scope is strictly adhered to (no speculative integrations).
 - All changes maintain schema constraints (run `claude plugin validate --strict`).
-- `tests/test_integration.py` successfully reads and catalogs the changes without failures.
+- Full test suite passes: `python3 -m unittest discover -s tests` (184 tests, 20 files).
 - Changes align exactly with architectural constraints in `docs/architecture.md`.
+- `docs/DEVELOPMENT_LOG.md` updated with the change entry.
 - No exposed credentials, secrets, or unintentional active `.lsp.json`/`.mcp.json` templates exist.

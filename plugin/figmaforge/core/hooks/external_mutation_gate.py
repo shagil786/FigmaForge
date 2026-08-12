@@ -6,6 +6,7 @@ Inspects Bash commands and MCP tool names for creation/update/deletion/publicati
 
 import sys
 import json
+import re
 from pathlib import Path
 
 # Bash command patterns that represent external mutations
@@ -97,7 +98,7 @@ def main():
         bash_cmd = tool_input.get("command", tool_input.get("bash", "")).lower()
 
         for pattern in BASH_MUTATION_PATTERNS:
-            if pattern.lower() in bash_cmd:
+            if re.search(pattern, bash_cmd):
                 # External mutation detected
                 result = {
                     "permissionDecision": "ask",
@@ -112,7 +113,7 @@ def main():
         tool_name = tool_input["tool"].lower()
 
         for mutation_tool in MCP_MUTATION_TOOLS:
-            if mutation_tool.lower() in tool_name:
+            if mutation_tool.lower() == tool_name:
                 # External mutation detected
                 result = {
                     "permissionDecision": "ask",
