@@ -1,0 +1,69 @@
+{
+  "name": "card-layout",
+  "document": {
+    "id": "2:1",
+    "name": "Card Grid",
+    "type": "FRAME",
+    "layoutMode": "HORIZONTAL",
+    "primaryAxisSizingMode": "AUTO",
+    "counterAxisSizingMode": "AUTO",
+    "itemSpacing": 16,
+    "paddingLeft": 24,
+    "paddingRight": 24,
+    "paddingTop": 24,
+    "paddingBottom": 24,
+    "children": [
+      {
+        "id": "2:2",
+        "name": "Card",
+        "type": "FRAME",
+        "layoutMode": "VERTICAL",
+        "itemSpacing": 8,
+        "absoluteBoundingBox": { "x": 24, "y": 24, "width": 200, "height": 150 },
+        "children": [
+          {
+            "id": "2:3",
+            "name": "Title",
+            "type": "TEXT",
+            "characters": "Card Title",
+            "fontSize": 18
+          },
+          {
+            "id": "2:4",
+            "name": "Body",
+            "type": "TEXT",
+            "characters": "Card body text goes here.",
+            "fontSize": 14
+          }
+        ]
+      },
+      {
+        "id": "2:5",
+        "name": "Card",
+        "type": "FRAME",
+        "layoutMode": "VERTICAL",
+        "itemSpacing": 8,
+        "absoluteBoundingBox": { "x": 240, "y": 24, "width": 200, "height": 150 },
+        "children": [
+          {
+            "id": "2:6",
+            "name": "Title",
+            "type": "TEXT",
+            "characters": "Second Card",
+            "fontSize": 18
+          },
+          {
+            "id": "2:7",
+            "name": "Body",
+            "type": "TEXT",
+            "characters": "More content here.",
+            "fontSize": 14
+          }
+        ]
+      }
+    ],
+    "absoluteBoundingBox": { "x": 0, "y": 0, "width": 464, "height": 198 }
+  },
+  "components": {},
+  "styles": {}
+}

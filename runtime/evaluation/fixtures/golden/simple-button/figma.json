@@ -1,0 +1,23 @@
+{
+  "name": "simple-button",
+  "document": {
+    "id": "0:1",
+    "name": "Button",
+    "type": "FRAME",
+    "children": [
+      {
+        "id": "0:2",
+        "name": "Label",
+        "type": "TEXT",
+        "characters": "Click me",
+        "fontSize": 14,
+        "fontName": { "family": "Inter", "style": "Medium" }
+      }
+    ],
+    "absoluteBoundingBox": { "x": 0, "y": 0, "width": 120, "height": 40 },
+    "cornerRadius": 6,
+    "fills": [{ "type": "SOLID", "color": { "r": 0.2, "g": 0.4, "b": 0.9, "a": 1 } }]
+  },
+  "components": {},
+  "styles": {}
+}

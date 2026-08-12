@@ -131,3 +131,114 @@ Full codebase audit identifying and fixing 28 issues across 15 files. All fixes 
 - All 184 tests pass (up from 140).
 - Generator snapshot regenerated to reflect correct CSS output for hug-sized nodes.
 - No regressions in existing test suite.
+
+---
+
+## Part 8: Automatic Visual Repair Loop (2026-08-12)
+
+### Overview
+Implemented the automatic visual repair loop that iterates between rendering, diffing, classifying mismatches, planning patches, and executing repairs — until visual similarity reaches the configured threshold or a stopping condition is met.
+
+### Key Decisions
+1. **Nine repair categories**: geometry, spacing, typography, color, token, asset, responsive, missing_element, extra_element. Every mismatch is classified or reported as unclassifiable — nothing is silently dropped.
+2. **Strategy-ordered patching**: Missing/extra elements first, then parent geometry, shared tokens, typography, assets, color. This maximizes impact per iteration.
+3. **Source-only modification**: The repair loop modifies design tokens, layout constraints, and style dictionaries — never screenshots or reference images.
+4. **Full rollback support**: Every mutation is recorded as a `MutationRecord` with old/new values. `PatchExecutor.rollback()` restores all mutations in reverse order.
+5. **Approval gate**: When `require_approval=True`, the loop pauses for human review before applying each batch of patches.
+6. **Iteration history manifest**: Every iteration's diff report, classification, patch plan, execution result, and screenshot path are preserved for debugging and rollback.
+
+### Modules Added
+| Module | Lines | Purpose |
+|--------|-------|---------|
+| `repair_classifier.py` | 425 | DiffReport → RepairCandidates with source attribution |
+| `patch_planner.py` | 461 | Strategy-ordered PatchPlan with shared-token grouping |
+| `patch_executor.py` | 444 | Source-level patch application with rollback |
+| `repair_loop.py` | 423 | Iteration controller with 6 stopping conditions |
+| `repair_history.py` | 213 | Append-only iteration manifest |
+
+### Stopping Conditions
+- `threshold_satisfied` — similarity ≥ 0.95 (configurable)
+- `no_safe_repair` — zero patches generated
+- `insufficient_progress` — improvement < 0.005 per iteration
+- `max_iterations_reached` — hard limit of 10 iterations
+- `approval_denied` — human reviewer rejected patches
+- `regression_detected` — score dropped after applying patches
+
+### New Test Coverage (30 tests)
+| Test Class | Tests | Coverage |
+|------------|-------|----------|
+| `TestRepairClassifier` | 8 | Category classification, spacing refinement, shared tokens |
+| `TestPatchPlanner` | 4 | Strategy ordering, shared-token grouping, parent-before-child |
+| `TestPatchExecutor` | 4 | Token/style patches, rollback, rejected patches |
+| `TestRepairHistory` | 5 | Iteration recording, ordering, save/load |
+| `TestRepairLoop` | 5 | Threshold, max iterations, approval, regression |
+| `TestFixtureRepairLoop` | 3 | End-to-end with intentional defects |
+
+### Verification ✅
+- All 214 tests pass (184 existing + 30 new).
+- No regressions in existing test suite.
+- End-to-end fixture test confirms geometry defects are detected, classified, planned, and executed.
+
+---
+
+## Part 9: TypeScript Orchestration Runtime (2026-08-12)
+
+### Overview
+Implemented a complete TypeScript runtime that coordinates the full Figma-to-code pipeline with a deterministic state machine, resumable checkpoints, security boundaries, and an evaluation harness.
+
+### Key Decisions
+1. **Zero External Dependencies**: The runtime uses only TypeScript and Node.js stdlib — no ADK, LangGraph, CrewAI, Temporal, or any orchestration framework.
+2. **Deterministic State Machine**: All 10 pipeline stages execute in strict order with explicit transitions, enforced by the `StateMachine` class.
+3. **Resumable Checkpoints**: After each stage, a JSON checkpoint is saved. Crashed runs resume from the latest valid checkpoint.
+4. **Security by Default**: PathSandbox restricts filesystem access, ShellGuard blocks arbitrary commands, SecretGuard redacts secrets from logs, ApprovalGate requires consent before file modifications.
+5. **Replaceable Model Provider**: The `ModelProvider` interface allows swapping LLM backends with no provider lock-in. `NullModelProvider` enables fully deterministic runs.
+6. **Content-Addressed Artifacts**: Every artifact is stored with a SHA-256 hash for deduplication and integrity verification.
+
+### Modules Added (TypeScript)
+| Module | Lines | Purpose |
+|--------|-------|---------|
+| `types.ts` | 159 | Pipeline stages, config, IDs, model provider interface |
+| `events.ts` | 138 | Append-only structured event log |
+| `checkpoint.ts` | 165 | Checkpoint save/load/resume |
+| `artifacts.ts` | 176 | Content-addressed artifact storage |
+| `tools.ts` | 203 | Typed tool registry + Python bridge |
+| `state.ts` | 229 | Deterministic state machine |
+| `budget.ts` | 147 | Token/time/iteration budget enforcement |
+| `retry.ts` | 155 | Retry with exponential backoff + cancellation |
+| `security.ts` | 400 | Path sandbox, secret guard, shell guard, approval gate |
+| `pipeline.ts` | 328 | Pipeline coordinator |
+| `evaluation.ts` | 389 | Golden fixtures, snapshot comparison, failure injection |
+| `cli/main.ts` | 373 | CLI with 6 commands |
+
+### CLI Commands
+- `figmaforge run` — Full pipeline execution
+- `figmaforge inspect` — Inspect previous run artifacts
+- `figmaforge replay` — Replay event log for debugging
+- `figmaforge render` — Single-stage render
+- `figmaforge compare` — Single-stage comparison
+- `figmaforge repair` — Single-stage repair
+
+### Test Coverage (79 tests)
+| Test Suite | Tests | Coverage |
+|------------|-------|----------|
+| types | 6 | Pipeline stages, IDs, model provider |
+| events | 6 | Event log, filtering, serialization |
+| checkpoints | 7 | Save/load, resume, metrics |
+| artifacts | 6 | JSON/buffer storage, filtering, manifest |
+| tools | 5 | Registry, invocation, error tracking |
+| state machine | 9 | Lifecycle, transitions, checkpoint resume |
+| budget | 7 | Token/time/iteration enforcement |
+| retry | 7 | Backoff, cancellation, timeout |
+| security | 16 | Sandbox, secrets, shell, approval, assets |
+| pipeline | 2 | Full pipeline, stage failure |
+| evaluation | 6 | Snapshots, fixtures, failure injection |
+| idempotency/rollback | 2 | Determinism, state preservation |
+
+### Verification ✅
+- All 79 TypeScript runtime tests pass.
+- All 214 Python pipeline tests still pass.
+- TypeScript compilation clean (0 errors).
+- CLI builds and runs successfully.
+- Idempotency test confirms same input → same output.
+- Checkpoint resume test confirms crashed runs can recover.
+

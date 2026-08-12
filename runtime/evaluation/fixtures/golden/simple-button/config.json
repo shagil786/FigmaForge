@@ -1,0 +1,4 @@
+{
+  "minSimilarity": 0.90,
+  "maxRepairIterations": 5
+}
