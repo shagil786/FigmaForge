@@ -41,7 +41,7 @@ This is a complete platform implementation (version 0.0.1-dev), containing a 100
   - `schemas/`: `design-ir.schema.json`, `layout-plan.schema.json`, `resolution-report.schema.json`, `detection.schema.json`, `router.schema.json`, `task-state.schema.json`.
   - `templates/`: Inert examples for MCP and LSP configurations.
   - `library/`: `components.json` (5 project components), `tokens.json` (12 design tokens).
-  - `tests/` (26 test files, 273 tests): Unit, integration, snapshot, property-based, repair-loop, backend adapter, and render-harness tests.
+  - `tests/` (25 test files, 273 tests): Unit, integration, snapshot, property-based, repair-loop, backend adapter, and render-harness tests.
 - `runtime/` (Part 9 — TypeScript Orchestration Runtime):
   - `src/core/` (15 modules): `types.ts` (composable `CodegenTarget = { framework, styling }`), `events.ts`, `checkpoint.ts`, `artifacts.ts`, `tools.ts`, `state.ts`, `budget.ts`, `retry.ts`, `security.ts`, `pipeline.ts`, `evaluation.ts`, `providers.ts`, `screenshot_compare.ts`, `render_handler.ts`, `index.ts`
   - `src/cli/main.ts`: CLI with 6 commands (run, inspect, render, compare, repair, replay) + `--target=<framework+styling>` flag
@@ -94,7 +94,7 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 
 ## 7. Testing Requirements
 
-- All 273 Python tests across 26 test files must pass (`python3 -m unittest discover -s tests`); browser-render tests skip cleanly without chromium.
+- All 273 Python tests across 25 test files must pass (`python3 -m unittest discover -s tests`); browser-render tests skip cleanly without chromium.
 - All 106 TypeScript runtime tests must pass (`npx tsc && node dist/runtime/tests/run_all.js`).
 - Test categories: unit tests, integration tests, golden-file snapshot tests, property-based tests.
 - Snapshot tests use `REWRITE_SNAPSHOTS=1` to regenerate golden files after intentional output changes.
@@ -121,7 +121,7 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 
 - Scope is strictly adhered to (no speculative integrations).
 - All changes maintain schema constraints (run `claude plugin validate --strict`).
-- Full test suite passes: `python3 -m unittest discover -s tests` (273 tests, 26 files).
+- Full test suite passes: `python3 -m unittest discover -s tests` (273 tests, 25 files).
 - Changes align exactly with architectural constraints in `docs/architecture.md`.
 - `docs/DEVELOPMENT_LOG.md` updated with the change entry.
 - No exposed credentials, secrets, or unintentional active `.lsp.json`/`.mcp.json` templates exist.
