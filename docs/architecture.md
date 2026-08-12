@@ -268,6 +268,26 @@ code generator consumes):
 output. All ambiguous/approximate/unsupported layout cases are surfaced in the
 report, never silently guessed.
 
+### 8. React & CSS Code Generator (Part 6)
+
+**Status:** Implemented. Consumes the `LayoutPlan` (Part 5), `ResolutionReport`
+(Part 4), and the Design IR (Part 3) and emits a framework-neutral **VNode** tree
+plus abstract **VStyle** maps. Style adapters (CSS Modules / Tailwind / SCSS) can
+render the maps to real strings without re-running analysis.
+
+- `core/generator_types.py` — the `VNode`/`VStyle`/`GeneratorManifest` protocol
+  (deterministic serialization for snapshotting).
+- `core/react_generator.py` — recursive `LayoutPlan` → `VNode` traversal;
+  semantic tag mapping, `data-figma-id` debug IDs, text content extraction.
+- `core/css_generator.py` — `LayoutPlan` → `VStyle` mapping: display, fixed
+  sizing, padding/gap, flex/grid direction, alignment, absolute positioning.
+- `tests/test_generator_snapshot.py` — golden-file + determinism tests.
+
+**Constraint:** generated files are kept separate from handwritten code; no
+framework dependencies, no agent frameworks, no screenshot coordinates as the
+primary layout strategy. Absolute positioning is emitted only when the layout
+solver explicitly requires it.
+
 ---
 
 ## Components

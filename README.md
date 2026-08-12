@@ -1,9 +1,9 @@
 # FigmaForge Universal Adaptive Platform
 
-**Version:** 0.0.1-dev  
-**Status:** Implementation complete, validation pending
+**Version:** 0.0.2-dev  
+**Status:** Parts 1–6 complete, validation pending
 
-A technology-agnostic, adaptive, full-lifecycle Claude Code engineering platform that enables any software project type by detecting stack-specific signals and routing to appropriate capabilities.
+A technology-agnostic, adaptive, full-lifecycle Claude Code engineering platform that enables any software project type by detecting stack-specific signals and routing to appropriate capabilities. FigmaForge also converts normalized Figma design IR into framework-neutral layout plans and generates production-quality React/CSS output.
 
 ---
 
@@ -94,6 +94,9 @@ See [docs/architecture.md](docs/architecture.md) for the complete architecture d
 3. **Catalog** (`catalog/roles.json`) — 100 roles across 10 domains
 4. **State Machine** (`core/state.py`) — Lifecycle management with atomic state
 5. **Hooks** (`hooks/`) — SessionStart, PreToolUse, PostToolUse
+6. **Design IR & Resolver** (`core/ir_*.py`) — Normalized Figma design IR (Part 3) + component/token resolver (Part 4)
+7. **Layout Engine** (`core/layout_*.py`) — Responsive constraint solver + breakpoints (Part 5)
+8. **Code Generator** (`core/react_generator.py`, `core/css_generator.py`) — Semantic React/CSS output (Part 6)
 
 ### 10-Phase Lifecycle
 
@@ -191,13 +194,23 @@ FigmaForge/
 │   │   ├── catalog.py           # 100-role catalog
 │   │   ├── detector.py          # Repository detection
 │   │   ├── router.py            # Role selection
-│   │   └── state.py             # Lifecycle state
+│   │   ├── state.py             # Lifecycle state
+│   │   ├── ir_builder.py        # Figma → Design IR (Part 3)
+│   │   ├── resolver.py          # Component/token resolver (Part 4)
+│   │   ├── layout_analyzer.py   # Responsive layout plan (Part 5)
+│   │   ├── react_generator.py   # Semantic React output (Part 6)
+│   │   └── css_generator.py     # Modular CSS output (Part 6)
 │   ├── catalog/                 # Role catalog
 │   │   └── roles.json           # 100 roles across 10 domains
 │   ├── schemas/                 # JSON schemas
 │   │   ├── detection.schema.json
 │   │   ├── router.schema.json
-│   │   └── task-state.schema.json
+│   │   ├── task-state.schema.json
+│   │   └── layout-plan.schema.json
+│   ├── fixtures/figma/          # Design fixtures
+│   │   ├── layout_desktop.json
+│   │   ├── layout_tablet.json
+│   │   └── ...
 │   ├── agents/                  # 3 agents
 │   │   ├── context-scout.md
 │   │   ├── lifecycle-planner.md
@@ -224,9 +237,17 @@ FigmaForge/
 │   │       ├── official-plugins.json
 │   │       └── custom-server.example.json
 │   └── tests/                   # Tests
-│       └── test_detector.py
+│       ├── test_detector.py
+│       ├── test_layout_engine.py
+│       ├── test_layout_property.py
+│       ├── test_layout_snapshot.py
+│       └── test_generator_snapshot.py
 ├── docs/                        # Documentation
-│   └── architecture.md
+│   ├── architecture.md
+│   ├── design-ir.md
+│   ├── resolution.md
+│   ├── layout.md
+│   └── DEVELOPMENT_LOG.md
 ├── CLAUDE.md                    # Claude Code guidance
 ├── LICENSE                      # MIT License
 └── README.md                    # This file
@@ -250,7 +271,7 @@ Md Shagil Nizami
 
 - ✅ Backup created
 - ✅ Plugin skeleton created
-- ✅ Schemas created (detection, router, task-state)
+- ✅ Schemas created (detection, router, task-state, layout-plan)
 - ✅ 100-role catalog created
 - ✅ Detector implemented (Python)
 - ✅ Router implemented (Python)
@@ -259,7 +280,10 @@ Md Shagil Nizami
 - ✅ 6 skills defined
 - ✅ 3 hooks implemented
 - ✅ MCP/LSP templates created
-- ✅ Tests written and passing
+- ✅ **Part 3** Design IR + validation (implemented, tested)
+- ✅ **Part 4** Component/token resolver (implemented, tested)
+- ✅ **Part 5** Responsive layout engine + breakpoints (132 tests passing)
+- ✅ **Part 6** React/CSS generator (VNode protocol, deterministic golden tests)
 - ⏳ End-to-end demo (pending)
 - ⏳ Full validation suite (pending)
 - ⏳ CLAUDE.md update (pending)
@@ -273,3 +297,5 @@ Md Shagil Nizami
 3. Update CLAUDE.md with new architecture
 4. Test with real repositories
 5. Document rollback procedure
+6. Extend generator adapters (CSS Modules / Tailwind / SCSS)
+7. Screenshot comparison + automatic repair (future part)
