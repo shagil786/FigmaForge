@@ -8,6 +8,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { pathToFileURL } from "node:url";
 
 import { describe, it, assert, assertEqual, assertThrows, assertRejects, assertGreaterThan, assertLessOrEqual } from "./test_framework.js";
 import type { SuiteResult } from "./test_framework.js";
@@ -25,7 +26,7 @@ import { PipelineCoordinator } from "../src/core/pipeline.js";
 import { compareSnapshot, saveSnapshot, loadFixtures, injectFailure } from "../src/core/evaluation.js";
 import { createProvider, AnthropicProvider, OpenAIProvider } from "../src/core/providers.js";
 import { ScreenshotComparator } from "../src/core/screenshot_compare.js";
-import { vnodeToHtml } from "../src/core/render_handler.js";
+import { vnodeToHtml, buildBrowserRenderScript, parseBrowserRenderOutput, pickLayoutMeta } from "../src/core/render_handler.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1119,6 +1120,103 @@ export async function runAllTests(): Promise<SuiteResult[]> {
       assert(html.includes("&lt;"), "Should escape <");
       assert(html.includes("&amp;"), "Should escape &");
       assert(html.includes("&gt;"), "Should escape >");
+    });
+  }));
+
+  // 16. Browser render bridge (tryBrowserRender helpers)
+  results.push(await describe("browser render bridge", async () => {
+    await it("buildBrowserRenderScript embeds viewport and paths", async () => {
+      const script = buildBrowserRenderScript(
+        "/tmp/r/render_abc.html",
+        "/tmp/r/screenshot_abc.png",
+        { width: 1440, height: 900 },
+      );
+      assert(script.includes('"width": 1440'), `Expected width in: ${script}`);
+      assert(script.includes('"height": 900'), `Expected height in: ${script}`);
+      assert(script.includes(`page.goto("${pathToFileURL("/tmp/r/render_abc.html").href}")`),
+        "Expected goto target built from pathToFileURL");
+      assert(script.includes(JSON.stringify("/tmp/r/render_abc.html")),
+        "Expected JSON-escaped html literal");
+      assert(script.includes("/tmp/r/screenshot_abc.png"), "Expected screenshot path");
+      assert(script.split("/tmp/r/screenshot_abc.png").length === 3,
+        "screenshot path must appear as the screenshot target and in the payload");
+      assert(script.includes("sync_playwright"), "Expected playwright usage");
+      assert(script.includes("window.__figmaforge_meta"), "Expected meta extraction");
+    });
+
+    await it("buildBrowserRenderScript escapes hostile paths as Python literals", async () => {
+      const weirdDir = "/tmp/we\"ird\\dir";
+      const htmlPath = `${weirdDir}/render.html`;
+      const shotPath = `${weirdDir}/shot.png`;
+      const script = buildBrowserRenderScript(htmlPath, shotPath, { width: 800, height: 600 });
+      assert(script.includes(JSON.stringify(htmlPath)),
+        `Expected JSON-escaped html literal in: ${script}`);
+      assert(script.includes(JSON.stringify(shotPath)),
+        `Expected JSON-escaped screenshot literal in: ${script}`);
+      assert(script.includes(`page.goto("${pathToFileURL(htmlPath).href}")`),
+        "Expected percent-encoded goto target");
+      assert(!script.includes(`file://${htmlPath}`), "goto must not embed the raw path");
+    });
+
+    await it("parseBrowserRenderOutput parses valid payload", async () => {
+      const parsed = parseBrowserRenderOutput(
+        JSON.stringify({ screenshot: "/tmp/s.png", meta: { n1: { x: 0 } } }),
+      );
+      assert(parsed !== null, "Should parse");
+      assertEqual(parsed!.screenshotPath, "/tmp/s.png");
+      assertEqual((parsed!.meta.n1 as Record<string, number>).x, 0);
+    });
+
+    await it("parseBrowserRenderOutput takes the last stdout line", async () => {
+      const payload = JSON.stringify({ screenshot: "/tmp/s2.png", meta: {} });
+      const parsed = parseBrowserRenderOutput(`warning: something\n${payload}\n`);
+      assert(parsed !== null, "Should parse last line");
+      assertEqual(parsed!.screenshotPath, "/tmp/s2.png");
+    });
+
+    await it("parseBrowserRenderOutput returns null for error payload", async () => {
+      const parsed = parseBrowserRenderOutput(
+        JSON.stringify({ error: "playwright_not_installed" }),
+      );
+      assertEqual(parsed, null);
+    });
+
+    await it("parseBrowserRenderOutput returns null for garbage", async () => {
+      assertEqual(parseBrowserRenderOutput("not json at all"), null);
+      assertEqual(parseBrowserRenderOutput(""), null);
+    });
+
+    await it("buildBrowserRenderScript rejects non-finite viewport dimensions", async () => {
+      const badViewports: { width: number; height: number }[] = [
+        { width: NaN, height: 600 },
+        { width: 800, height: Number.POSITIVE_INFINITY },
+        { width: "800" as unknown as number, height: 600 },
+      ];
+      for (const viewport of badViewports) {
+        let caught: unknown = null;
+        try {
+          buildBrowserRenderScript("/tmp/a.html", "/tmp/a.png", viewport);
+        } catch (err) {
+          caught = err;
+        }
+        assert(caught instanceof TypeError,
+          `Expected TypeError for viewport ${JSON.stringify(viewport)}`);
+      }
+    });
+
+    await it("pickLayoutMeta prefers non-empty browser meta", async () => {
+      const browser = { n1: { x: 1 } };
+      const staticMeta = { n1: { x: 2 } };
+      assertEqual(pickLayoutMeta(browser, staticMeta), browser);
+    });
+
+    await it("pickLayoutMeta falls back to static meta for unusable browser meta", async () => {
+      const staticMeta = { n1: { x: 2 } };
+      assertEqual(pickLayoutMeta(null, staticMeta), staticMeta);
+      assertEqual(pickLayoutMeta(undefined, staticMeta), staticMeta);
+      assertEqual(pickLayoutMeta({}, staticMeta), staticMeta);
+      assertEqual(pickLayoutMeta("nope" as unknown as Record<string, unknown>, staticMeta), staticMeta);
+      assertEqual(pickLayoutMeta([1] as unknown as Record<string, unknown>, staticMeta), staticMeta);
     });
   }));
 

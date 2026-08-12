@@ -389,3 +389,23 @@ FigmaForge must NOT be fundamentally tied to React, TypeScript, JSX, CSS, or any
 - Zero references to old fixed constants (`AVAILABLE_TARGETS`, `TARGET_RENDERER`, `TARGET_EXTENSIONS`).
 - Core pipeline modules (`ir_types`, `layout_types`, `layout_engine`, `token_resolver`) verified framework-neutral — no changes needed.
 
+## Part 11: Real Browser Render Harness (2026-08-13)
+
+### Overview
+Replaced every synthetic render path with real headless-chromium rendering via Playwright (a user-approved required dependency). The Part 8 repair loop now diffs actual browser output: screenshots plus per-node box-model and computed-style metadata keyed by `data-node-id`.
+
+### What Changed
+1. **`core/render_harness.py`** — placeholder replaced with a real `playwright.sync_api` implementation: chromium launch, viewport-normalized page (`{w,h}` and `{width,height}` both accepted), `networkidle` wait, full-page screenshot, `window.__figmaforge_meta` extraction. `layout_metadata` is now node-id-keyed in `DiffEngine` shape. Missing playwright raises `RenderHarnessError` naming the install command (module still imports cleanly). Hardening: explicit harness timeouts and `build_id` validation.
+2. **`core/render_html.py`** — new: `IRDocument` + `VStyle` map → full HTML document with `#figmaforge-root` fixed to the viewport, `data-node-id` attributes, and the inline metadata-extraction script (mirrors `runtime/src/core/render_handler.ts` intent).
+3. **`core/render_adapter.py`** — new: `make_render_callable(harness)` produces the `RenderCallable` closure injected via `RepairLoop(render_fn=...)`. Zero changes to `repair_loop.py` internals.
+4. **`runtime/src/core/render_handler.ts`** — dead `tryBrowserRender` fixed: the Python bridge script is piped via stdin to `python3 -` and its JSON output parsed into the screenshot path. Extracted `buildBrowserRenderScript` / `parseBrowserRenderOutput` for testability. Hardening: path-escaping via `JSON.stringify`/`pathToFileURL` and process-group kill on timeout.
+5. **Docs** — README + CLAUDE.md setup steps (`pip install playwright && playwright install chromium`), `docs/repair-loop.md` harness section, this log entry.
+
+### Testing
+- Mocked-playwright contract tests (`tests/test_render_harness.py`, 14), HTML generation tests (`tests/test_render_html.py`, 10), adapter + repair-loop integration tests (`tests/test_render_adapter.py`, 6), real-browser smoke tests that skip without chromium (`tests/test_render_harness_smoke.py`, 2; `test_harness_determinism` also guarded).
+- TS: 9 new bridge tests in the runtime suite.
+- Full gate: 273 Python tests OK (`Ran 273 tests ... OK (skipped=3)` without chromium), 109 runtime tests passing, `claude plugin validate --strict` clean.
+
+### Non-goals (deferred)
+Pixel/perceptual diffing (`_diff_raster`), real PNG decode in `screenshot_compare.ts`, Figma baseline download, stub backend implementations.
+
