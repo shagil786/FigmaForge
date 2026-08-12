@@ -132,6 +132,8 @@ def decode_png(data: bytes) -> PngImage:
             if width <= 0 or height <= 0:
                 raise PngError("image dimensions must be positive")
         elif chunk_type == b"IDAT":
+            if width is None:
+                raise PngError("IDAT chunk before IHDR")
             idat_parts.append(body)
         elif chunk_type == b"IEND":
             saw_iend = True
@@ -145,13 +147,9 @@ def decode_png(data: bytes) -> PngImage:
         raise PngError("missing IDAT/IEND chunks")
 
     channels = 3 if color_type == 2 else 4
-    try:
-        raw = zlib.decompress(b"".join(idat_parts))
-    except zlib.error as exc:
-        raise PngError(f"corrupt IDAT stream: {exc}") from exc
-
     stride = width * channels
     expected = height * (stride + 1)
+    raw = _decompress_limited(b"".join(idat_parts), expected)
     if len(raw) != expected:
         raise PngError(
             f"decompressed size {len(raw)} != expected {expected}"
@@ -159,6 +157,39 @@ def decode_png(data: bytes) -> PngImage:
 
     pixels = _unfilter(raw, width, height, channels)
     return PngImage(width=width, height=height, channels=channels, pixels=pixels)
+
+
+def _decompress_limited(stream: bytes, expected: int) -> bytes:
+    """Incrementally decompress, refusing to expand past ``expected`` bytes.
+
+    Guards against decompression bombs: output is pulled in slices capped
+    at the IHDR-derived expected size, so a tiny IDAT that expands to
+    gigabytes is rejected after ``expected + 1`` bytes — it is never
+    fully expanded into memory.
+    """
+    decompressor = zlib.decompressobj()
+    out = bytearray()
+    pending = stream
+    while pending:
+        try:
+            chunk = decompressor.decompress(pending, expected + 1 - len(out))
+        except zlib.error as exc:
+            raise PngError(f"corrupt IDAT stream: {exc}") from exc
+        out += chunk
+        if len(out) > expected:
+            raise PngError("decompressed stream exceeds declared size")
+        nxt = decompressor.unconsumed_tail
+        if not chunk and len(nxt) == len(pending):
+            break  # end of zlib stream (possibly with trailing bytes)
+        pending = nxt
+    try:
+        tail = decompressor.flush()
+    except zlib.error as exc:
+        raise PngError(f"corrupt IDAT stream: {exc}") from exc
+    out += tail
+    if len(out) > expected:
+        raise PngError("decompressed stream exceeds declared size")
+    return bytes(out)
 
 
 def _paeth(a: int, b: int, c: int) -> int:
@@ -184,6 +215,8 @@ def _unfilter(data: bytes, width: int, height: int, channels: int) -> bytes:
         pos += 1
         line = bytearray(data[pos:pos + stride])
         pos += stride
+        # Defense in depth: decode_png already verifies the decompressed
+        # size before calling _unfilter, so this cannot trigger today.
         if len(line) != stride:
             raise PngError("truncated scanline")
 

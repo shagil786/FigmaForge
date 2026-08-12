@@ -144,8 +144,8 @@ class TestDecodeRejection(unittest.TestCase):
 
     def test_rejects_bad_crc(self):
         png = bytearray(_build_png(3, 2, [b"\x00" + ROW0, b"\x00" + ROW1]))
-        png[-20] ^= 0xFF  # corrupt a byte inside the IEND chunk
-        with self.assertRaises(PngError):
+        png[-20] ^= 0xFF  # corrupt a byte inside the IDAT body
+        with self.assertRaisesRegex(PngError, "bad CRC"):
             decode_png(bytes(png))
 
     def test_rejects_truncated_stream(self):
@@ -162,6 +162,86 @@ class TestEncodeValidation(unittest.TestCase):
     def test_rejects_wrong_pixel_length(self):
         with self.assertRaises(PngError):
             encode_png(PngImage(width=2, height=2, channels=3, pixels=b"\x00" * 5))
+
+
+class TestDecodeBoundary(unittest.TestCase):
+    """Edge cases around filter reconstruction and chunk parsing."""
+
+    def test_roundtrip_1x1_rgba(self):
+        # Single-pixel RGBA exercises the i < channels boundary paths in
+        # every filter reconstruction branch.
+        pixels = bytes([1, 2, 3, 4])
+        img = PngImage(width=1, height=1, channels=4, pixels=pixels)
+        decoded = decode_png(encode_png(img))
+        self.assertEqual((decoded.width, decoded.height, decoded.channels), (1, 1, 4))
+        self.assertEqual(decoded.pixels, pixels)
+
+    def test_rejects_zero_width(self):
+        ihdr = struct.pack(">IIBBBBB", 0, 2, 8, 2, 0, 0, 0)
+        png = (
+            PNG_SIGNATURE
+            + _chunk(b"IHDR", ihdr)
+            + _chunk(b"IDAT", zlib.compress(b""))
+            + _chunk(b"IEND", b"")
+        )
+        with self.assertRaisesRegex(PngError, "dimensions must be positive"):
+            decode_png(png)
+
+    def test_rejects_unknown_filter(self):
+        png = _build_png(3, 2, [b"\x00" + ROW0, b"\x05" + ROW1])
+        with self.assertRaisesRegex(PngError, "unknown filter type 5"):
+            decode_png(png)
+
+    def test_rejects_decompressed_size_mismatch(self):
+        # IHDR declares 3x2 (20 raw bytes expected) but IDAT holds one row.
+        png = _build_png(3, 2, [b"\x00" + ROW0])
+        with self.assertRaisesRegex(PngError, "decompressed size"):
+            decode_png(png)
+
+    def test_rejects_duplicate_ihdr(self):
+        ihdr = struct.pack(">IIBBBBB", 3, 2, 8, 2, 0, 0, 0)
+        png = (
+            PNG_SIGNATURE
+            + _chunk(b"IHDR", ihdr)
+            + _chunk(b"IHDR", ihdr)
+            + _chunk(b"IDAT", zlib.compress(b"\x00" + ROW0 + b"\x00" + ROW1))
+            + _chunk(b"IEND", b"")
+        )
+        with self.assertRaisesRegex(PngError, "duplicate IHDR"):
+            decode_png(png)
+
+    def test_rejects_idat_before_ihdr(self):
+        ihdr = struct.pack(">IIBBBBB", 3, 2, 8, 2, 0, 0, 0)
+        idat = zlib.compress(b"\x00" + ROW0 + b"\x00" + ROW1)
+        png = (
+            PNG_SIGNATURE
+            + _chunk(b"IDAT", idat)
+            + _chunk(b"IHDR", ihdr)
+            + _chunk(b"IEND", b"")
+        )
+        with self.assertRaisesRegex(PngError, "IDAT.*before IHDR"):
+            decode_png(png)
+
+    def test_junk_after_iend_tolerated(self):
+        # Parser stops at IEND; trailing bytes are ignored.
+        png = _build_png(3, 2, [b"\x00" + ROW0, b"\x00" + ROW1]) + b"\xde\xad\xbe\xef"
+        self.assertEqual(decode_png(png).pixels, EXPECTED)
+
+
+class TestDecompressionBomb(unittest.TestCase):
+    def test_rejects_oversized_stream(self):
+        # IHDR declares 1x1 RGB (expected raw = 1 * (3 + 1) = 4 bytes) but
+        # IDAT expands to 10 MB — must be rejected before full expansion.
+        bomb = zlib.compress(b"\x00" * (10 * 1024 * 1024), 1)
+        ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+        png = (
+            PNG_SIGNATURE
+            + _chunk(b"IHDR", ihdr)
+            + _chunk(b"IDAT", bomb)
+            + _chunk(b"IEND", b"")
+        )
+        with self.assertRaisesRegex(PngError, "exceeds declared size"):
+            decode_png(png)
 
 
 if __name__ == "__main__":
