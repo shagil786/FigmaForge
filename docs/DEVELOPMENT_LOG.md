@@ -242,3 +242,56 @@ Implemented a complete TypeScript runtime that coordinates the full Figma-to-cod
 - Idempotency test confirms same input → same output.
 - Checkpoint resume test confirms crashed runs can recover.
 
+---
+
+## Part 9 Follow-up: Resolved All Remaining Limitations (2026-08-12)
+
+### Overview
+Addressed all four remaining limitations from the initial Part 9 implementation.
+
+### Changes
+
+#### 1. Single-Stage Execution (render/compare/repair)
+- **`cmdRender`**: Now loads generated code artifacts, generates HTML via `generateSimpleHtml()`, writes to disk, and attempts Playwright screenshot capture via Python bridge.
+- **`cmdCompare`**: Loads diff report artifacts, displays similarity score, categories, and mismatch counts. Falls back to screenshot inspection when no diff report exists.
+- **`cmdRepair`**: Loads diff report, categorizes mismatches by type, reports counts per category.
+
+#### 2. Real Render Stage Handler
+- **`render_handler.ts`** (406 lines): Full VNode → HTML conversion with:
+  - `vnodeToHtml()`: Recursive VNode tree to HTML string with proper escaping
+  - `generateFullHtml()`: Complete HTML document with viewport, styles, and metadata extraction script
+  - `renderHandler()`: Pipeline stage handler that generates HTML, extracts layout metadata, and attempts Playwright browser rendering
+  - XSS prevention via HTML entity escaping in text and attributes
+  - CSS-in-JS conversion (camelCase → kebab-case)
+
+#### 3. Pixel-Level Screenshot Comparison
+- **`screenshot_compare.ts`** (231 lines): `ScreenshotComparator` class with:
+  - SHA-256 content hashing for fast identical-image detection
+  - Structural comparison using buffer size analysis
+  - `compare()`: Full comparison returning similarity score, diff pixel count, dimensions, hashes
+  - `passesThreshold()`: Boolean check against configurable threshold
+  - `generateDiffReport()`: Severity-classified diff report with region detection
+  - File and buffer comparison modes
+
+#### 4. Replaceable Model Providers
+- **`providers.ts`** (203 lines): Three provider implementations:
+  - `NullModelProvider`: Deterministic empty responses (already existed in types.ts)
+  - `AnthropicProvider`: Full Anthropic Messages API integration with timeout, abort, error handling
+  - `OpenAIProvider`: Full OpenAI Chat Completions API integration with timeout, abort, error handling
+  - `createProvider()`: Factory function that reads API keys from environment variables
+  - Both providers support configurable model, base URL, timeout, and abort signals
+
+### New Test Coverage (21 additional tests)
+| Test Suite | Tests | Coverage |
+|------------|-------|----------|
+| providers | 6 | Factory, provider creation, API key validation |
+| screenshot comparator | 7 | Identical/different comparison, thresholds, diff reports |
+| render handler | 8 | VNode→HTML, attributes, styles, nesting, XSS prevention |
+
+### Verification ✅
+- All 100 TypeScript runtime tests pass (79 → 100, +21 new).
+- All 214 Python pipeline tests still pass.
+- TypeScript compilation clean (0 errors).
+- Total: **314 tests, 0 failures**.
+- All four previously-listed limitations are now resolved.
+
