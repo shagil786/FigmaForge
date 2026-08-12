@@ -33,6 +33,18 @@ DEFAULT_COLOR_THRESHOLD = 16
 DEFAULT_MIN_REGION_AREA = 8
 
 
+class _JsonArgumentParser(argparse.ArgumentParser):
+    """ArgumentParser that raises ``ValueError`` instead of exiting.
+
+    The CLI contract is one JSON line on stdout for every invocation;
+    argparse's default ``SystemExit(2)`` with usage on stderr would break
+    it for bad invocations (missing flags, non-numeric ``--threshold``).
+    """
+
+    def error(self, message: str) -> None:  # type: ignore[override]
+        raise ValueError(f"invalid arguments: {message}")
+
+
 @dataclass
 class PixelDiffStats:
     """Aggregate statistics for one comparison."""
@@ -227,7 +239,7 @@ def compare_png_files(
         img_a = decode_png(Path(path_a).read_bytes())
         img_b = decode_png(Path(path_b).read_bytes())
         stats, _mask = compare_images(img_a, img_b, color_threshold)
-    except (OSError, ValueError, PngError) as exc:
+    except (OSError, ValueError, MemoryError, PngError) as exc:
         return {"ok": False, "error": str(exc)}
     result = stats.to_cli_dict()
     result["ok"] = True
@@ -235,7 +247,7 @@ def compare_png_files(
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    parser = argparse.ArgumentParser(
+    parser = _JsonArgumentParser(
         prog="core.pixel_diff",
         description="Pixel-diff two PNG files; prints one JSON line.",
     )
@@ -245,7 +257,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         "--threshold", type=int, default=DEFAULT_COLOR_THRESHOLD,
         help="per-channel color threshold (default 16)",
     )
-    args = parser.parse_args(argv)
+    try:
+        args = parser.parse_args(argv)
+    except ValueError as exc:
+        # Bad invocation (missing flag, non-numeric --threshold, ...) —
+        # keep the one-JSON-line contract instead of argparse's SystemExit.
+        print(json.dumps({"error": str(exc)}))
+        return 1
+    if args.threshold < 0:
+        print(json.dumps({"error": "threshold must be >= 0"}))
+        return 1
 
     result = compare_png_files(args.path_a, args.path_b, args.threshold)
     if not result.pop("ok"):
