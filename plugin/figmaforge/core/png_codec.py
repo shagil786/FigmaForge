@@ -189,6 +189,10 @@ def _decompress_limited(stream: bytes, expected: int) -> bytes:
     out += tail
     if len(out) > expected:
         raise PngError("decompressed stream exceeds declared size")
+    # A truncated stream that happens to yield exactly ``expected`` bytes
+    # must still be rejected — verify the zlib end marker was consumed.
+    if not decompressor.eof:
+        raise PngError("corrupt IDAT stream: truncated zlib data")
     return bytes(out)
 
 

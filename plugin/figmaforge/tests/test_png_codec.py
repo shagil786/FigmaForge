@@ -244,5 +244,32 @@ class TestDecompressionBomb(unittest.TestCase):
             decode_png(png)
 
 
+class TestTruncatedZlibStream(unittest.TestCase):
+    def test_rejects_truncated_stream_yielding_exact_size(self):
+        # A stream truncated before the zlib end marker that nonetheless
+        # yields exactly the expected byte count must still be rejected —
+        # stream completeness is verified, not just output size.
+        raw = b"\x00" + ROW0 + b"\x00" + ROW1  # 20 bytes == expected for 3x2
+        full = zlib.compress(raw, 9)
+        truncated = None
+        for k in range(len(full) - 1, 0, -1):
+            probe = zlib.decompressobj()
+            out = probe.decompress(full[:k])
+            if len(out) == len(raw) and not probe.eof:
+                truncated = full[:k]
+                break
+        self.assertIsNotNone(
+            truncated, "could not craft exact-fit truncated stream"
+        )
+        png = (
+            PNG_SIGNATURE
+            + _chunk(b"IHDR", struct.pack(">IIBBBBB", 3, 2, 8, 2, 0, 0, 0))
+            + _chunk(b"IDAT", truncated)
+            + _chunk(b"IEND", b"")
+        )
+        with self.assertRaisesRegex(PngError, "truncated zlib data"):
+            decode_png(png)
+
+
 if __name__ == "__main__":
     unittest.main()
