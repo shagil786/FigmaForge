@@ -10,8 +10,8 @@ Run:  python3 -m unittest tests.test_render_harness -v
 
 from __future__ import annotations
 
-import shutil
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
@@ -100,8 +100,9 @@ class TestNormalizeViewport(unittest.TestCase):
 
 class TestRenderHarnessContract(unittest.TestCase):
     def setUp(self):
-        self.out_dir = Path("/tmp/figmaforge_harness_test")
-        shutil.rmtree(self.out_dir, ignore_errors=True)
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.out_dir = Path(self._tmp.name)
         self.harness = RenderHarness(self.out_dir)
 
     def test_output_dir_created(self):
@@ -117,8 +118,12 @@ class TestRenderHarnessContract(unittest.TestCase):
         fake.browser.new_page.assert_called_once_with(
             viewport={"width": 1440, "height": 900}
         )
-        fake.page.goto.assert_called_once_with((self.out_dir / "build1.html").as_uri())
-        fake.page.wait_for_load_state.assert_called_once_with("networkidle")
+        fake.page.goto.assert_called_once_with(
+            (self.out_dir / "build1.html").as_uri(), timeout=15_000
+        )
+        fake.page.wait_for_load_state.assert_called_once_with(
+            "networkidle", timeout=15_000
+        )
         fake.page.screenshot.assert_called_once_with(
             path=str(self.out_dir / "build1.png"), full_page=True
         )
@@ -169,6 +174,20 @@ class TestRenderHarnessContract(unittest.TestCase):
             self.harness.render("<html></html>", {"w": 800, "h": 600}, "b5")
         self.assertIn("browser rendering failed", str(ctx.exception))
         self.assertIn("playwright install chromium", str(ctx.exception))
+
+    def test_goto_timeout_raises_render_harness_error(self):
+        fake = _FakePlaywright({})
+        fake.install(self)
+        fake.page.goto.side_effect = Exception("Timeout 15000ms exceeded")
+        with self.assertRaises(RenderHarnessError) as ctx:
+            self.harness.render("<html></html>", {"w": 800, "h": 600}, "b6")
+        self.assertIn("browser rendering failed", str(ctx.exception))
+
+    def test_build_id_path_traversal_rejected(self):
+        fake = _FakePlaywright({})
+        fake.install(self)
+        with self.assertRaises(ValueError):
+            self.harness.render("<html></html>", {"w": 800, "h": 600}, "../evil")
 
 
 if __name__ == "__main__":

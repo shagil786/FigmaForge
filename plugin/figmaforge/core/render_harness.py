@@ -12,6 +12,7 @@ naming the install command instead of leaking an ``ImportError`` traceback.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict
@@ -25,6 +26,8 @@ PLAYWRIGHT_INSTALL_HINT = (
     "playwright is required for browser rendering. "
     "Install it with: pip install playwright && playwright install chromium"
 )
+
+BUILD_ID_PATTERN = re.compile(r"[A-Za-z0-9._-]+")
 
 
 def normalize_viewport(viewport_spec: Dict[str, Any]) -> Dict[str, int]:
@@ -85,6 +88,11 @@ class RenderHarness:
         "color", "backgroundColor", "padding", "margin"}}}`` — the exact
         shape ``DiffEngine.diff(plan, render_meta)`` consumes.
         """
+        if not BUILD_ID_PATTERN.fullmatch(build_id):
+            raise ValueError(
+                f"build_id must match ^[A-Za-z0-9._-]+$, got {build_id!r}"
+            )
+
         viewport = normalize_viewport(viewport_spec)
 
         try:
@@ -101,14 +109,15 @@ class RenderHarness:
                 browser = p.chromium.launch()
                 try:
                     page = browser.new_page(viewport=viewport)
-                    page.goto(html_path.as_uri())
-                    page.wait_for_load_state("networkidle")
+                    page.goto(html_path.as_uri(), timeout=15_000)
+                    page.wait_for_load_state("networkidle", timeout=15_000)
                     page.screenshot(path=str(screenshot_path), full_page=True)
                     meta = page.evaluate("window.__figmaforge_meta || {}")
                 finally:
-                    browser.close()
-        except RenderHarnessError:
-            raise
+                    try:
+                        browser.close()
+                    except Exception:
+                        pass
         except Exception as exc:
             raise RenderHarnessError(
                 f"browser rendering failed: {exc} — if chromium is not "

@@ -2,35 +2,28 @@
 """
 Rendering Pipeline Tests (Part 7; browser render guarded in Part 11).
 """
-import shutil
+import tempfile
 import unittest
 from pathlib import Path
 
 from core.asset_manager import AssetManager
 from core.render_harness import RenderHarness
 
-
-def _chromium_available() -> bool:
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        return False
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch()
-            browser.close()
-        return True
-    except Exception:
-        return False
-
-
-CHROMIUM_AVAILABLE = _chromium_available()
+META_HTML = (
+    '<html><body><div data-node-id="n1" style="width:50px;height:50px"></div>'
+    "<script>window.__figmaforge_meta={};document.querySelectorAll("
+    '"[data-node-id]").forEach(el=>{const r=el.getBoundingClientRect();'
+    "window.__figmaforge_meta[el.getAttribute(\"data-node-id\")]="
+    '{"x":Math.round(r.x),"y":Math.round(r.y),"width":Math.round(r.width),'
+    '"height":Math.round(r.height)}});</script></body></html>'
+)
 
 
 class TestRenderPipeline(unittest.TestCase):
     def setUp(self):
-        self.test_dir = Path("/tmp/figmaforge_test")
-        shutil.rmtree(self.test_dir, ignore_errors=True)
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.test_dir = Path(self._tmp.name)
         self.asset_dir = self.test_dir / "assets"
         self.render_dir = self.test_dir / "render"
         self.am = AssetManager(self.asset_dir)
@@ -52,21 +45,27 @@ class TestRenderPipeline(unittest.TestCase):
         h = self.am.ingest(safe, "good", "svg", "svg")
         self.assertIn(h, self.am.manifest.assets)
 
-    @unittest.skipUnless(
-        CHROMIUM_AVAILABLE,
-        "headless chromium not available — install with: "
-        "pip install playwright && playwright install chromium",
-    )
     def test_harness_determinism(self):
         # Part 11: the harness now performs a real browser render.
-        res = self.harness.render(
-            '<html><body><div data-node-id="n1"></div></body></html>',
-            {"w": 320, "h": 640},
-            "build1",
-        )
+        # Lazy availability check so importing this module never launches
+        # a browser.
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("playwright not installed")
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch()
+                browser.close()
+        except Exception as exc:
+            self.skipTest(f"headless chromium not available: {exc}")
+
+        res = self.harness.render(META_HTML, {"w": 320, "h": 640}, "build1")
         self.assertTrue(res.screenshot_path.exists())
         self.assertGreater(res.screenshot_path.stat().st_size, 0)
         self.assertIsInstance(res.layout_metadata, dict)
+        self.assertIn("n1", res.layout_metadata)
+        self.assertEqual(res.layout_metadata["n1"]["width"], 50)
 
 
 if __name__ == "__main__":
