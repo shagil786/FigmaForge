@@ -121,6 +121,12 @@ class TestGenerateRenderHtml(unittest.TestCase):
         html = generate_render_html(doc, {}, {"w": 800, "h": 600})
         self.assertIn('data-node-id="root-frame"', html)
 
+    def test_animations_and_transitions_killed(self):
+        html = generate_render_html(_make_document(), {}, {"w": 800, "h": 600})
+        self.assertIn("animation: none !important", html)
+        self.assertIn("transition: none !important", html)
+        self.assertIn("caret-color: transparent", html)
+
 
 if __name__ == "__main__":
     unittest.main()

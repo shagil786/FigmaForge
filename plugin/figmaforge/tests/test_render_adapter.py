@@ -32,11 +32,12 @@ class FakeHarness:
         self.meta = meta
         self.calls = []
 
-    def render(self, content_html, viewport_spec, build_id):
+    def render(self, content_html, viewport_spec, build_id, full_page=True):
         self.calls.append({
             "html": content_html,
             "viewport": viewport_spec,
             "build_id": build_id,
+            "full_page": full_page,
         })
         return RenderResult(
             screenshot_path=Path(f"/tmp/figmaforge_fake/{build_id}.png"),
@@ -47,7 +48,7 @@ class FakeHarness:
 class FailingHarness:
     """Duck-typed RenderHarness whose render always raises."""
 
-    def render(self, content_html, viewport_spec, build_id):
+    def render(self, content_html, viewport_spec, build_id, full_page=True):
         raise RenderHarnessError("boom")
 
 
@@ -163,6 +164,12 @@ class TestRenderAdapter(unittest.TestCase):
         )
         with self.assertRaises(RenderHarnessError):
             loop.run(_make_plan(), _make_document(), run_id="adapter-error")
+
+    def test_adapter_requests_fixed_viewport_screenshot(self):
+        harness = FakeHarness(MATCHING_META)
+        render_fn = make_render_callable(harness)
+        render_fn(_make_plan(), {}, _make_document(), 0)
+        self.assertEqual(harness.calls[0]["full_page"], False)
 
 
 if __name__ == "__main__":

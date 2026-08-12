@@ -123,6 +123,15 @@ class TestRenderHarnessSmoke(unittest.TestCase):
         self.assertNotIn("missing_in_render", types)
         self.assertNotIn("geometry_mismatch", types)
 
+    def test_smoke_full_page_false_matches_viewport(self):
+        from core.png_codec import decode_png
+        harness = RenderHarness(self.out_dir)
+        result = harness.render(
+            _build_html(), {"w": 800, "h": 600}, "smoke3", full_page=False
+        )
+        img = decode_png(result.screenshot_path.read_bytes())
+        self.assertEqual((img.width, img.height), (800, 600))
+
 
 if __name__ == "__main__":
     unittest.main()
