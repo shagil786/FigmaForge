@@ -393,23 +393,17 @@ function parseSize(value: string | number | undefined, fallback: number): number
 }
 
 /**
- * Attempt browser rendering using Playwright via Python bridge.
- * Returns the screenshot path if successful, null otherwise.
+ * Build the Python bridge script that renders an HTML file in headless
+ * chromium and prints a single JSON payload:
+ * {"screenshot": "<path>", "meta": {...}} — or {"error": "..."} on failure.
+ * The script is piped to the interpreter via stdin (python3 -).
  */
-async function tryBrowserRender(
+export function buildBrowserRenderScript(
   htmlPath: string,
-  outputDir: string,
-  hash: string,
+  screenshotPath: string,
   viewport: { width: number; height: number },
-): Promise<string | null> {
-  // Check if Playwright Python is available
-  const { execFile } = await import("node:child_process");
-  const { promisify } = await import("node:util");
-  const execFileAsync = promisify(execFile);
-
-  try {
-    // Try to use Python + Playwright for screenshot
-    const script = `
+): string {
+  return `
 import sys, json
 try:
     from playwright.sync_api import sync_playwright
@@ -418,28 +412,91 @@ try:
         page = browser.new_page(viewport={"width": ${viewport.width}, "height": ${viewport.height}})
         page.goto("file://${htmlPath}")
         page.wait_for_load_state("networkidle")
-        screenshot_path = "${outputDir}/screenshot_${hash}.png"
-        page.screenshot(path=screenshot_path, full_page=True)
+        page.screenshot(path="${screenshotPath}", full_page=True)
         meta = page.evaluate("window.__figmaforge_meta || {}")
         browser.close()
-        print(json.dumps({"screenshot": screenshot_path, "meta": meta}))
+        print(json.dumps({"screenshot": "${screenshotPath}", "meta": meta}))
 except ImportError:
     print(json.dumps({"error": "playwright_not_installed"}))
 except Exception as e:
     print(json.dumps({"error": str(e)}))
 `;
+}
 
-    const { stdout } = await execFileAsync(ctx_pythonBin(), {
-      timeout: 30_000,
-      env: { ...process.env, PYTHONIOENCODING: "utf-8" },
-    });
-
-    // This won't work directly since we need to pass the script via stdin
-    // Fall through to the alternative approach
-    return null;
+/**
+ * Parse the JSON payload printed by the Python bridge script.
+ * Returns null when the output is missing, malformed, or reports an error.
+ */
+export function parseBrowserRenderOutput(
+  stdout: string,
+): { screenshotPath: string; meta: Record<string, unknown> } | null {
+  const line = stdout.trim().split("\n").pop()?.trim();
+  if (!line) return null;
+  try {
+    const parsed = JSON.parse(line) as {
+      screenshot?: string;
+      meta?: Record<string, unknown>;
+      error?: string;
+    };
+    if (parsed.error || !parsed.screenshot) return null;
+    return { screenshotPath: parsed.screenshot, meta: parsed.meta ?? {} };
   } catch {
     return null;
   }
+}
+
+/**
+ * Attempt browser rendering using Playwright via the Python bridge.
+ * Pipes the bridge script to python via stdin (python3 -) and parses the
+ * JSON output. Returns the screenshot path if successful, null otherwise.
+ */
+async function tryBrowserRender(
+  htmlPath: string,
+  outputDir: string,
+  hash: string,
+  viewport: { width: number; height: number },
+): Promise<string | null> {
+  const { spawn } = await import("node:child_process");
+  const screenshotPath = path.join(outputDir, `screenshot_${hash}.png`);
+  const script = buildBrowserRenderScript(htmlPath, screenshotPath, viewport);
+
+  return new Promise<string | null>((resolve) => {
+    const child = spawn(ctx_pythonBin(), ["-"], {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, PYTHONIOENCODING: "utf-8" },
+    });
+
+    let stdout = "";
+    let settled = false;
+    const timer = setTimeout(() => {
+      child.kill();
+      finish(null);
+    }, 30_000);
+
+    const finish = (value: string | null): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString("utf-8");
+    });
+    child.on("error", () => finish(null));
+    child.on("close", (code) => {
+      if (code !== 0) {
+        finish(null);
+        return;
+      }
+      const parsed = parseBrowserRenderOutput(stdout);
+      finish(parsed ? parsed.screenshotPath : null);
+    });
+
+    child.stdin.on("error", () => finish(null));
+    child.stdin.write(script);
+    child.stdin.end();
+  });
 }
 
 function ctx_pythonBin(): string {

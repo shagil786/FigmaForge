@@ -25,7 +25,7 @@ import { PipelineCoordinator } from "../src/core/pipeline.js";
 import { compareSnapshot, saveSnapshot, loadFixtures, injectFailure } from "../src/core/evaluation.js";
 import { createProvider, AnthropicProvider, OpenAIProvider } from "../src/core/providers.js";
 import { ScreenshotComparator } from "../src/core/screenshot_compare.js";
-import { vnodeToHtml } from "../src/core/render_handler.js";
+import { vnodeToHtml, buildBrowserRenderScript, parseBrowserRenderOutput } from "../src/core/render_handler.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1119,6 +1119,51 @@ export async function runAllTests(): Promise<SuiteResult[]> {
       assert(html.includes("&lt;"), "Should escape <");
       assert(html.includes("&amp;"), "Should escape &");
       assert(html.includes("&gt;"), "Should escape >");
+    });
+  }));
+
+  // 16. Browser render bridge (tryBrowserRender helpers)
+  results.push(await describe("browser render bridge", async () => {
+    await it("buildBrowserRenderScript embeds viewport and paths", async () => {
+      const script = buildBrowserRenderScript(
+        "/tmp/r/render_abc.html",
+        "/tmp/r/screenshot_abc.png",
+        { width: 1440, height: 900 },
+      );
+      assert(script.includes('"width": 1440'), `Expected width in: ${script}`);
+      assert(script.includes('"height": 900'), `Expected height in: ${script}`);
+      assert(script.includes("/tmp/r/render_abc.html"), "Expected html path");
+      assert(script.includes("/tmp/r/screenshot_abc.png"), "Expected screenshot path");
+      assert(script.includes("sync_playwright"), "Expected playwright usage");
+      assert(script.includes("window.__figmaforge_meta"), "Expected meta extraction");
+    });
+
+    await it("parseBrowserRenderOutput parses valid payload", async () => {
+      const parsed = parseBrowserRenderOutput(
+        JSON.stringify({ screenshot: "/tmp/s.png", meta: { n1: { x: 0 } } }),
+      );
+      assert(parsed !== null, "Should parse");
+      assertEqual(parsed!.screenshotPath, "/tmp/s.png");
+      assertEqual((parsed!.meta.n1 as Record<string, number>).x, 0);
+    });
+
+    await it("parseBrowserRenderOutput takes the last stdout line", async () => {
+      const payload = JSON.stringify({ screenshot: "/tmp/s2.png", meta: {} });
+      const parsed = parseBrowserRenderOutput(`warning: something\n${payload}\n`);
+      assert(parsed !== null, "Should parse last line");
+      assertEqual(parsed!.screenshotPath, "/tmp/s2.png");
+    });
+
+    await it("parseBrowserRenderOutput returns null for error payload", async () => {
+      const parsed = parseBrowserRenderOutput(
+        JSON.stringify({ error: "playwright_not_installed" }),
+      );
+      assertEqual(parsed, null);
+    });
+
+    await it("parseBrowserRenderOutput returns null for garbage", async () => {
+      assertEqual(parseBrowserRenderOutput("not json at all"), null);
+      assertEqual(parseBrowserRenderOutput(""), null);
     });
   }));
 
