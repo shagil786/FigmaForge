@@ -1,0 +1,6 @@
+- Public APIs return typed `dataclass` results (e.g. `RouteResult`, `MatchResult`, `ResolutionReport`, `TokenResolution`, `RenderResult`) that expose a `to_dict()` method for deterministic JSON serialization.
+- Matching logic is intentionally pure and deterministic — no fuzzy matching or model inference — and explicitly reports `ambiguous` or `missing` outcomes instead of guessing.
+- Configuration-driven behavior is expressed as module-level mapping tables (e.g. `DETECTION_PATTERNS`, `FRAMEWORK_PATTERNS`, `_TRIGGER_TO_PHASES`, `_LANGUAGE_TO_DOMAIN`, `_FLOAT_CLASSIFIERS`, `DEFAULT_BREAKPOINT_ALIASES`) rather than inline conditionals.
+- State mutations go through `StateMachine` methods that call a shared `_write_state()` to atomically persist `state.json` and append a timestamped event to an in-memory `events` log.
+- Phase transitions enforce a fixed lifecycle order (`intake` → `discover` → `define` → `design` → `plan` → `implement` → `verify` → `release` → `operate` → `learn`) and only allow moving to the immediately next phase.
+- Each resolver/matcher class encapsulates a single concern and composes via constructor injection (e.g. `Router` takes `Catalog`+`RepositoryDetector`, `Resolver` takes `IRDocument`+`ProjectLibrary`, `Normalizer` accepts a pluggable `FileBuilder`).

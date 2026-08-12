@@ -1,0 +1,1 @@
+Pure Python standard library only (dataclasses, typing, json, pathlib); no external dependencies. Schema validation uses a hand-rolled JSON-Schema subset (type, required, properties, items, enum/const, additionalProperties, minimum/maximum, minItems/maxItems, local `$ref`).

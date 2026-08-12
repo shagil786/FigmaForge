@@ -1,0 +1,1 @@
+Pure Python stdlib: `dataclasses` for model definitions, `hashlib.sha256` for content-addressed storage, `pathlib` for filesystem layout, and `json` for manifest/catalog serialization. No third-party libraries are imported within this scope.

@@ -1,0 +1,1 @@
+Each run persists an append-only event log and a `state.json` snapshot under `.figmaforge/runs/<run_id>/`; the lifecycle order is enforced in-memory and replayable from disk.

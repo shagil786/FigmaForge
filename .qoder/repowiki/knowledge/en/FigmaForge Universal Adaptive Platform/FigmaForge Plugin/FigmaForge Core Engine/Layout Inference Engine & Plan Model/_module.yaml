@@ -1,0 +1,12 @@
+schema_version: 1
+module_path: figma_plugin/core_engine/layout_engine
+title: Layout Inference Engine & Plan Model
+scope:
+    - plugin/figmaforge/core/layout_analyzer.py
+    - plugin/figmaforge/core/layout_engine.py
+    - plugin/figmaforge/core/layout_types.py
+    - plugin/figmaforge/core/constraint_model.py
+    - plugin/figmaforge/core/breakpoint_model.py
+source_files: []
+depends_on: []
+related_to: []

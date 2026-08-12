@@ -1,0 +1,5 @@
+- Each production module is covered by a top-level `describe("<module>", ...)` block inside `test_all.ts`, with individual behaviors expressed as `await it("...", async () => { ... })` cases.
+- Assertions are made exclusively through the local framework helpers (`assert`, `assertEqual`, `assertThrows`, `assertRejects`, `assertGreaterThan`, `assertLessOrEqual`) rather than native `console.assert` or third-party libraries.
+- I/O-heavy suites create an isolated temp directory via the local `tmpDir()` helper and clean it up in a `finally` block using `cleanDir(dir)` to avoid cross-test contamination.
+- Asynchronous operations in tests are awaited directly inside `it` callbacks, and promise-based failures are verified with `assertRejects` paired with an expected message substring.
+- Error-path tests use `assertThrows` with a message pattern to assert both that an exception is thrown and that its message contains a specific keyword.

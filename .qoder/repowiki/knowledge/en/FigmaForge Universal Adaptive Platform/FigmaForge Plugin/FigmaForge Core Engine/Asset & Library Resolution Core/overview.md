@@ -1,0 +1,1 @@
+Defines data models and managers for ingesting Figma assets into content-addressed storage, mapping Figma references to local paths, and resolving existing project components and tokens from a JSON library manifest.

@@ -1,0 +1,1 @@
+Provides FigmaForge's hook registry for session/tool lifecycle events and reusable JSON templates for MCP servers and LSP language servers.

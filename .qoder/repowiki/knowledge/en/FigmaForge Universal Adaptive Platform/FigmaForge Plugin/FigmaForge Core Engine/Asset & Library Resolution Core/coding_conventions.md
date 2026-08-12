@@ -1,0 +1,5 @@
+- Data classes expose paired `from_dict` / `to_dict` methods for round-tripping between JSON manifests and typed objects, with validation raising `FigmaResponseError` on malformed input.
+- Name-based lookups use deterministic normalization functions (`normalize_name` strips filler words, collapses non-alphanumeric runs; `slugify` produces kebab-case keys) rather than raw string comparison.
+- Persistent state is stored as JSON manifests (`manifest.json`, `roles.json`, `components.json`, `tokens.json`) read lazily on first access and written back after mutations.
+- External resource loading uses explicit default paths derived from `Path(__file__).parent` plus a configurable override parameter, keeping tests injectable while preserving sensible defaults.
+- Defensive parsing: JSON loaders iterate over lists with `isinstance(c, dict)` guards and coerce optional fields via `data.get(... or default)`, never silently dropping entries.

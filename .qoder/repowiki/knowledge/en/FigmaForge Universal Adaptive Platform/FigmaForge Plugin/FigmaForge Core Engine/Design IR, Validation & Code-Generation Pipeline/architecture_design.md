@@ -1,0 +1,10 @@
+The module is organized as a pipeline with clear separation of concerns across six files:
+
+- `ir_types.py` declares the immutable, stdlib-only dataclasses that form the Design IR (`IRDocument`, `IRNode`, `IRStyle`, `IRLayout`, `IRToken`, etc.) plus deterministic `to_dict()`/`ir_to_json()` serialization helpers and a `KIND_BY_TYPE` map from raw Figma node types to normalized kinds.
+- `ir_builder.py` implements `IRBuilder.build(FigmaFile) -> IRDocument`, walking the ingestion-layer `Node` tree and producing an `IRNode` tree. It preserves every unmapped raw key in `IRNode.unknown` (tracked via `CONSUMED_NODE_KEYS` / `CONSUMED_FILE_KEYS`) and exposes `unsupported_properties()` for callers. Dependency direction: this file imports from `figma_types` (ingestion layer) and `ir_types`; nothing here renders code.
+- `ir_validator.py` ships a tiny, dependency-free JSON-Schema (draft-07 subset) validator that loads `schemas/design-ir.schema.json` and validates a serialized IR dict, raising `IRValidationError` via `ensure_valid()`.
+- `generator_types.py` defines the code-generation abstraction: `VNode` (virtual DOM), `VStyle` (CSS-like style dicts with breakpoint support), and `GeneratorManifest` (node-to-file mapping). This is the shared contract between generators and downstream adapters.
+- `css_generator.py` (`CSSGenerator`) translates a `LayoutNodePlan` into a `VStyle` by mapping display modes (flex/grid/absolute), sizing modes (fixed/fill/hug/percent), spacing, and alignment to CSS properties.
+- `react_generator.py` (`ReactGenerator`) walks a `LayoutNodePlan` into a `VNode` tree, resolving semantic HTML tags from node names and optionally wiring in project component names via a `ResolutionReport`.
+
+Dependency direction is strictly one-way: `ir_builder` → `ir_types`; generators consume `generator_types` and `layout_types` (external to this scope); validators are independent and operate on plain dicts. There is no I/O or network access inside these modules — they are pure transformations.

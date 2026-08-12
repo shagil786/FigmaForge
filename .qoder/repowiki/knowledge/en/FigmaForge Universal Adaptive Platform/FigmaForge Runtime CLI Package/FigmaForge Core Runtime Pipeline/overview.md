@@ -1,0 +1,1 @@
+Core runtime that orchestrates the deterministic Figma-to-code pipeline through stages with checkpointing, budget enforcement, security guards, and artifact storage.

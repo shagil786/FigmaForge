@@ -288,6 +288,86 @@ framework dependencies, no agent frameworks, no screenshot coordinates as the
 primary layout strategy. Absolute positioning is emitted only when the layout
 solver explicitly requires it.
 
+### 9. Backend Adapter Architecture (Part 10)
+
+**Status:** Implemented. The framework-neutral core pipeline (Parts 3–7) is
+decoupled from code generation via replaceable backend adapters.
+
+The core pipeline (IR → Layout → Resolution) is **framework-neutral**. A
+backend adapter is the *target-specific lowering* step that converts a
+`LayoutPlan` + `Design IR` into generated source code for a particular
+framework and styling system.
+
+**Architecture:**
+
+```
+Figma  →  Design IR  →  LayoutPlan  →  BackendAdapter.generate()
+                                            ↓
+                                    Generated code (target-specific)
+                                            ↓
+                                    Target renderer (browser / simulator)
+                                            ↓
+                                    Visual comparison  →  Repair
+```
+
+**Key rules:**
+- A backend MUST declare its capabilities and limitations explicitly via
+  `BackendCapabilities` (supported / unsupported / partial features).
+- A backend MUST NOT silently approximate a feature it cannot represent.
+  When a feature cannot be expressed in the target, the backend records a
+  `FidelityLoss` entry — the caller decides whether to proceed.
+- A backend consumes the framework-neutral IR and LayoutPlan; it never
+  mutates them.
+
+**Composable target model (TypeScript runtime):**
+
+```typescript
+interface CodegenTarget {
+  framework: Framework;     // "react" | "vue" | "svelte" | "html" | ... | (string & {})
+  styling: StylingSystem;   // "css" | "tailwind" | "styled_components" | ... | (string & {})
+}
+```
+
+Any framework can pair with any styling system. The target is NOT a fixed
+enum — it is an open composition. The backend registry resolves whether a
+concrete adapter exists for a given combination.
+
+**Components:**
+
+- `backends/protocol.py` — `BackendAdapter` ABC, `Feature` vocabulary (40+
+  canonical features), `FidelityLoss`, `BackendCapabilities`,
+  `GeneratedOutput`, `WEB_COMMON_FEATURES`.
+- `backends/registry.py` — `BackendRegistry` with register/unregister/get/
+  require/find/list, auto-discovery via `discover_builtins()`, global
+  singleton via `get_registry()`.
+- `backends/html_css/` — **Fully implemented** reference backend. Internal
+  `VNode`/`VStyle` types (moved from core), `_CSSStyleGenerator`,
+  `_VNodeBuilder`, `_HtmlEmitter`. Generates HTML + CSS files.
+- `backends/react_tailwind/` — Stub (React + Tailwind CSS).
+- `backends/vue/` — Stub (Vue 3 SFC with scoped CSS).
+- `backends/svelte/` — Stub (Svelte components with scoped styles).
+- `backends/swiftui/` — Stub (SwiftUI view structs, unsupported features
+  declared explicitly).
+- `backends/flutter/` — Stub (Flutter widget trees, unsupported features
+  declared explicitly).
+
+**Core modules remain framework-neutral:**
+- `ir_types.py` (784 lines) — framework-neutral semantic vocabulary.
+- `layout_types.py` (540 lines) — abstract display/sizing/anchoring.
+- `layout_engine.py` (988 lines) — inference from IR, no framework assumptions.
+- `token_resolver.py` (374 lines) — semantic token resolution.
+
+**Legacy generators preserved for backward compatibility:**
+- `core/generator_types.py` — `VNode`/`VStyle` protocol (still used by
+  snapshot tests).
+- `core/react_generator.py`, `core/css_generator.py` — original generators
+  (functionality absorbed into `backends/html_css/`).
+
+**Constraint:** The core pipeline (IR, layout, resolution) MUST remain
+framework-neutral. All framework-specific knowledge lives in backend
+adapters. No React, Vue, CSS, Tailwind, or any framework concept may leak
+into `core/`.
+
 ---
 
 ## Components
@@ -564,7 +644,7 @@ FigmaForge is a planned, not-implemented, technology-agnostic, adaptive platform
 - **Evidence-driven transitions** (not prose claims)
 - **Strict safety invariants** and backup/rollback strategy
 
-**Implementation status:** Core modules (detector, router, catalog, state machine) are implemented and tested. The Figma-to-Code pipeline (Parts 1-7) is fully implemented. Integration between the Adaptive Platform and the Figma pipeline is in progress.
+**Implementation status:** Core modules (detector, router, catalog, state machine) are implemented and tested. The Figma-to-Code pipeline (Parts 1-8) is fully implemented. The backend adapter architecture (Part 10) is implemented with 1 fully working backend (HTML+CSS) and 5 stubs (React+Tailwind, Vue, Svelte, SwiftUI, Flutter). The TypeScript orchestration runtime (Part 9) is implemented with composable code-generation targets. Integration between the Adaptive Platform and the Figma pipeline is in progress.
 
 ---
 

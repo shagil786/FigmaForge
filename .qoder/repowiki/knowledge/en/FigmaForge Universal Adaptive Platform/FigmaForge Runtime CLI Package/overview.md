@@ -1,0 +1,1 @@
+Node.js package that exposes the FigmaForge pipeline as a `figmaforge` CLI, wiring core runtime services (pipeline, checkpoints, artifacts, tools, budget) into run/inspect/replay/render/compare/repair commands.

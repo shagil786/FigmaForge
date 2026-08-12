@@ -1,0 +1,1 @@
+Monorepo root that composes a Python Figma-to-code plugin and a Node.js runtime CLI around shared design IR, schemas, and golden fixtures to convert Figma designs into framework-neutral layout plans and production React/CSS.

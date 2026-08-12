@@ -1,0 +1,16 @@
+schema_version: 1
+module_path: figma_plugin/core_engine/routing_detection_state
+title: Routing, Detection & Design-IR Resolution Pipeline
+scope:
+    - plugin/figmaforge/core/router.py
+    - plugin/figmaforge/core/detector.py
+    - plugin/figmaforge/core/state.py
+    - plugin/figmaforge/core/matcher.py
+    - plugin/figmaforge/core/resolver.py
+    - plugin/figmaforge/core/token_resolver.py
+    - plugin/figmaforge/core/variant_resolver.py
+    - plugin/figmaforge/core/normalizer.py
+    - plugin/figmaforge/core/render_harness.py
+source_files: []
+depends_on: []
+related_to: []

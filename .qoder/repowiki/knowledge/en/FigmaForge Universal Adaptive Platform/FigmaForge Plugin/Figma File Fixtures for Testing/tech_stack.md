@@ -1,0 +1,1 @@
+Plain JSON fixtures modeled after the Figma REST API v1 document schema (nodes, components, componentSets, styles, variables) used by TypeScript/JavaScript test runners.

@@ -1,0 +1,12 @@
+schema_version: 1
+module_path: figma_plugin/core_engine/asset_handling
+title: Asset & Library Resolution Core
+scope:
+    - plugin/figmaforge/core/asset_handler.py
+    - plugin/figmaforge/core/asset_manager.py
+    - plugin/figmaforge/core/asset_types.py
+    - plugin/figmaforge/core/catalog.py
+    - plugin/figmaforge/core/library_types.py
+source_files: []
+depends_on: []
+related_to: []

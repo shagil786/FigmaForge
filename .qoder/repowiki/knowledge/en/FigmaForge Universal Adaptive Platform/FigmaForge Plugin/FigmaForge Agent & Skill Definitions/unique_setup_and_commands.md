@@ -1,0 +1,1 @@
+The `demo` skill defines a bounded offline smoke test that validates the plugin structure via `claude plugin validate`, exercises the route skill against the current repo, steps through lifecycle phases in a temp directory, and cleans up afterward; a live smoke test can be run with `claude --plugin-dir ./plugin/figmaforge -p '/figmaforge:route ...'`.

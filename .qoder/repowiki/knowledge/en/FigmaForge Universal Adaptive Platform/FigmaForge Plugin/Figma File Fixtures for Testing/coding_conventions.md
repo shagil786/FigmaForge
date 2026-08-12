@@ -1,0 +1,5 @@
+- Each fixture is a top-level object mirroring the Figma file root shape with fields like `name`, `role`, `editorType`, `version`, `schemaVersion`, `document`, plus optional `components`, `componentSets`, `styles`, and `variables` maps.
+- Node IDs follow Figma's `<canvas>:<index>` convention (e.g. `0:0`, `1:2`, `2:3`) and are referenced consistently across `children`, `mainComponent`, `componentId`, and lookup maps.
+- Instance nodes include both a `componentId` pointing to a component definition and a `mainComponent` inline descriptor so consumers can resolve the source component without extra lookups.
+- Bound properties use `boundVariables` objects with `type: VARIABLE_ALIAS` and an `id` referencing entries in the top-level `variables` map rather than hard-coded values.
+- Layout frames declare `layoutMode`, `layoutSizingHorizontal/Vertical`, `primaryAxisAlignItems`, `counterAxisAlignItems`, `padding*`, and `itemSpacing` to model Auto Layout behavior.

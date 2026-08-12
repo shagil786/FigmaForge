@@ -1,0 +1,5 @@
+- Each agent/skill is defined as a single Markdown file whose first block is YAML frontmatter containing `role`, `type`, `scope`, and `id` fields.
+- Every definition declares a `Triggers` list of keyword tokens that the router uses to match incoming requests to this agent or skill.
+- Definitions explicitly enumerate their `Output` format and a `Constraints` section that restricts side effects (read-only, no writes, no external calls, inert templates).
+- Agent IDs use the `figmaforge:` namespace prefix (e.g., `figmaforge:route`, `figmaforge:doctor`) and scope is consistently set to `figmaforge`.
+- Subagent agents (`context-scout`, `fresh-verifier`, `lifecycle-planner`) enforce read-only or planning-only behavior and delegate actual work to other skills rather than performing mutations themselves.

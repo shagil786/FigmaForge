@@ -295,3 +295,97 @@ Addressed all four remaining limitations from the initial Part 9 implementation.
 - Total: **314 tests, 0 failures**.
 - All four previously-listed limitations are now resolved.
 
+---
+
+## Part 10: Backend Adapter Architecture — Framework-Agnostic Code Generation (2026-08-12)
+
+### Overview
+Decoupled the framework-neutral core pipeline from code generation by introducing a backend adapter architecture. The core (IR → Layout → Resolution) remains completely framework-neutral. Backend adapters are the target-specific lowering step that converts a LayoutPlan + Design IR into generated source code for a particular framework and styling system.
+
+### Motivation
+FigmaForge must NOT be fundamentally tied to React, TypeScript, JSX, CSS, or any single styling framework. An audit identified 6 leakage points where framework-specific concepts had leaked into the core domain model:
+1. `generator_types.py` — VNode defaulted to `"div"` (HTML-specific)
+2. `css_generator.py` — emitted CSS properties directly
+3. `react_generator.py` — hardcoded HTML tags
+4. `render_handler.ts` — generated HTML documents
+5. Pipeline generate stage — no backend delegation
+6. No backend registry existed
+
+### Key Decisions
+
+1. **Backend Adapter Protocol** (`backends/protocol.py`, 432 lines):
+   - `BackendAdapter` ABC with abstract methods: `name`, `display_name`, `capabilities`, `generate()`.
+   - `BackendCapabilities` — each backend declares `supported_features`, `unsupported_features`, `partial_features`, `framework`, `styling_system`, `renderer`, `file_extensions`.
+   - `Feature` vocabulary — 40+ canonical feature constants (FLEX, GRID, SHADOWS, etc.) that are framework-neutral.
+   - `FidelityLoss` — backends MUST emit one per unsupported feature rather than silently approximating.
+   - `preflight()` — default implementation that walks the IR checking features against capabilities.
+
+2. **Backend Registry** (`backends/registry.py`, 160 lines):
+   - `BackendRegistry` with register/unregister/get/require/find/list.
+   - `discover_builtins()` auto-imports all 6 backend modules.
+   - Global singleton via `get_registry()` / `reset_registry()`.
+
+3. **HTML+CSS Backend** (`backends/html_css/`, 518 lines, fully implemented):
+   - Reference backend — absorbs the functionality of the legacy `css_generator.py` and `react_generator.py`.
+   - Internal `VNode`/`VStyle` types (moved from core — these are HTML/CSS-specific, not core concepts).
+   - `_CSSStyleGenerator`, `_VNodeBuilder`, `_HtmlEmitter` internal classes.
+   - Supports nearly all features (HTML/CSS is the widest backend).
+
+4. **Five Stub Backends** (capability declarations only, `generate()` raises `NotImplementedError`):
+   - `react_tailwind/` — React + Tailwind CSS (`.tsx`)
+   - `vue/` — Vue 3 SFC with scoped CSS (`.vue`)
+   - `svelte/` — Svelte components (`.svelte`)
+   - `swiftui/` — SwiftUI view structs (`.swift`, renderer: `xcode_preview`)
+   - `flutter/` — Flutter widget trees (`.dart`, renderer: `flutter_simulator`)
+
+5. **Composable Target Model** (TypeScript runtime):
+   - `CodegenTarget = { framework: Framework, styling: StylingSystem }` — NOT a fixed enum.
+   - `Framework` and `StylingSystem` are open-ended types with `(string & {})` for unlimited extensibility.
+   - Any framework can pair with any styling system (e.g., `react+tailwind`, `vue+scoped_css`, `svelte+tailwind`, `react+styled_components`).
+   - `PRESET_TARGETS` provides common suggestions but is NOT exhaustive.
+   - Helper functions: `target()`, `targetKey()`, `parseTargetKey()`, `defaultRenderer()`, `targetExtensions()`.
+   - CLI: `--target=react+tailwind` format via `parseTargetKey()`.
+
+6. **Core Modules Verified Clean** — no changes needed:
+   - `ir_types.py` (784 lines) — framework-neutral semantic vocabulary.
+   - `layout_types.py` (540 lines) — abstract display/sizing/anchoring.
+   - `layout_engine.py` (988 lines) — inference from IR, no framework assumptions.
+   - `token_resolver.py` (374 lines) — semantic token resolution.
+   - `ir_builder.py` (598 lines) — Figma → IR normalization.
+   - `pipeline.ts` (329 lines) — orchestrator, framework-neutral.
+   - `evaluation.ts` (390 lines) — framework-neutral eval.
+
+### Files Created (8 new Python modules)
+| File | Lines | Description |
+|------|-------|-------------|
+| `backends/__init__.py` | 45 | Package exports |
+| `backends/protocol.py` | 432 | BackendAdapter ABC, Feature, FidelityLoss, BackendCapabilities |
+| `backends/registry.py` | 160 | BackendRegistry with auto-discovery |
+| `backends/html_css/__init__.py` | 518 | Fully implemented HTML+CSS backend |
+| `backends/react_tailwind/__init__.py` | 191 | React+Tailwind stub |
+| `backends/vue/__init__.py` | 147 | Vue SFC stub |
+| `backends/svelte/__init__.py` | 141 | Svelte stub |
+| `backends/swiftui/__init__.py` | 170 | SwiftUI stub |
+| `backends/flutter/__init__.py` | 185 | Flutter stub |
+
+### Files Modified (4 TypeScript modules)
+| File | Change |
+|------|--------|
+| `runtime/src/core/types.ts` | Added composable `CodegenTarget`, `Framework`, `StylingSystem`, `RendererType` types; helper functions; `PRESET_TARGETS`; `RuntimeConfig.target` |
+| `runtime/src/core/render_handler.ts` | Target-aware rendering via `defaultRenderer(target.framework)`; `generateNativeMetadata()` for non-browser targets |
+| `runtime/src/cli/main.ts` | `--target=<framework+styling>` flag; `parseTargetKey()` parsing; updated help text |
+| `runtime/tests/test_all.ts` | Added `target` to 3 `RuntimeConfig` test objects |
+
+### New Test Coverage (27 additional Python tests)
+| Test Suite | Tests | Coverage |
+|------------|-------|----------|
+| test_backends.py | 27 | Protocol, Feature, FidelityLoss, BackendCapabilities, GeneratedOutput, BackendRegistry (register/duplicate/require/unregister/find/list/capabilities_report), HtmlCssBackend, 5 stub backends, cross-backend capability comparison |
+
+### Verification ✅
+- All 241 Python tests pass (214 → 241, +27 new backend tests).
+- TypeScript compilation clean (0 errors via `tsc --noEmit`).
+- All 100 TypeScript runtime tests pass.
+- Total: **341 tests, 0 failures**.
+- Zero references to old fixed constants (`AVAILABLE_TARGETS`, `TARGET_RENDERER`, `TARGET_EXTENSIONS`).
+- Core pipeline modules (`ir_types`, `layout_types`, `layout_engine`, `token_resolver`) verified framework-neutral — no changes needed.
+
