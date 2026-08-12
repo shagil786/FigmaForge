@@ -39,7 +39,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Protocol
 
-from .diff_engine import DiffEngine, DiffReport
+from .diff_engine import DiffEngine, DiffReport, RasterOptions
 from .generator_types import GeneratorManifest, VStyle
 from .ir_types import IRDocument
 from .layout_types import LayoutPlan
@@ -72,6 +72,14 @@ class RepairConfig:
     # Output
     output_dir: Optional[Path] = None      # where to write iteration artifacts
 
+    # Raster (pixel) diffing — Part 12. The baseline PNG is SUPPLEMENTARY:
+    # when None, diffing is structural-only (Part 7 behavior).
+    baseline_png: Optional[str] = None     # path to the Figma baseline PNG
+    color_threshold: int = 16              # max per-channel delta ignored
+    noise_floor: float = 0.01              # diffRatio <= floor → pixels = 1.0
+    min_region_area: int = 8               # contiguous diff regions >= 8px
+    pixel_weight: float = 0.15             # capped weight in overall score
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "similarity_threshold": self.similarity_threshold,
@@ -81,6 +89,11 @@ class RepairConfig:
             "require_approval": self.require_approval,
             "auto_rollback_on_regression": self.auto_rollback_on_regression,
             "max_rollback_iterations": self.max_rollback_iterations,
+            "baseline_png": self.baseline_png,
+            "color_threshold": self.color_threshold,
+            "noise_floor": self.noise_floor,
+            "min_region_area": self.min_region_area,
+            "pixel_weight": self.pixel_weight,
         }
 
 
@@ -212,6 +225,15 @@ class RepairLoop:
         self._render_fn = render_fn or _default_render
         self._approval_fn = approval_fn
 
+    def _raster_options(self) -> RasterOptions:
+        """Build raster diff knobs from the config (Part 12)."""
+        return RasterOptions(
+            color_threshold=self._config.color_threshold,
+            noise_floor=self._config.noise_floor,
+            min_region_area=self._config.min_region_area,
+            pixel_weight=self._config.pixel_weight,
+        )
+
     def run(
         self,
         plan: LayoutPlan,
@@ -251,7 +273,13 @@ class RepairLoop:
             )
 
             # Step 2: Diff
-            diff_report = diff_engine.diff(plan, render_meta)
+            diff_report = diff_engine.diff(
+                plan,
+                render_meta,
+                render_screenshot=screenshot_path or None,
+                baseline_png=self._config.baseline_png,
+                raster_options=self._raster_options(),
+            )
             score = diff_report.similarity_score
 
             # Step 3: Classify
@@ -336,7 +364,13 @@ class RepairLoop:
             new_render_meta, new_screenshot = self._render_fn(
                 plan, styles, document, iteration + 1,
             )
-            new_diff = diff_engine.diff(plan, new_render_meta)
+            new_diff = diff_engine.diff(
+                plan,
+                new_render_meta,
+                render_screenshot=new_screenshot or None,
+                baseline_png=self._config.baseline_png,
+                raster_options=self._raster_options(),
+            )
             new_score = new_diff.similarity_score
 
             # Step 10: Check for regression
