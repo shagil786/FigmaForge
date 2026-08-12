@@ -1,0 +1,75 @@
+{
+  "0:1": {
+    "style": {
+      "display": "absolute",
+      "position": "absolute"
+    },
+    "vnode": {
+      "children": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "node_id": "d:3",
+                  "props": {
+                    "data-figma-id": "d:3",
+                    "name": "Brand"
+                  },
+                  "tag": "span",
+                  "text_content": "Brand"
+                },
+                {
+                  "node_id": "d:4",
+                  "props": {
+                    "data-figma-id": "d:4",
+                    "name": "Docs"
+                  },
+                  "tag": "span",
+                  "text_content": "Docs"
+                }
+              ],
+              "node_id": "d:2",
+              "props": {
+                "data-figma-id": "d:2",
+                "name": "Header"
+              },
+              "tag": "header"
+            },
+            {
+              "children": [
+                {
+                  "node_id": "d:6",
+                  "props": {
+                    "data-figma-id": "d:6",
+                    "name": "Legal"
+                  },
+                  "tag": "span",
+                  "text_content": "\u00a9 2026 Acme"
+                }
+              ],
+              "node_id": "d:5",
+              "props": {
+                "data-figma-id": "d:5",
+                "name": "Footer"
+              },
+              "tag": "footer"
+            }
+          ],
+          "node_id": "d:1",
+          "props": {
+            "data-figma-id": "d:1",
+            "name": "Desktop 1440"
+          },
+          "tag": "div"
+        }
+      ],
+      "node_id": "0:1",
+      "props": {
+        "data-figma-id": "0:1",
+        "name": "Desktop"
+      },
+      "tag": "div"
+    }
+  }
+}
