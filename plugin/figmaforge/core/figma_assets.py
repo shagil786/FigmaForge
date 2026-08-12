@@ -42,6 +42,8 @@ logger = logging.getLogger("figmaforge.figma_assets")
 
 DEFAULT_TIMEOUT_SECONDS = 30.0
 DEFAULT_MAX_RETRIES = 2
+MAX_BASELINE_BYTES = 50 * 1024 * 1024  # hard cap on a single baseline body
+_READ_CHUNK_SIZE = 65536
 
 
 class FigmaAssetError(FigmaError):
@@ -67,9 +69,29 @@ class BaselineAsset:
 
 
 def _default_transport(url: str, timeout: float) -> bytes:
+    """Fetch ``url`` via urllib, enforcing :data:`MAX_BASELINE_BYTES`."""
     try:
         with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310
-            return resp.read()
+            declared = _declared_content_length(resp)
+            if declared is not None and declared > MAX_BASELINE_BYTES:
+                raise BaselineDownloadError(
+                    f"baseline body of {declared} bytes exceeds the "
+                    f"{MAX_BASELINE_BYTES} byte cap"
+                )
+            chunks: List[bytes] = []
+            total = 0
+            while True:
+                chunk = resp.read(_READ_CHUNK_SIZE)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_BASELINE_BYTES:
+                    raise BaselineDownloadError(
+                        f"baseline body exceeds the "
+                        f"{MAX_BASELINE_BYTES} byte cap"
+                    )
+                chunks.append(chunk)
+            return b"".join(chunks)
     except urllib.error.HTTPError as exc:
         raise BaselineDownloadError(
             f"HTTP {exc.code} fetching baseline", status_code=exc.code
@@ -82,27 +104,49 @@ def _default_transport(url: str, timeout: float) -> bytes:
         raise BaselineDownloadError("baseline download timed out") from exc
 
 
+def _declared_content_length(resp) -> Optional[int]:
+    """Parse the Content-Length header when present, else return None."""
+    headers = getattr(resp, "headers", None)
+    if headers is None:
+        return None
+    value = headers.get("Content-Length")
+    if not value:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _fetch_with_retry(
     fetch: Callable[[str, float], bytes],
     url: str,
     timeout_seconds: float,
     max_retries: int,
 ) -> bytes:
-    """Bounded retry. 403 gets exactly one immediate retry, then expiry error."""
+    """Bounded retry. 403 gets exactly one immediate retry, then expiry error.
+
+    A 403 on a presigned URL means expiry/rejection regardless of when it
+    occurs, so the classification tracks ``seen_403`` rather than the attempt
+    index: a 403 with no retry budget left still surfaces as
+    :class:`BaselineExpiredError`, and a 403 following unrelated transient
+    failures still receives its one expiry retry.
+    """
     attempts = max(max_retries, 0) + 1
+    seen_403 = False
     last: Optional[Exception] = None
     for attempt in range(attempts):
         try:
             return fetch(url, timeout_seconds)
         except FigmaError as exc:
             if exc.status_code == 403:
-                if attempt == 0:
-                    # Presigned URLs can expire mid-run; retry once.
-                    continue
-                raise BaselineExpiredError(
-                    "baseline presigned URL expired or was rejected",
-                    status_code=403,
-                ) from exc
+                if seen_403 or attempt >= attempts - 1:
+                    raise BaselineExpiredError(
+                        "baseline presigned URL expired or was rejected",
+                        status_code=403,
+                    ) from exc
+                seen_403 = True
+                continue
             last = exc
         except OSError as exc:
             last = exc
@@ -129,9 +173,16 @@ def download_baselines(
     :class:`BaselineDownloadError` / :class:`BaselineExpiredError` on
     failure; baselines are supplementary, so repair-loop callers catch
     :class:`FigmaAssetError` and continue with structural diffing only.
+    Every failure path — including ``client.get_images()`` API/validation
+    errors — surfaces as a :class:`FigmaAssetError` subtype.
     """
     fetch = transport or _default_transport
-    image_set = client.get_images(file_key, node_ids, fmt=fmt, scale=scale)
+    try:
+        image_set = client.get_images(file_key, node_ids, fmt=fmt, scale=scale)
+    except FigmaError as exc:
+        raise BaselineDownloadError(
+            f"failed to get render URLs: {exc.message}"
+        ) from exc
 
     results: Dict[str, BaselineAsset] = {}
     for node_id in node_ids:
