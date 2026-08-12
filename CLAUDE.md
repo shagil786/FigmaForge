@@ -10,10 +10,11 @@ This is a complete platform implementation (version 0.0.1-dev), containing a 100
 
 ## 2. Technology Stack
 
-- **Code:** Python 3 (standard library only) for detection, routing, lifecycle state, and hooks.
+- **Code:** Python 3 (standard library only) for detection, routing, lifecycle state, and hooks. TypeScript (Node.js stdlib only) for the orchestration runtime.
 - **Data:** JSON (`.claude-plugin/plugin.json`, `catalog/roles.json`, `hooks/hooks.json`).
 - **Interfaces:** Claude Code Plugin constraints and schema structures.
-- **No Application Framework:** The repository does NOT use React, Node, Webpack, Vite, FastAPI, etc. It only uses core Python and shell commands for configuration and discovery.
+- **No Application Framework:** The repository does NOT use React, Webpack, Vite, FastAPI, etc. Python pipeline uses core Python. Runtime uses TypeScript with zero external runtime dependencies.
+- **No Agent Frameworks:** No ADK, LangGraph, CrewAI, Temporal, or any orchestration framework.
 
 ## 3. Important Repository Structure
 
@@ -30,6 +31,7 @@ This is a complete platform implementation (version 0.0.1-dev), containing a 100
     - **Generators:** `react_generator.py` (wired to ResolutionReport), `css_generator.py` (all sizing modes), `generator_types.py`
     - **Platform:** `detector.py`, `router.py` (trigger→phase + language→domain scoring), `catalog.py`, `state.py` (adjacent-only transitions)
     - **Assets & Diff:** `asset_handler.py`, `asset_manager.py` (content-addressed, SVG security), `render_harness.py`, `diff_engine.py` (per-category scoring)
+    - **Repair Loop (Part 8):** `repair_classifier.py` (9 categories), `patch_planner.py` (strategy-ordered), `patch_executor.py` (with rollback), `repair_loop.py` (iteration controller), `repair_history.py` (manifest)
     - **Hooks:** `hooks/session_detector.py`, `hooks/external_mutation_gate.py` (regex matching), `hooks/post_edit_validator.py` (executes validators)
   - `catalog/`: `roles.json` (100 roles across 10 domains), `roles.json`.
   - `agents/`: `context-scout.md`, `lifecycle-planner.md`, `fresh-verifier.md`.
@@ -38,10 +40,17 @@ This is a complete platform implementation (version 0.0.1-dev), containing a 100
   - `schemas/`: `design-ir.schema.json`, `layout-plan.schema.json`, `resolution-report.schema.json`, `detection.schema.json`, `router.schema.json`, `task-state.schema.json`.
   - `templates/`: Inert examples for MCP and LSP configurations.
   - `library/`: `components.json` (5 project components), `tokens.json` (12 design tokens).
-  - `tests/` (20 test files, 184 tests): Unit, integration, snapshot, and property-based tests.
+  - `tests/` (21 test files, 214 tests): Unit, integration, snapshot, property-based, and repair-loop tests.
+- `runtime/` (Part 9 — TypeScript Orchestration Runtime):
+  - `src/core/` (12 modules): `types.ts`, `events.ts`, `checkpoint.ts`, `artifacts.ts`, `tools.ts`, `state.ts`, `budget.ts`, `retry.ts`, `security.ts`, `pipeline.ts`, `evaluation.ts`, `index.ts`
+  - `src/cli/main.ts`: CLI with 6 commands (run, inspect, render, compare, repair, replay)
+  - `tests/` (3 files, 79 tests): Comprehensive test suite with custom test framework
+  - `evaluation/fixtures/golden/`: 3 golden fixtures (simple-button, login-screen, card-layout)
 - `docs/architecture.md` — In-depth architectural blueprint.
 - `docs/DEVELOPMENT_LOG.md` — Part-by-part development log with decisions and verification.
-- `docs/design-ir.md`, `docs/layout.md`, `docs/resolution.md` — Module-specific design docs.
+- `docs/design-ir.md`, `docs/layout.md`, `docs/resolution.md`, `docs/repair-loop.md` — Module-specific design docs.
+- `docs/runtime-architecture.md` — Runtime architecture and module reference.
+- `docs/runtime-troubleshooting.md` — Runtime troubleshooting guide.
 
 Nested `CLAUDE.md` files should NOT be created. The structure is global to the plugin domain.
 
@@ -56,13 +65,16 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 
 ## 5. Verified Development Commands
 
-* **Run all tests (184 tests):**
+* **Run all tests (214 tests):**
   `cd plugin/figmaforge && python3 -m unittest discover -s tests -v`
+* **Run runtime tests (79 tests):**
+  `npx tsc && node dist/runtime/tests/run_all.js`
 * **Run a specific test module:**
   `python3 -m unittest tests.test_router -v`
   `python3 -m unittest tests.test_css_generator -v`
   `python3 -m unittest tests.test_state_machine -v`
   `python3 -m unittest tests.test_diff_engine -v`
+  `python3 -m unittest tests.test_repair_loop -v`
 * **Regenerate golden-file snapshots:**
   `REWRITE_SNAPSHOTS=1 python3 -m unittest tests.test_ir_snapshot tests.test_layout_snapshot tests.test_resolution_snapshot tests.test_generator_snapshot`
 * **Plugin validation:**
@@ -79,7 +91,8 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 
 ## 7. Testing Requirements
 
-- All 184 tests across 20 test files must pass (`python3 -m unittest discover -s tests`).
+- All 214 Python tests across 21 test files must pass (`python3 -m unittest discover -s tests`).
+- All 79 TypeScript runtime tests must pass (`npx tsc && node dist/runtime/tests/run_all.js`).
 - Test categories: unit tests, integration tests, golden-file snapshot tests, property-based tests.
 - Snapshot tests use `REWRITE_SNAPSHOTS=1` to regenerate golden files after intentional output changes.
 - Adding a new module requires corresponding test coverage.
@@ -105,7 +118,7 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 
 - Scope is strictly adhered to (no speculative integrations).
 - All changes maintain schema constraints (run `claude plugin validate --strict`).
-- Full test suite passes: `python3 -m unittest discover -s tests` (184 tests, 20 files).
+- Full test suite passes: `python3 -m unittest discover -s tests` (214 tests, 21 files).
 - Changes align exactly with architectural constraints in `docs/architecture.md`.
 - `docs/DEVELOPMENT_LOG.md` updated with the change entry.
 - No exposed credentials, secrets, or unintentional active `.lsp.json`/`.mcp.json` templates exist.

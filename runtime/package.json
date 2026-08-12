@@ -1,0 +1,22 @@
+{
+  "name": "figmaforge-runtime",
+  "version": "0.0.1-dev",
+  "description": "TypeScript orchestration runtime for the FigmaForge visual repair pipeline",
+  "type": "module",
+  "bin": {
+    "figmaforge": "./dist/cli/main.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "node --experimental-vm-modules dist/tests/run_all.js",
+    "figmaforge": "node dist/cli/main.js"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "MIT"
+}
