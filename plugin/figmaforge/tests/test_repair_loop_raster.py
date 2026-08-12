@@ -127,6 +127,30 @@ class TestRepairLoopRasterIntegration(unittest.TestCase):
         self.assertEqual(result.stop_reason, STOP_THRESHOLD)
         self.assertIsNone(result.history.iterations[0].diff_report["raster_stats"])
 
+    def test_invalid_raster_knob_raises_at_config_time(self):
+        with self.assertRaises(ValueError) as ctx:
+            RepairConfig(pixel_weight=2.0)
+        self.assertIn("invalid raster knob", str(ctx.exception))
+        with self.assertRaises(ValueError):
+            RepairConfig(color_threshold=-1)
+        with self.assertRaises(ValueError):
+            RepairConfig(noise_floor=1.5)
+        with self.assertRaises(ValueError):
+            RepairConfig(min_region_area=-8)
+
+    def test_baseline_without_screenshot_degrades_to_structural(self):
+        def _render_fn_no_shot(plan, styles, document, iteration):
+            # Same combo as _default_render: meta matches, screenshot "".
+            return dict(MATCHING_META), ""
+
+        config = RepairConfig(baseline_png=str(self.baseline))
+        loop = RepairLoop(config=config, render_fn=_render_fn_no_shot)
+        result = loop.run(_make_plan(), _make_document(), run_id="no-shot")
+        # No screenshot → raster diff skipped → legacy structural score.
+        self.assertEqual(result.final_score, 1.0)
+        self.assertEqual(result.stop_reason, STOP_THRESHOLD)
+        self.assertIsNone(result.history.iterations[0].diff_report["raster_stats"])
+
 
 if __name__ == "__main__":
     unittest.main()

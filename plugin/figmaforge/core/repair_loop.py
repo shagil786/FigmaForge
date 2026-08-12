@@ -80,6 +80,19 @@ class RepairConfig:
     min_region_area: int = 8               # contiguous diff regions >= 8px
     pixel_weight: float = 0.15             # capped weight in overall score
 
+    def __post_init__(self) -> None:
+        # Fail fast on invalid raster knobs at config time, before the loop
+        # starts (Part 12): RasterOptions performs the actual validation.
+        try:
+            RasterOptions(
+                color_threshold=self.color_threshold,
+                noise_floor=self.noise_floor,
+                min_region_area=self.min_region_area,
+                pixel_weight=self.pixel_weight,
+            )
+        except ValueError as exc:
+            raise ValueError(f"invalid raster knob: {exc}") from exc
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "similarity_threshold": self.similarity_threshold,
@@ -361,6 +374,8 @@ class RepairLoop:
             }
 
             # Step 9: Re-render to get the new score
+            # NOTE (Part 12): assumes render_fn returns screenshots consistently
+            # across iterations, so the raster regime matches the first diff.
             new_render_meta, new_screenshot = self._render_fn(
                 plan, styles, document, iteration + 1,
             )
