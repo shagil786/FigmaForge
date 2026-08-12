@@ -16,6 +16,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
+import { pathToFileURL } from "node:url";
 import type { PipelineContext } from "./pipeline.js";
 import type { CodegenTarget, RendererType } from "./types.js";
 import { defaultRenderer, targetKey } from "./types.js";
@@ -403,23 +404,32 @@ export function buildBrowserRenderScript(
   screenshotPath: string,
   viewport: { width: number; height: number },
 ): string {
+  // JSON.stringify produces a double-quoted string whose escapes (\" and \\)
+  // are also valid Python string literal escapes — safe against quotes,
+  // backslashes, and newlines in paths. The goto URL is built with
+  // pathToFileURL so hostile characters are percent-encoded, not raw.
+  const gotoUrl = pathToFileURL(htmlPath).href;
+  const htmlLiteral = JSON.stringify(htmlPath);
+  const screenshotLiteral = JSON.stringify(screenshotPath);
+
   return `
 import sys, json
+html_path = ${htmlLiteral}
 try:
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page(viewport={"width": ${viewport.width}, "height": ${viewport.height}})
-        page.goto("file://${htmlPath}")
+        page.goto("${gotoUrl}")
         page.wait_for_load_state("networkidle")
-        page.screenshot(path="${screenshotPath}", full_page=True)
+        page.screenshot(path=${screenshotLiteral}, full_page=True)
         meta = page.evaluate("window.__figmaforge_meta || {}")
         browser.close()
-        print(json.dumps({"screenshot": "${screenshotPath}", "meta": meta}))
+        print(json.dumps({"screenshot": ${screenshotLiteral}, "meta": meta}))
 except ImportError:
-    print(json.dumps({"error": "playwright_not_installed"}))
+    print(json.dumps({"error": "playwright_not_installed", "html": html_path}))
 except Exception as e:
-    print(json.dumps({"error": str(e)}))
+    print(json.dumps({"error": str(e), "html": html_path}))
 `;
 }
 
@@ -464,12 +474,21 @@ async function tryBrowserRender(
     const child = spawn(ctx_pythonBin(), ["-"], {
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env, PYTHONIOENCODING: "utf-8" },
+      // detached: the child leads its own process group so the timeout can
+      // kill chromium and any grandchildren, not just the python wrapper.
+      detached: true,
     });
 
     let stdout = "";
     let settled = false;
     const timer = setTimeout(() => {
-      child.kill();
+      // Kill the entire process group (python + chromium children).
+      try {
+        process.kill(-child.pid!, "SIGKILL");
+      } catch {
+        // Group kill unavailable (e.g. pid not set) — fall back to the child.
+      }
+      child.kill("SIGKILL");
       finish(null);
     }, 30_000);
 

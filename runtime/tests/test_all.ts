@@ -8,6 +8,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { pathToFileURL } from "node:url";
 
 import { describe, it, assert, assertEqual, assertThrows, assertRejects, assertGreaterThan, assertLessOrEqual } from "./test_framework.js";
 import type { SuiteResult } from "./test_framework.js";
@@ -1132,10 +1133,29 @@ export async function runAllTests(): Promise<SuiteResult[]> {
       );
       assert(script.includes('"width": 1440'), `Expected width in: ${script}`);
       assert(script.includes('"height": 900'), `Expected height in: ${script}`);
-      assert(script.includes("/tmp/r/render_abc.html"), "Expected html path");
+      assert(script.includes(`page.goto("${pathToFileURL("/tmp/r/render_abc.html").href}")`),
+        "Expected goto target built from pathToFileURL");
+      assert(script.includes(JSON.stringify("/tmp/r/render_abc.html")),
+        "Expected JSON-escaped html literal");
       assert(script.includes("/tmp/r/screenshot_abc.png"), "Expected screenshot path");
+      assert(script.split("/tmp/r/screenshot_abc.png").length === 3,
+        "screenshot path must appear as the screenshot target and in the payload");
       assert(script.includes("sync_playwright"), "Expected playwright usage");
       assert(script.includes("window.__figmaforge_meta"), "Expected meta extraction");
+    });
+
+    await it("buildBrowserRenderScript escapes hostile paths as Python literals", async () => {
+      const weirdDir = "/tmp/we\"ird\\dir";
+      const htmlPath = `${weirdDir}/render.html`;
+      const shotPath = `${weirdDir}/shot.png`;
+      const script = buildBrowserRenderScript(htmlPath, shotPath, { width: 800, height: 600 });
+      assert(script.includes(JSON.stringify(htmlPath)),
+        `Expected JSON-escaped html literal in: ${script}`);
+      assert(script.includes(JSON.stringify(shotPath)),
+        `Expected JSON-escaped screenshot literal in: ${script}`);
+      assert(script.includes(`page.goto("${pathToFileURL(htmlPath).href}")`),
+        "Expected percent-encoded goto target");
+      assert(!script.includes(`file://${htmlPath}`), "goto must not embed the raw path");
     });
 
     await it("parseBrowserRenderOutput parses valid payload", async () => {
