@@ -58,7 +58,23 @@ class AssetManager:
         return content_hash
 
     def _validate_svg(self, data: bytes) -> None:
-        """Basic SVG security: detect embedded scripts."""
+        """Basic SVG security: detect embedded scripts and dangerous elements."""
         text = data.decode("utf-8", errors="ignore").lower()
-        if "<script" in text or "javascript:" in text:
-            raise ValueError("Unsafe SVG content detected")
+        dangerous_patterns = [
+            "<script",
+            "javascript:",
+            "data:text/html",
+            "<iframe",
+            "<embed",
+            "<object",
+            "onload=",
+            "onerror=",
+            "onclick=",
+            "onmouseover=",
+            "onfocus=",
+            "onblur=",
+            "xlink:href=\"data:",
+        ]
+        for pattern in dangerous_patterns:
+            if pattern in text:
+                raise ValueError(f"Unsafe SVG content detected: {pattern!r}")

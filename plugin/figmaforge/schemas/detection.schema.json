@@ -26,7 +26,7 @@
       "type": "array",
       "items": {
         "type": "string",
-        "enum": ["npm", "pnpm", "yarn", "bun", "pip", "poetry", "uv", "go", "cargo", "composer", "gem", "mix", "npm", "pnpm", "yarn"]
+        "enum": ["npm", "pnpm", "yarn", "bun", "pip", "poetry", "uv", "go", "cargo", "composer", "gem", "mix"]
       },
       "description": "Package managers detected"
     },

@@ -35,6 +35,9 @@ worktree.tar.gz
 FigmaForge.backups/
 *.backups/
 
+# Stale local-dev marketplace reference (real plugin lives under plugin/figmaforge/)
+/figmaforge/
+
 # macOS
 .DS_Store
 

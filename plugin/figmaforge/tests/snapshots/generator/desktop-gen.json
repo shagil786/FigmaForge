@@ -2,7 +2,9 @@
   "0:1": {
     "style": {
       "display": "absolute",
-      "position": "absolute"
+      "height": "fit-content",
+      "position": "absolute",
+      "width": "fit-content"
     },
     "vnode": {
       "children": [

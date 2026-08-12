@@ -70,14 +70,20 @@ def _validate(
     if not isinstance(schema, dict):
         return
 
-    # Resolve local references before applying any keywords.
+    # Resolve local references, following chains (A → B → C) until stable.
     ref = schema.get("$ref")
-    if isinstance(ref, str):
+    seen_refs: set = set()
+    while isinstance(ref, str) and ref not in seen_refs:
+        seen_refs.add(ref)
         target = _resolve_ref(root, ref)
         if target is None:
             errors.append(f"{path}: unresolvable $ref {ref!r}")
             return
         schema = target
+        ref = schema.get("$ref")
+    if isinstance(ref, str) and ref in seen_refs:
+        errors.append(f"{path}: circular $ref chain detected at {ref!r}")
+        return
 
     # enum / const
     if "enum" in schema and instance not in schema["enum"]:

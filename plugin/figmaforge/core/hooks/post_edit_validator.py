@@ -7,6 +7,8 @@ On Edit|Write, reads changed path and looks up canonical validator from detected
 import sys
 import json
 import os
+import shutil
+import subprocess
 from pathlib import Path
 
 # Detect repository root
@@ -88,14 +90,57 @@ def main():
         # No applicable toolchain check
         sys.exit(0)
 
-    # Note: Actual validation is not performed here (would require tool invocation)
-    # This hook just declares what check would be performed and reports readiness
-    # to the harness for verification
+    # Check if the validator binary is available on PATH
+    validator_binary = validator.split()[0]
+    if not shutil.which(validator_binary):
+        # Toolchain not installed — report but don't block
+        result = {
+            "status": "skipped",
+            "validator": validator,
+            "file": new_file,
+            "reason": f"{validator_binary} not found on PATH",
+        }
+        print(json.dumps(result))
+        sys.exit(0)
 
-    # Exit 0 to indicate readiness for validation
-    # The actual validation would happen in a separate pass or be skipped if toolchain unavailable
-
-    sys.exit(0)
+    # Execute the validator against the changed file
+    try:
+        proc = subprocess.run(
+            [*validator.split(), new_file],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        result = {
+            "status": "passed" if proc.returncode == 0 else "failed",
+            "validator": validator,
+            "file": new_file,
+            "exit_code": proc.returncode,
+        }
+        if proc.stdout:
+            result["stdout"] = proc.stdout[:2000]
+        if proc.stderr:
+            result["stderr"] = proc.stderr[:2000]
+        print(json.dumps(result))
+        sys.exit(0 if proc.returncode == 0 else 1)
+    except subprocess.TimeoutExpired:
+        result = {
+            "status": "timeout",
+            "validator": validator,
+            "file": new_file,
+            "reason": "validation timed out (30s)",
+        }
+        print(json.dumps(result))
+        sys.exit(0)
+    except OSError as exc:
+        result = {
+            "status": "error",
+            "validator": validator,
+            "file": new_file,
+            "reason": str(exc),
+        }
+        print(json.dumps(result))
+        sys.exit(0)
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ Deterministic, evidence-based role selection and execution mode determination.
 
 import json
 from dataclasses import dataclass
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 from .catalog import Catalog
 from .detector import RepositoryDetector
@@ -41,16 +41,21 @@ class Router:
         self.catalog = catalog
         self.detector = detector
 
-    def route(self, request: str) -> RouteResult:
+    def route(
+        self,
+        request: str,
+        installed_capabilities: Optional[List[str]] = None,
+    ) -> RouteResult:
         """Route a request through the detection + scoring pipeline.
 
         Args:
             request: User's natural language request.
+            installed_capabilities: External capability refs actually installed.
 
         Returns:
             RouteResult with selected phases, roles, and execution mode.
         """
-        # Run detection
+        # Run detection once and cache the result for all downstream steps.
         detection = self.detector.detect()
 
         # Get all roles
@@ -60,9 +65,12 @@ class Router:
         triggers = self._extract_triggers(request)
 
         # Score roles
-        scored_roles = self._score_roles(all_roles, triggers, detection)
+        scored_roles = self._score_roles(
+            all_roles, triggers, detection,
+            installed_capabilities=installed_capabilities,
+        )
 
-        # Select top 3 roles
+        # Select top 3 roles (may be empty if no role scored > 0 and no fallback)
         selected_roles = sorted(scored_roles, key=lambda x: x["score"], reverse=True)[:3]
 
         # Determine phases
@@ -74,11 +82,12 @@ class Router:
             detection["status"],
         )
 
-        # Determine approval gates
+        # Determine approval gates (pass cached detection — no re-detection)
         approval_gates = self._determine_approval_gates(
             selected_roles,
             execution_mode,
             detection["status"],
+            detection,
         )
 
         # Determine loaded vs unloaded modules
@@ -107,6 +116,63 @@ class Router:
             unloaded_modules=unloaded_modules,
         )
 
+    # Trigger words mapped to the lifecycle phases they imply.
+    _TRIGGER_WORDS = [
+        "requirements", "epic", "roadmap", "okr", "prioritize",
+        "ux", "design", "ui", "test", "security", "architecture",
+        "backend", "frontend", "api", "database", "deploy",
+        "fix", "bug", "feature", "improve", "optimize",
+        "audit", "review", "code", "qa", "testing",
+    ]
+
+    # Map trigger keywords → lifecycle phase(s) for phase-match scoring.
+    _TRIGGER_TO_PHASES: Dict[str, List[str]] = {
+        "requirements": ["define"],
+        "epic": ["define"],
+        "roadmap": ["define"],
+        "okr": ["define"],
+        "prioritize": ["define"],
+        "ux": ["design"],
+        "design": ["design"],
+        "ui": ["design"],
+        "test": ["verify"],
+        "testing": ["verify"],
+        "qa": ["verify"],
+        "security": ["verify"],
+        "audit": ["verify"],
+        "review": ["verify"],
+        "architecture": ["design", "plan"],
+        "backend": ["implement"],
+        "frontend": ["implement"],
+        "api": ["implement"],
+        "database": ["implement"],
+        "code": ["implement"],
+        "feature": ["implement"],
+        "fix": ["implement"],
+        "bug": ["implement"],
+        "improve": ["implement"],
+        "optimize": ["implement"],
+        "deploy": ["release"],
+    }
+
+    # Map detected languages → domains they are relevant to.
+    _LANGUAGE_TO_DOMAIN: Dict[str, List[str]] = {
+        "javascript": ["experience", "application"],
+        "typescript": ["experience", "application"],
+        "python": ["application", "data"],
+        "go": ["application", "data"],
+        "rust": ["application"],
+        "java": ["application", "data"],
+        "kotlin": ["application", "experience"],
+        "csharp": ["application"],
+        "php": ["application"],
+        "ruby": ["application"],
+        "swift": ["experience"],
+        "elixir": ["application", "data"],
+        "sql": ["data"],
+        "r": ["data"],
+    }
+
     def _extract_triggers(self, request: str) -> List[str]:
         """Extract trigger keywords from request.
 
@@ -114,38 +180,44 @@ class Router:
             request: User request.
 
         Returns:
-            List of trigger keywords.
+            Deduplicated list of trigger keywords found in the request.
         """
-        # Common trigger words
-        trigger_words = [
-            "requirements", "epic", "roadmap", "okr", "prioritize",
-            "ux", "design", "ui", "test", "security", "architecture",
-            "backend", "frontend", "api", "database", "deploy",
-            "fix", "bug", "feature", "improve", "optimize",
-            "audit", "review", "code", "review",
-            "qa", "testing", "test",
-        ]
-
         request_lower = request.lower()
-        triggers = []
+        return [w for w in self._TRIGGER_WORDS if w in request_lower]
 
-        for word in trigger_words:
-            if word in request_lower:
-                triggers.append(word)
-
-        return triggers
-
-    def _score_roles(self, roles: List[Dict], triggers: List[str], detection: Dict) -> List[Dict]:
+    def _score_roles(
+        self,
+        roles: List[Dict],
+        triggers: List[str],
+        detection: Dict,
+        installed_capabilities: Optional[List[str]] = None,
+    ) -> List[Dict]:
         """Score roles based on triggers, lifecycle phases, and evidence.
 
         Args:
             roles: All roles from catalog.
             triggers: Trigger keywords from request.
             detection: Detection result.
+            installed_capabilities: External capability refs actually installed.
 
         Returns:
             List of roles with score and reason.
         """
+        installed_caps = set(installed_capabilities or [])
+
+        # Derive lifecycle phases implied by the request's trigger words.
+        request_phases: List[str] = []
+        for trigger in triggers:
+            request_phases.extend(self._TRIGGER_TO_PHASES.get(trigger, []))
+        request_phases = list(dict.fromkeys(request_phases))  # deduplicate, keep order
+
+        # Derive domains relevant to the detected language stack.
+        languages = detection.get("languages", [])
+        relevant_domains: List[str] = []
+        for lang in languages:
+            relevant_domains.extend(self._LANGUAGE_TO_DOMAIN.get(lang, []))
+        relevant_domains = list(dict.fromkeys(relevant_domains))
+
         scored_roles = []
 
         for role in roles:
@@ -161,17 +233,20 @@ class Router:
                 score += 4
                 reasons.append("Explicit trigger match")
 
-            # +3: Lifecycle-phase match (intake/discover/define/design/plan)
-            for phase in detection.get("test_commands", []):
-                if phase in role.get("phases", []):
-                    score += 3
-                    reasons.append(f"Lifecycle-phase match: {phase}")
+            # +3: Lifecycle-phase match — request triggers imply phases,
+            # check whether the role operates in any of those phases.
+            role_phases = role.get("phases", [])
+            phase_overlap = [p for p in request_phases if p in role_phases]
+            if phase_overlap:
+                score += 3
+                reasons.append(f"Lifecycle-phase match: {phase_overlap[0]}")
 
-            # +3: Repository signal match
-            for signal in detection.get("languages", []):
-                if signal in role.get("domain", ""):
-                    score += 3
-                    reasons.append(f"Repository signal match: {signal}")
+            # +3: Repository signal match — detected languages map to domains;
+            # check whether the role's domain is relevant for the stack.
+            domain = role.get("domain", "")
+            if domain in relevant_domains:
+                score += 3
+                reasons.append(f"Repository signal match: {domain}")
 
             # +2: Requested deliverable match
             deliverables = role.get("deliverables", [])
@@ -180,30 +255,26 @@ class Router:
                 score += 2
                 reasons.append("Deliverable match")
 
-            # +1: Mapped external capability installed
+            # +1: Mapped external capability actually installed
             capability_refs = role.get("capability_refs", [])
-            # We don't check actual installation here — that's done by the user/doctor
-            if capability_refs:
+            installed_refs = [r for r in capability_refs if r in installed_caps]
+            if installed_refs:
                 score += 1
-                reasons.append(f"Has external capability refs: {capability_refs[0]}")
+                reasons.append(f"Installed capability ref: {installed_refs[0]}")
 
-            # -5: Stack-specific role conflicts with detected evidence
-            # Example: backend-engineer when no backend code exists
-            domain = role.get("domain", "")
+            # Penalty: stack-specific role conflicts with detected evidence.
+            # -5 when unclassified AND role requires a concrete stack domain;
+            # -3 when unclassified AND no languages detected (generic penalty).
+            # These are mutually exclusive — the -5 subsumes the -3.
             stack_status = detection.get("status", "unclassified")
 
-            if stack_status == "unclassified" and domain in [
-                "application",
-                "data",
-                "delivery",
-            ]:
-                score -= 5
-                reasons.append("Repo unclassified but role requires stack")
-
-            # -3: Role requires a stack but repo is unclassified
-            if stack_status == "unclassified" and len(detection.get("languages", [])) == 0:
-                score -= 3
-                reasons.append("Repo is unclassified")
+            if stack_status == "unclassified":
+                if domain in ("application", "data", "delivery"):
+                    score -= 5
+                    reasons.append("Repo unclassified but role requires stack")
+                elif not languages:
+                    score -= 3
+                    reasons.append("Repo is unclassified")
 
             # Record score and reasons
             role_with_score = {
@@ -215,20 +286,16 @@ class Router:
             if score > 0:
                 scored_roles.append(role_with_score)
 
-        # Include roles that failed (score -3) if only one trigger
-        if len(triggers) == 1:
+        # Fallback: when only a single trigger was found and no role scored
+        # positively, include roles that at least recognise the trigger so the
+        # caller gets a non-empty result.
+        if len(triggers) == 1 and not scored_roles:
             for role in roles:
-                score = 0
-                for trigger in triggers:
-                    if trigger in role.get("triggers", []):
-                        score -= 3
-                        break
-
-                if score == -3:
+                if triggers[0] in role.get("triggers", []):
                     role_with_score = {
                         **role,
-                        "score": score,
-                        "reasons": ["Single trigger match (unclassified)"],
+                        "score": 0,
+                        "reasons": ["Single trigger fallback"],
                     }
                     scored_roles.append(role_with_score)
 
@@ -303,6 +370,7 @@ class Router:
         selected_roles: List[Dict],
         execution_mode: str,
         stack_status: str,
+        detection: Dict,
     ) -> List[str]:
         """Determine approval gates.
 
@@ -310,6 +378,7 @@ class Router:
             selected_roles: Selected roles.
             execution_mode: Execution mode.
             stack_status: Repository status.
+            detection: Cached detection result (no re-detection).
 
         Returns:
             List of approval gates.
@@ -328,8 +397,8 @@ class Router:
         if stack_status == "unclassified":
             gates.append("stack_selection")
 
-        # Language activation gate (only if we have LSP candidates)
-        lsp_candidates = self.detector.detect().get("lsp_candidates", [])
+        # Language activation gate (use cached detection, not a fresh call)
+        lsp_candidates = detection.get("lsp_candidates", [])
         if lsp_candidates:
             gates.append("language_activation")
 
@@ -358,17 +427,3 @@ class Router:
                     skills.append(ref)
 
         return list(set(skills))
-
-    def _resolve_fallback_pack(self, role: Dict) -> str:
-        """Resolve fallback pack name.
-
-        Args:
-            role: Role dictionary.
-
-        Returns:
-            Fallback pack name or empty string.
-        """
-        fallback = role.get("fallback_pack", "")
-        if fallback:
-            return fallback
-        return ""
