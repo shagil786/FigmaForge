@@ -26,7 +26,7 @@ import { PipelineCoordinator } from "../src/core/pipeline.js";
 import { compareSnapshot, saveSnapshot, loadFixtures, injectFailure } from "../src/core/evaluation.js";
 import { createProvider, AnthropicProvider, OpenAIProvider } from "../src/core/providers.js";
 import { ScreenshotComparator } from "../src/core/screenshot_compare.js";
-import { vnodeToHtml, buildBrowserRenderScript, parseBrowserRenderOutput } from "../src/core/render_handler.js";
+import { vnodeToHtml, buildBrowserRenderScript, parseBrowserRenderOutput, pickLayoutMeta } from "../src/core/render_handler.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1184,6 +1184,39 @@ export async function runAllTests(): Promise<SuiteResult[]> {
     await it("parseBrowserRenderOutput returns null for garbage", async () => {
       assertEqual(parseBrowserRenderOutput("not json at all"), null);
       assertEqual(parseBrowserRenderOutput(""), null);
+    });
+
+    await it("buildBrowserRenderScript rejects non-finite viewport dimensions", async () => {
+      const badViewports: { width: number; height: number }[] = [
+        { width: NaN, height: 600 },
+        { width: 800, height: Number.POSITIVE_INFINITY },
+        { width: "800" as unknown as number, height: 600 },
+      ];
+      for (const viewport of badViewports) {
+        let caught: unknown = null;
+        try {
+          buildBrowserRenderScript("/tmp/a.html", "/tmp/a.png", viewport);
+        } catch (err) {
+          caught = err;
+        }
+        assert(caught instanceof TypeError,
+          `Expected TypeError for viewport ${JSON.stringify(viewport)}`);
+      }
+    });
+
+    await it("pickLayoutMeta prefers non-empty browser meta", async () => {
+      const browser = { n1: { x: 1 } };
+      const staticMeta = { n1: { x: 2 } };
+      assertEqual(pickLayoutMeta(browser, staticMeta), browser);
+    });
+
+    await it("pickLayoutMeta falls back to static meta for unusable browser meta", async () => {
+      const staticMeta = { n1: { x: 2 } };
+      assertEqual(pickLayoutMeta(null, staticMeta), staticMeta);
+      assertEqual(pickLayoutMeta(undefined, staticMeta), staticMeta);
+      assertEqual(pickLayoutMeta({}, staticMeta), staticMeta);
+      assertEqual(pickLayoutMeta("nope" as unknown as Record<string, unknown>, staticMeta), staticMeta);
+      assertEqual(pickLayoutMeta([1] as unknown as Record<string, unknown>, staticMeta), staticMeta);
     });
   }));
 

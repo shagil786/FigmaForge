@@ -242,15 +242,24 @@ export async function renderHandler(
   fs.writeFileSync(htmlPath, html, "utf-8");
 
   // Extract layout metadata from VNode tree (static analysis)
-  const layoutMeta = extractLayoutMeta(vnode);
+  const staticMeta = extractLayoutMeta(vnode);
 
   // Try browser rendering (best-effort)
   let screenshotPath: string | null = null;
+  let browserMeta: Record<string, unknown> | null = null;
   try {
-    screenshotPath = await tryBrowserRender(htmlPath, outputDir, htmlHash, viewport);
+    const browserResult = await tryBrowserRender(htmlPath, outputDir, htmlHash, viewport);
+    if (browserResult) {
+      screenshotPath = browserResult.screenshotPath;
+      browserMeta = browserResult.meta;
+    }
   } catch {
     // Browser rendering not available — that's OK
   }
+
+  // Prefer real browser-measured metadata; fall back to static analysis
+  // when the browser meta is missing or empty (HTML-only fallback path).
+  const layoutMeta = pickLayoutMeta(browserMeta, staticMeta);
 
   const result: RenderOutput = {
     htmlPath,
@@ -404,6 +413,15 @@ export function buildBrowserRenderScript(
   screenshotPath: string,
   viewport: { width: number; height: number },
 ): string {
+  if (
+    typeof viewport.width !== "number" || !Number.isFinite(viewport.width) ||
+    typeof viewport.height !== "number" || !Number.isFinite(viewport.height)
+  ) {
+    throw new TypeError(
+      `buildBrowserRenderScript: viewport dimensions must be finite numbers, ` +
+      `got width=${String(viewport.width)}, height=${String(viewport.height)}`,
+    );
+  }
   // JSON.stringify produces a double-quoted string whose escapes (\" and \\)
   // are also valid Python string literal escapes — safe against quotes,
   // backslashes, and newlines in paths. The goto URL is built with
@@ -413,7 +431,7 @@ export function buildBrowserRenderScript(
   const screenshotLiteral = JSON.stringify(screenshotPath);
 
   return `
-import sys, json
+import json
 html_path = ${htmlLiteral}
 try:
     from playwright.sync_api import sync_playwright
@@ -456,23 +474,47 @@ export function parseBrowserRenderOutput(
 }
 
 /**
+ * Choose the layout metadata source for RenderOutput.
+ * Prefers browser-measured metadata when it is a non-empty object;
+ * otherwise falls back to static analysis of the VNode tree.
+ */
+export function pickLayoutMeta(
+  browserMeta: Record<string, unknown> | null | undefined,
+  staticMeta: Record<string, unknown>,
+): Record<string, unknown> {
+  if (
+    browserMeta !== null &&
+    browserMeta !== undefined &&
+    typeof browserMeta === "object" &&
+    !Array.isArray(browserMeta) &&
+    Object.keys(browserMeta).length > 0
+  ) {
+    return browserMeta;
+  }
+  return staticMeta;
+}
+
+/**
  * Attempt browser rendering using Playwright via the Python bridge.
  * Pipes the bridge script to python via stdin (python3 -) and parses the
- * JSON output. Returns the screenshot path if successful, null otherwise.
+ * JSON output. Returns the screenshot path and browser-measured layout
+ * metadata if successful, null otherwise.
  */
 async function tryBrowserRender(
   htmlPath: string,
   outputDir: string,
   hash: string,
   viewport: { width: number; height: number },
-): Promise<string | null> {
+): Promise<{ screenshotPath: string; meta: Record<string, unknown> } | null> {
   const { spawn } = await import("node:child_process");
   const screenshotPath = path.join(outputDir, `screenshot_${hash}.png`);
   const script = buildBrowserRenderScript(htmlPath, screenshotPath, viewport);
 
-  return new Promise<string | null>((resolve) => {
+  return new Promise<{ screenshotPath: string; meta: Record<string, unknown> } | null>((resolve) => {
     const child = spawn(ctx_pythonBin(), ["-"], {
-      stdio: ["pipe", "pipe", "pipe"],
+      // stderr is deliberately discarded — bridge failures surface via the
+      // JSON payload on stdout; leaving it piped but unread can deadlock.
+      stdio: ["pipe", "pipe", "ignore"],
       env: { ...process.env, PYTHONIOENCODING: "utf-8" },
       // detached: the child leads its own process group so the timeout can
       // kill chromium and any grandchildren, not just the python wrapper.
@@ -492,7 +534,9 @@ async function tryBrowserRender(
       finish(null);
     }, 30_000);
 
-    const finish = (value: string | null): void => {
+    const finish = (
+      value: { screenshotPath: string; meta: Record<string, unknown> } | null,
+    ): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -508,8 +552,7 @@ async function tryBrowserRender(
         finish(null);
         return;
       }
-      const parsed = parseBrowserRenderOutput(stdout);
-      finish(parsed ? parsed.screenshotPath : null);
+      finish(parseBrowserRenderOutput(stdout));
     });
 
     child.stdin.on("error", () => finish(null));

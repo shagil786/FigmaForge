@@ -403,8 +403,8 @@ Replaced every synthetic render path with real headless-chromium rendering via P
 
 ### Testing
 - Mocked-playwright contract tests (`tests/test_render_harness.py`, 14), HTML generation tests (`tests/test_render_html.py`, 10), adapter + repair-loop integration tests (`tests/test_render_adapter.py`, 6), real-browser smoke tests that skip without chromium (`tests/test_render_harness_smoke.py`, 2; `test_harness_determinism` also guarded).
-- TS: 5 new bridge tests in the runtime suite.
-- Full gate: 273 Python tests OK (`Ran 273 tests ... OK (skipped=3)` without chromium), 106 runtime tests passing, `claude plugin validate --strict` clean.
+- TS: 9 new bridge tests in the runtime suite.
+- Full gate: 273 Python tests OK (`Ran 273 tests ... OK (skipped=3)` without chromium), 109 runtime tests passing, `claude plugin validate --strict` clean.
 
 ### Non-goals (deferred)
 Pixel/perceptual diffing (`_diff_raster`), real PNG decode in `screenshot_compare.ts`, Figma baseline download, stub backend implementations.
