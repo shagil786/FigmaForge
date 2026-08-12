@@ -53,11 +53,17 @@ def normalize_viewport(viewport_spec: Dict[str, Any]) -> Dict[str, int]:
             f"got keys {sorted(viewport_spec.keys())}"
         )
     try:
-        return {"width": int(width), "height": int(height)}
+        width = int(width)
+        height = int(height)
     except (TypeError, ValueError):
         raise ValueError(
             f"viewport dimensions must be numeric, got {viewport_spec!r}"
         ) from None
+    if width <= 0 or height <= 0:
+        raise ValueError(
+            f"viewport dimensions must be positive, got {width}x{height}"
+        )
+    return {"width": width, "height": height}
 
 
 @dataclass

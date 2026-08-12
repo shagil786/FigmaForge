@@ -97,6 +97,12 @@ class TestNormalizeViewport(unittest.TestCase):
         with self.assertRaises(ValueError):
             normalize_viewport("320x640")
 
+    def test_non_positive_dimension_raises(self):
+        with self.assertRaises(ValueError):
+            normalize_viewport({"w": 0, "h": 640})
+        with self.assertRaises(ValueError):
+            normalize_viewport({"w": 320, "h": -640})
+
 
 class TestRenderHarnessContract(unittest.TestCase):
     def setUp(self):
