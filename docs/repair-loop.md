@@ -44,6 +44,35 @@ until a stopping condition is met.
 | `repair_loop.py` | Iteration controller — orchestrates the render-diff-classify-plan-execute cycle |
 | `repair_history.py` | Append-only manifest preserving every iteration's state for rollback |
 
+## Render Harness (Part 11)
+
+Since Part 11 the render step produces **real browser output** via Playwright
+(a user-approved required dependency) instead of synthetic fixtures:
+
+- `core/render_harness.py` — `RenderHarness(output_dir).render(content_html,
+  viewport_spec, build_id)` launches headless chromium, screenshots the page, and
+  evaluates `window.__figmaforge_meta`. Returns `RenderResult(screenshot_path,
+  layout_metadata)` where `layout_metadata` is keyed by `data-node-id`:
+  `{node_id: {x, y, width, height, styles: {fontSize, color, backgroundColor,
+  padding, margin}}}` — exactly what `DiffEngine.diff(plan, render_meta)` consumes.
+- `core/render_html.py` — `generate_render_html(document, styles, viewport)` turns an
+  `IRDocument` + `VStyle` map into the rendered HTML (`#figmaforge-root` fixed to the
+  viewport, `data-node-id` on every element, inline metadata-extraction script).
+- `core/render_adapter.py` — `make_render_callable(harness)` builds the
+  `RenderCallable` closure injected via `RepairLoop(render_fn=...)`. Loop internals
+  are unchanged.
+- Viewport specs accept both `{w, h}` and `{width, height}` key forms.
+
+Setup (required):
+
+```bash
+pip install playwright && playwright install chromium
+```
+
+When chromium is unavailable, `RenderHarness.render` raises `RenderHarnessError` naming
+the install command, and browser-dependent tests skip. Pixel diffing (`_diff_raster`)
+remains a placeholder.
+
 ## Repair Candidate Categories
 
 Every mismatch from the diff engine is classified into exactly one of nine categories:

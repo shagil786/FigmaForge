@@ -51,6 +51,18 @@ FigmaForge provides:
    python3 plugin/figmaforge/tests/test_detector.py
    ```
 
+### Browser rendering dependencies (required)
+
+The render stage (Part 11) uses Playwright with headless chromium to produce real
+screenshots and layout metadata:
+
+```bash
+pip install playwright && playwright install chromium
+```
+
+Without chromium, browser-render tests are skipped and the TS runtime falls back to
+HTML-only output.
+
 ---
 
 ## Usage

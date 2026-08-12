@@ -10,7 +10,7 @@ This is a complete platform implementation (version 0.0.1-dev), containing a 100
 
 ## 2. Technology Stack
 
-- **Code:** Python 3 (standard library only) for detection, routing, lifecycle state, and hooks. TypeScript (Node.js stdlib only) for the orchestration runtime.
+- **Code:** Python 3 (standard library only, with one user-approved exception: `playwright` for browser rendering — Part 11) for detection, routing, lifecycle state, and hooks. TypeScript (Node.js stdlib only) for the orchestration runtime.
 - **Data:** JSON (`.claude-plugin/plugin.json`, `catalog/roles.json`, `hooks/hooks.json`).
 - **Interfaces:** Claude Code Plugin constraints and schema structures.
 - **No Application Framework:** The repository does NOT use React, Webpack, Vite, FastAPI, etc. Python pipeline uses core Python. Runtime uses TypeScript with zero external runtime dependencies.
@@ -41,11 +41,11 @@ This is a complete platform implementation (version 0.0.1-dev), containing a 100
   - `schemas/`: `design-ir.schema.json`, `layout-plan.schema.json`, `resolution-report.schema.json`, `detection.schema.json`, `router.schema.json`, `task-state.schema.json`.
   - `templates/`: Inert examples for MCP and LSP configurations.
   - `library/`: `components.json` (5 project components), `tokens.json` (12 design tokens).
-  - `tests/` (22 test files, 241 tests): Unit, integration, snapshot, property-based, repair-loop, and backend adapter tests.
+  - `tests/` (26 test files, 273 tests): Unit, integration, snapshot, property-based, repair-loop, backend adapter, and render-harness tests.
 - `runtime/` (Part 9 — TypeScript Orchestration Runtime):
   - `src/core/` (15 modules): `types.ts` (composable `CodegenTarget = { framework, styling }`), `events.ts`, `checkpoint.ts`, `artifacts.ts`, `tools.ts`, `state.ts`, `budget.ts`, `retry.ts`, `security.ts`, `pipeline.ts`, `evaluation.ts`, `providers.ts`, `screenshot_compare.ts`, `render_handler.ts`, `index.ts`
   - `src/cli/main.ts`: CLI with 6 commands (run, inspect, render, compare, repair, replay) + `--target=<framework+styling>` flag
-  - `tests/` (3 files, 100 tests): Comprehensive test suite with custom test framework
+  - `tests/` (3 files, 106 tests): Comprehensive test suite with custom test framework
   - `evaluation/fixtures/golden/`: 3 golden fixtures (simple-button, login-screen, card-layout)
 - `docs/architecture.md` — In-depth architectural blueprint.
 - `docs/DEVELOPMENT_LOG.md` — Part-by-part development log with decisions and verification.
@@ -66,10 +66,12 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 
 ## 5. Verified Development Commands
 
-* **Run all tests (241 tests):**
+* **Run all tests (273 tests):**
   `cd plugin/figmaforge && python3 -m unittest discover -s tests -v`
-* **Run runtime tests (100 tests):**
+* **Run runtime tests (106 tests):**
   `npx tsc && node dist/runtime/tests/run_all.js`
+* **Install browser rendering dependencies (required for the render stage):**
+  `pip install playwright && playwright install chromium`
 * **Run a specific test module:**
   `python3 -m unittest tests.test_router -v`
   `python3 -m unittest tests.test_css_generator -v`
@@ -92,8 +94,8 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 
 ## 7. Testing Requirements
 
-- All 241 Python tests across 22 test files must pass (`python3 -m unittest discover -s tests`).
-- All 100 TypeScript runtime tests must pass (`npx tsc && node dist/runtime/tests/run_all.js`).
+- All 273 Python tests across 26 test files must pass (`python3 -m unittest discover -s tests`); browser-render tests skip cleanly without chromium.
+- All 106 TypeScript runtime tests must pass (`npx tsc && node dist/runtime/tests/run_all.js`).
 - Test categories: unit tests, integration tests, golden-file snapshot tests, property-based tests.
 - Snapshot tests use `REWRITE_SNAPSHOTS=1` to regenerate golden files after intentional output changes.
 - Adding a new module requires corresponding test coverage.
