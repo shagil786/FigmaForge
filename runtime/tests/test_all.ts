@@ -23,6 +23,9 @@ import { withRetry, withTimeout, RetryExhaustedError, CancelledError } from "../
 import { PathSandbox, SecretGuard, ShellGuard, AssetValidator, ApprovalGate, SecurityViolation } from "../src/core/security.js";
 import { PipelineCoordinator } from "../src/core/pipeline.js";
 import { compareSnapshot, saveSnapshot, loadFixtures, injectFailure } from "../src/core/evaluation.js";
+import { createProvider, AnthropicProvider, OpenAIProvider } from "../src/core/providers.js";
+import { ScreenshotComparator } from "../src/core/screenshot_compare.js";
+import { vnodeToHtml } from "../src/core/render_handler.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -933,6 +936,187 @@ export async function runAllTests(): Promise<SuiteResult[]> {
     } finally {
       cleanDir(dir);
     }
+  }));
+
+  // 13. Model Providers
+  results.push(await describe("providers", async () => {
+    await it("createProvider returns NullModelProvider for 'null'", async () => {
+      const provider = createProvider({ name: "null" });
+      assertEqual(provider.name, "null");
+      const result = await provider.complete("test");
+      assertEqual(result.text, "");
+    });
+
+    await it("createProvider returns AnthropicProvider for 'anthropic'", async () => {
+      const provider = createProvider({ name: "anthropic", apiKey: "test-key" });
+      assertEqual(provider.name, "anthropic");
+    });
+
+    await it("createProvider returns OpenAIProvider for 'openai'", async () => {
+      const provider = createProvider({ name: "openai", apiKey: "test-key" });
+      assertEqual(provider.name, "openai");
+    });
+
+    await it("AnthropicProvider rejects empty API key", async () => {
+      const provider = new AnthropicProvider("", "claude-sonnet-4-20250514", "https://api.anthropic.com", 30000);
+      await assertRejects(
+        () => provider.complete("test"),
+        "API key not configured",
+      );
+    });
+
+    await it("OpenAIProvider rejects empty API key", async () => {
+      const provider = new OpenAIProvider("", "gpt-4o", "https://api.openai.com", 30000);
+      await assertRejects(
+        () => provider.complete("test"),
+        "API key not configured",
+      );
+    });
+
+    await it("createProvider throws for unknown provider", async () => {
+      assertThrows(
+        () => createProvider({ name: "unknown" as "null" }),
+        "Unknown provider",
+      );
+    });
+  }));
+
+  // 14. Screenshot Comparator
+  results.push(await describe("screenshot comparator", async () => {
+    const dir = tmpDir();
+    try {
+      await it("identical buffers produce similarity 1.0", async () => {
+        const comparator = new ScreenshotComparator();
+        const buf = Buffer.from("fake png data for testing");
+        const result = comparator.compareBuffers(buf, buf);
+        assertEqual(result.similarity, 1.0);
+        assertEqual(result.identical, true);
+        assertEqual(result.diffPixelCount, 0);
+      });
+
+      await it("different buffers produce similarity < 1.0", async () => {
+        const comparator = new ScreenshotComparator();
+        const bufA = Buffer.from("image data A");
+        const bufB = Buffer.from("image data B completely different content");
+        const result = comparator.compareBuffers(bufA, bufB);
+        assert(result.similarity < 1.0, `Expected < 1.0, got ${result.similarity}`);
+        assertEqual(result.identical, false);
+      });
+
+      await it("compare reads files from disk", async () => {
+        const comparator = new ScreenshotComparator();
+        const fileA = path.join(dir, "a.png");
+        const fileB = path.join(dir, "b.png");
+        fs.writeFileSync(fileA, "identical content");
+        fs.writeFileSync(fileB, "identical content");
+        const result = comparator.compare(fileA, fileB);
+        assertEqual(result.identical, true);
+      });
+
+      await it("passesThreshold returns boolean", async () => {
+        const comparator = new ScreenshotComparator();
+        const fileA = path.join(dir, "x.png");
+        const fileB = path.join(dir, "y.png");
+        fs.writeFileSync(fileA, "same");
+        fs.writeFileSync(fileB, "same");
+        assert(comparator.passesThreshold(fileA, fileB, 0.95));
+      });
+
+      await it("passesThreshold fails for different images with high threshold", async () => {
+        const comparator = new ScreenshotComparator();
+        const fileA = path.join(dir, "p.png");
+        const fileB = path.join(dir, "q.png");
+        fs.writeFileSync(fileA, "data A");
+        fs.writeFileSync(fileB, "completely different data B with more content");
+        assert(!comparator.passesThreshold(fileA, fileB, 0.99));
+      });
+
+      await it("generateDiffReport for identical images", async () => {
+        const comparator = new ScreenshotComparator();
+        const fileA = path.join(dir, "same1.png");
+        const fileB = path.join(dir, "same2.png");
+        fs.writeFileSync(fileA, "same data");
+        fs.writeFileSync(fileB, "same data");
+        const report = comparator.generateDiffReport(fileA, fileB);
+        assertEqual(report.summary, "Images are identical");
+        assertEqual(report.regions.length, 0);
+      });
+
+      await it("generateDiffReport for different images", async () => {
+        const comparator = new ScreenshotComparator();
+        const fileA = path.join(dir, "diff1.png");
+        const fileB = path.join(dir, "diff2.png");
+        fs.writeFileSync(fileA, "aaa");
+        fs.writeFileSync(fileB, "bbb very different content here");
+        const report = comparator.generateDiffReport(fileA, fileB);
+        assert(report.summary.includes("differ"), `Expected 'differ' in: ${report.summary}`);
+        assertGreaterThan(report.regions.length, 0);
+      });
+    } finally {
+      cleanDir(dir);
+    }
+  }));
+
+  // 15. Render Handler (VNode → HTML)
+  results.push(await describe("render handler", async () => {
+    await it("vnodeToHtml converts simple text node", async () => {
+      const html = vnodeToHtml("Hello world");
+      assertEqual(html, "Hello world");
+    });
+
+    await it("vnodeToHtml converts element with tag", async () => {
+      const html = vnodeToHtml({ tag: "div", text: "Hello" });
+      assert(html.includes("<div>"), `Expected <div> in: ${html}`);
+      assert(html.includes("Hello"), `Expected 'Hello' in: ${html}`);
+      assert(html.includes("</div>"), `Expected </div> in: ${html}`);
+    });
+
+    await it("vnodeToHtml converts element with attributes", async () => {
+      const html = vnodeToHtml({ tag: "div", attrs: { id: "main", class: "container" } });
+      assert(html.includes('id="main"'), `Expected id attr in: ${html}`);
+      assert(html.includes('class="container"'), `Expected class attr in: ${html}`);
+    });
+
+    await it("vnodeToHtml converts element with styles", async () => {
+      const html = vnodeToHtml({
+        tag: "div",
+        style: { fontSize: "14px", backgroundColor: "red" },
+      });
+      assert(html.includes("font-size: 14px"), `Expected font-size in: ${html}`);
+      assert(html.includes("background-color: red"), `Expected background-color in: ${html}`);
+    });
+
+    await it("vnodeToHtml handles nested children", async () => {
+      const html = vnodeToHtml({
+        tag: "div",
+        children: [
+          { tag: "h1", text: "Title" },
+          { tag: "p", text: "Body text" },
+        ],
+      });
+      assert(html.includes("<h1>"), `Expected <h1> in: ${html}`);
+      assert(html.includes("Title"), `Expected 'Title' in: ${html}`);
+      assert(html.includes("<p>"), `Expected <p> in: ${html}`);
+      assert(html.includes("Body text"), `Expected 'Body text' in: ${html}`);
+    });
+
+    await it("vnodeToHtml handles self-closing tags", async () => {
+      const html = vnodeToHtml({ tag: "img", attrs: { src: "test.png" } });
+      assert(html.includes("/>"), `Expected self-closing in: ${html}`);
+    });
+
+    await it("vnodeToHtml escapes HTML in text", async () => {
+      const html = vnodeToHtml({ tag: "p", text: "<script>alert('xss')</script>" });
+      assert(!html.includes("<script>"), "Should escape script tags");
+      assert(html.includes("&lt;script&gt;"), `Expected escaped tags in: ${html}`);
+    });
+
+    await it("vnodeToHtml escapes HTML in string children", async () => {
+      const html = vnodeToHtml("A < B & C > D");
+      assert(html.includes("&lt;"), "Should escape <");
+      assert(html.includes("&amp;"), "Should escape &");
+      assert(html.includes("&gt;"), "Should escape >");
+    });
   }));
 
   return results;

@@ -42,9 +42,9 @@ This is a complete platform implementation (version 0.0.1-dev), containing a 100
   - `library/`: `components.json` (5 project components), `tokens.json` (12 design tokens).
   - `tests/` (21 test files, 214 tests): Unit, integration, snapshot, property-based, and repair-loop tests.
 - `runtime/` (Part 9 — TypeScript Orchestration Runtime):
-  - `src/core/` (12 modules): `types.ts`, `events.ts`, `checkpoint.ts`, `artifacts.ts`, `tools.ts`, `state.ts`, `budget.ts`, `retry.ts`, `security.ts`, `pipeline.ts`, `evaluation.ts`, `index.ts`
+  - `src/core/` (15 modules): `types.ts`, `events.ts`, `checkpoint.ts`, `artifacts.ts`, `tools.ts`, `state.ts`, `budget.ts`, `retry.ts`, `security.ts`, `pipeline.ts`, `evaluation.ts`, `providers.ts`, `screenshot_compare.ts`, `render_handler.ts`, `index.ts`
   - `src/cli/main.ts`: CLI with 6 commands (run, inspect, render, compare, repair, replay)
-  - `tests/` (3 files, 79 tests): Comprehensive test suite with custom test framework
+  - `tests/` (3 files, 100 tests): Comprehensive test suite with custom test framework
   - `evaluation/fixtures/golden/`: 3 golden fixtures (simple-button, login-screen, card-layout)
 - `docs/architecture.md` — In-depth architectural blueprint.
 - `docs/DEVELOPMENT_LOG.md` — Part-by-part development log with decisions and verification.
@@ -67,7 +67,7 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 
 * **Run all tests (214 tests):**
   `cd plugin/figmaforge && python3 -m unittest discover -s tests -v`
-* **Run runtime tests (79 tests):**
+* **Run runtime tests (100 tests):**
   `npx tsc && node dist/runtime/tests/run_all.js`
 * **Run a specific test module:**
   `python3 -m unittest tests.test_router -v`
@@ -92,7 +92,7 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 ## 7. Testing Requirements
 
 - All 214 Python tests across 21 test files must pass (`python3 -m unittest discover -s tests`).
-- All 79 TypeScript runtime tests must pass (`npx tsc && node dist/runtime/tests/run_all.js`).
+- All 100 TypeScript runtime tests must pass (`npx tsc && node dist/runtime/tests/run_all.js`).
 - Test categories: unit tests, integration tests, golden-file snapshot tests, property-based tests.
 - Snapshot tests use `REWRITE_SNAPSHOTS=1` to regenerate golden files after intentional output changes.
 - Adding a new module requires corresponding test coverage.

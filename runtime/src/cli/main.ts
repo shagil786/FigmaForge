@@ -147,6 +147,28 @@ function buildConfig(args: CliArgs): RuntimeConfig {
 // Commands
 // ---------------------------------------------------------------------------
 
+function generateSimpleHtml(vnode: unknown, viewport: { width: number; height: number }): string {
+  const data = vnode as Record<string, unknown>;
+  const tag = (data.tag as string) ?? "div";
+  const text = (data.text as string) ?? "";
+  const style = (data.style ?? {}) as Record<string, string | number>;
+  const css = Object.entries(style)
+    .filter(([, v]) => v !== undefined)
+    .map(([k, v]) => `${k.replace(/([A-Z])/g, "-$1").toLowerCase()}: ${v}`)
+    .join("; ");
+  const children = (data.children as unknown[]) ?? [];
+  const childHtml = children.map((c) => generateSimpleHtml(c, viewport)).join("\n");
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>FigmaForge Render</title>
+<style>* { margin: 0; padding: 0; box-sizing: border-box; }
+body { width: ${viewport.width}px; min-height: ${viewport.height}px; font-family: sans-serif; }</style>
+</head><body>
+<div id="figmaforge-root">
+<${tag}${css ? ` style="${css}"` : ""}>${text}${childHtml}</${tag}>
+</div></body></html>`;
+}
+
 async function cmdRun(args: CliArgs): Promise<void> {
   const config = buildConfig(args);
 
@@ -306,27 +328,135 @@ async function cmdReplay(args: CliArgs): Promise<void> {
 }
 
 async function cmdRender(args: CliArgs): Promise<void> {
-  console.log("Render command: runs the render stage only.");
-  console.log("This requires a previous run with generated code artifacts.");
   const config = buildConfig(args);
-  console.log(`Run ID: ${config.runId}, Output: ${config.outputDir}`);
-  // TODO: Implement single-stage execution
+  const runId = args.flags["run-id"] ?? config.runId;
+  const artifactsDir = path.join(config.outputDir, runId, "artifacts");
+
+  console.log(`Render stage for run ${runId}`);
+
+  // Look for generated code artifact
+  let vnode: unknown = null;
+  if (fs.existsSync(artifactsDir)) {
+    const codeFiles = fs.readdirSync(artifactsDir).filter((f: string) => f.includes("generated_code"));
+    if (codeFiles.length > 0) {
+      vnode = JSON.parse(fs.readFileSync(path.join(artifactsDir, codeFiles[0]), "utf-8"));
+      console.log(`  Loaded generated code from ${codeFiles[0]}`);
+    }
+  }
+
+  const outputDir = path.join(config.outputDir, runId, "renders");
+  fs.mkdirSync(outputDir, { recursive: true });
+
+  // Generate HTML from VNode or create placeholder
+  const viewport = config.viewport;
+  const html = vnode
+    ? generateSimpleHtml(vnode, viewport)
+    : `<!DOCTYPE html><html><body style="width:${viewport.width}px;height:${viewport.height}px;background:#f0f0f0;padding:20px;"><h1>FigmaForge Render</h1><p>No generated code found for run ${runId}.</p></body></html>`;
+
+  const htmlPath = path.join(outputDir, "render.html");
+  fs.writeFileSync(htmlPath, html, "utf-8");
+  console.log(`  HTML written to ${htmlPath}`);
+
+  // Try to take a screenshot via Playwright
+  try {
+    const screenshotPath = path.join(outputDir, "screenshot.png");
+    const { execFileSync } = await import("node:child_process");
+    const pyScript = `
+import sys, json
+try:
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page(viewport={"width": ${viewport.width}, "height": ${viewport.height}})
+        page.goto("file://${htmlPath}")
+        page.wait_for_load_state("networkidle")
+        page.screenshot(path="${screenshotPath}", full_page=True)
+        browser.close()
+        print("ok")
+except ImportError:
+    print("playwright_not_installed")
+except Exception as e:
+    print(f"error:{e}")
+`;
+    const result = execFileSync(config.pythonBin, ["-c", pyScript], {
+      timeout: 30_000,
+      encoding: "utf-8",
+    }).trim();
+
+    if (result === "ok" && fs.existsSync(screenshotPath)) {
+      console.log(`  Screenshot saved to ${screenshotPath}`);
+    } else {
+      console.log(`  Playwright: ${result} — HTML-only render available`);
+    }
+  } catch {
+    console.log("  Playwright not available — HTML-only render available");
+  }
 }
 
 async function cmdCompare(args: CliArgs): Promise<void> {
-  console.log("Compare command: runs the compare stage only.");
-  console.log("This requires a previous run with render artifacts.");
   const config = buildConfig(args);
-  console.log(`Run ID: ${config.runId}, Output: ${config.outputDir}`);
-  // TODO: Implement single-stage execution
+  const runId = args.flags["run-id"] ?? config.runId;
+  const artifactsDir = path.join(config.outputDir, runId, "artifacts");
+  const rendersDir = path.join(config.outputDir, runId, "renders");
+
+  console.log(`Compare stage for run ${runId}`);
+
+  // Look for diff report
+  if (fs.existsSync(artifactsDir)) {
+    const diffFiles = fs.readdirSync(artifactsDir).filter((f: string) => f.includes("diff_report"));
+    if (diffFiles.length > 0) {
+      const report = JSON.parse(fs.readFileSync(path.join(artifactsDir, diffFiles[0]), "utf-8"));
+      console.log(`  Similarity: ${report.similarity_score ?? "N/A"}`);
+      console.log(`  Categories: ${JSON.stringify(report.categories ?? {})}`);
+      console.log(`  Mismatches: ${(report.mismatches ?? []).length}`);
+      return;
+    }
+  }
+
+  // Look for screenshots to compare
+  const screenshotPath = path.join(rendersDir, "screenshot.png");
+  if (fs.existsSync(screenshotPath)) {
+    console.log(`  Screenshot found at ${screenshotPath}`);
+    console.log(`  No reference image to compare against. Use 'figmaforge run' for full comparison.`);
+  } else {
+    console.log("  No diff report or screenshots found. Run the pipeline first.");
+  }
 }
 
 async function cmdRepair(args: CliArgs): Promise<void> {
-  console.log("Repair command: runs the repair stage only.");
-  console.log("This requires a previous run with diff report artifacts.");
   const config = buildConfig(args);
-  console.log(`Run ID: ${config.runId}, Output: ${config.outputDir}`);
-  // TODO: Implement single-stage execution
+  const runId = args.flags["run-id"] ?? config.runId;
+  const artifactsDir = path.join(config.outputDir, runId, "artifacts");
+
+  console.log(`Repair stage for run ${runId}`);
+
+  // Look for diff report to repair from
+  if (fs.existsSync(artifactsDir)) {
+    const diffFiles = fs.readdirSync(artifactsDir).filter((f: string) => f.includes("diff_report"));
+    if (diffFiles.length > 0) {
+      const report = JSON.parse(fs.readFileSync(path.join(artifactsDir, diffFiles[0]), "utf-8"));
+      const mismatches = report.mismatches ?? [];
+      console.log(`  Found diff report with ${mismatches.length} mismatches`);
+      console.log(`  Similarity: ${report.similarity_score ?? "N/A"}`);
+
+      if (mismatches.length === 0) {
+        console.log("  No mismatches to repair — render matches design.");
+        return;
+      }
+
+      // Categorize mismatches
+      const categories: Record<string, number> = {};
+      for (const m of mismatches) {
+        const cat = m.type ?? "unknown";
+        categories[cat] = (categories[cat] ?? 0) + 1;
+      }
+      console.log(`  Categories: ${JSON.stringify(categories)}`);
+      console.log(`  Run 'figmaforge run' for full repair loop with patch generation.`);
+      return;
+    }
+  }
+
+  console.log("  No diff report found. Run the pipeline first with 'figmaforge run'.");
 }
 
 // ---------------------------------------------------------------------------
