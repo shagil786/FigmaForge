@@ -102,8 +102,11 @@ class TestRenderHarnessSmoke(unittest.TestCase):
         entry = result.layout_metadata["node-a"]
         self.assertEqual(entry["width"], 200)
         self.assertEqual(entry["height"], 100)
+        self.assertEqual(entry["x"], 0)
+        self.assertEqual(entry["y"], 0)
         self.assertIn("fontSize", entry["styles"])
         self.assertIn("backgroundColor", entry["styles"])
+        self.assertEqual(entry["styles"]["backgroundColor"], "rgb(255, 0, 0)")
 
     def test_smoke_metadata_feeds_diff_engine(self):
         harness = RenderHarness(self.out_dir)
