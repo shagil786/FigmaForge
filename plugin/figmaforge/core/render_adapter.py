@@ -10,20 +10,31 @@ Standard library only.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Tuple
+from typing import Any, Callable, Dict, Protocol, Tuple
 
 from .generator_types import VStyle
 from .ir_types import IRDocument
 from .layout_types import LayoutPlan
-from .render_harness import RenderHarness
+from .render_harness import RenderResult
 from .render_html import generate_render_html
 
 DEFAULT_VIEWPORT_WIDTH = 1440
 DEFAULT_VIEWPORT_HEIGHT = 900
 
 
+class RenderHarnessLike(Protocol):
+    """Structural type for anything that can render HTML to metadata."""
+
+    def render(
+        self,
+        content_html: str,
+        viewport_spec: Dict[str, int],
+        build_id: str,
+    ) -> RenderResult: ...
+
+
 def make_render_callable(
-    harness: RenderHarness,
+    harness: RenderHarnessLike,
     default_height: int = DEFAULT_VIEWPORT_HEIGHT,
 ) -> Callable[[LayoutPlan, Dict[str, VStyle], IRDocument, int], Tuple[Dict[str, Any], str]]:
     """Build a ``RenderCallable`` closure for ``RepairLoop(render_fn=...)``.
@@ -46,7 +57,7 @@ def make_render_callable(
         document: IRDocument,
         iteration: int,
     ) -> Tuple[Dict[str, Any], str]:
-        width = int(plan.viewport) if plan.viewport else DEFAULT_VIEWPORT_WIDTH
+        width = int(plan.viewport) if plan.viewport and plan.viewport > 0 else DEFAULT_VIEWPORT_WIDTH
         viewport = {"width": width, "height": int(default_height)}
         content_html = generate_render_html(document, styles, viewport)
         result = harness.render(

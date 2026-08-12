@@ -21,7 +21,7 @@ from core.generator_types import VStyle
 from core.ir_types import IRDocument, IRNode, IRSource, KIND_FRAME, KIND_PAGE
 from core.layout_types import Box, DISPLAY_FLEX, LayoutNodePlan, LayoutPlan
 from core.render_adapter import make_render_callable
-from core.render_harness import RenderResult
+from core.render_harness import RenderHarnessError, RenderResult
 from core.repair_loop import RepairConfig, RepairLoop, STOP_THRESHOLD
 
 
@@ -42,6 +42,13 @@ class FakeHarness:
             screenshot_path=Path(f"/tmp/figmaforge_fake/{build_id}.png"),
             layout_metadata=dict(self.meta),
         )
+
+
+class FailingHarness:
+    """Duck-typed RenderHarness whose render always raises."""
+
+    def render(self, content_html, viewport_spec, build_id):
+        raise RenderHarnessError("boom")
 
 
 def _make_plan():
@@ -135,6 +142,27 @@ class TestRenderAdapter(unittest.TestCase):
             result.history.iterations[0].screenshot_path,
             "/tmp/figmaforge_fake/repair-iter-0.png",
         )
+
+    def test_viewport_falls_back_on_zero_width(self):
+        harness = FakeHarness(MATCHING_META)
+        render_fn = make_render_callable(harness)
+        plan = _make_plan()
+        plan.viewport = 0.0
+        render_fn(plan, {}, _make_document(), 0)
+        self.assertEqual(
+            harness.calls[0]["viewport"], {"width": 1440, "height": 900}
+        )
+
+    def test_harness_errors_propagate(self):
+        render_fn = make_render_callable(FailingHarness())
+        with self.assertRaises(RenderHarnessError):
+            render_fn(_make_plan(), {}, _make_document(), 0)
+        loop = RepairLoop(
+            config=RepairConfig(similarity_threshold=0.95, max_iterations=3),
+            render_fn=render_fn,
+        )
+        with self.assertRaises(RenderHarnessError):
+            loop.run(_make_plan(), _make_document(), run_id="adapter-error")
 
 
 if __name__ == "__main__":
