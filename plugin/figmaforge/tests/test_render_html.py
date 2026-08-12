@@ -92,6 +92,35 @@ class TestGenerateRenderHtml(unittest.TestCase):
         self.assertIn("<!DOCTYPE html>", html)
         self.assertIn('id="figmaforge-root"', html)
 
+    def test_malicious_node_id_escaped(self):
+        doc = _make_document()
+        doc.pages[0].children[0].id = 'a"b<c>&d'
+        html = generate_render_html(doc, {}, {"w": 800, "h": 600})
+        self.assertIn('data-node-id="a&quot;b&lt;c&gt;&amp;d"', html)
+        self.assertNotIn('data-node-id="a"b<c>', html)
+
+    def test_malicious_style_value_escaped(self):
+        styles = {
+            "frame-1": VStyle(base={"background": 'red"; color: blue; content: "x'}),
+        }
+        html = generate_render_html(_make_document(), styles, {"w": 800, "h": 600})
+        self.assertIn("background: red&quot;; color: blue; content: &quot;x", html)
+        self.assertNotIn('style="background: red";', html)
+
+    def test_root_fallback_renders_children(self):
+        frame = IRNode(
+            id="root-frame", name="Card", kind=KIND_FRAME, node_type="FRAME",
+            source=IRSource(file_key="fk", node_id="root-frame"),
+        )
+        root = IRNode(
+            id="root-1", name="Root", kind=KIND_PAGE, node_type="CANVAS",
+            source=IRSource(file_key="fk", node_id="root-1"),
+            children=[frame],
+        )
+        doc = IRDocument(file_key="fk", root=root)
+        html = generate_render_html(doc, {}, {"w": 800, "h": 600})
+        self.assertIn('data-node-id="root-frame"', html)
+
 
 if __name__ == "__main__":
     unittest.main()

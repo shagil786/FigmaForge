@@ -66,10 +66,10 @@ def generate_render_html(
 ) -> str:
     """Generate a full renderable HTML document from the IR + styles.
 
-    Renders the children of the first page (``document.pages[0]``, or the
-    first child of ``document.root`` as a fallback) into
-    ``#figmaforge-root``. ``viewport_spec`` accepts ``{"w", "h"}`` or
-    ``{"width", "height"}`` keys.
+    Renders the children of the first page (``document.pages[0]``, or
+    ``document.root`` itself as a fallback) into ``#figmaforge-root``.
+    ``viewport_spec`` accepts ``{"w", "h"}`` or ``{"width", "height"}``
+    keys.
     """
     viewport = normalize_viewport(viewport_spec)
 
@@ -77,13 +77,18 @@ def generate_render_html(
     if document.pages:
         page = document.pages[0]
     elif document.root is not None:
-        page = document.root.children[0] if document.root.children else document.root
+        page = document.root
 
     body_html = ""
     if page is not None:
-        body_html = "".join(
-            _node_to_html(child, styles) for child in page.children
-        )
+        # Guard against pathological IR trees: convert raw RecursionError
+        # into a domain error (simpler than iterative stack-based rendering).
+        try:
+            body_html = "".join(
+                _node_to_html(child, styles) for child in page.children
+            )
+        except RecursionError as exc:
+            raise ValueError("IR tree too deep to render") from exc
 
     width = viewport["width"]
     height = viewport["height"]
