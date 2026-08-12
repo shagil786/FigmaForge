@@ -1,0 +1,1 @@
+Static JSON fixtures that mirror Figma's document, component, style, variable, and API response schemas to drive unit and integration tests in the FigmaForge plugin.

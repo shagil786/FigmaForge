@@ -1,0 +1,1 @@
+Node.js runtime using only built-in modules (`node:fs`, `node:path`, `node:crypto`, `node:child_process`); TypeScript with ESM `.js` imports; Python subprocess bridge via `spawn('python3', ...)` for existing pipeline logic.

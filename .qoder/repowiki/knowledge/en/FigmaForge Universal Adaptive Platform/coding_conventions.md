@@ -1,0 +1,4 @@
+- Cross-language contracts are expressed as JSON schemas under `plugin/figmaforge/schemas/` and consumed verbatim by both the Python plugin and the TypeScript runtime.
+- Deterministic behavior is enforced via golden fixtures: the plugin ships `fixtures/figma/*.json` and the runtime ships `evaluation/fixtures/golden/*/figma.json` paired with expected outputs.
+- Each child package owns its own `package.json` and dependency graph; the repository root only holds shared dev tooling and cross-package configuration.
+- Architecture and lifecycle decisions are centralized in `docs/` (architecture.md, design-ir.md, resolution.md, layout.md, repair-loop.md) rather than duplicated in source comments.

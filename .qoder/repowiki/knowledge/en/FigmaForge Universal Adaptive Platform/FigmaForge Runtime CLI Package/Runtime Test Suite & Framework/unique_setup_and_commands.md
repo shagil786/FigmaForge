@@ -1,0 +1,1 @@
+Run the full suite via the `run_all.ts` entry point (e.g. `node runtime/tests/run_all.ts` or equivalent build target); the process exits non-zero when any assertion fails, making it suitable as a CI gate.

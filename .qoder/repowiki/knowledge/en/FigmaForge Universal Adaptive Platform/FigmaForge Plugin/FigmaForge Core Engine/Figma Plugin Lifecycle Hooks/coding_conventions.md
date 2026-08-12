@@ -1,0 +1,5 @@
+- Each hook exposes a `main()` guarded by `if __name__ == "__main__":` so it can also be imported as a module.
+- Inter-process communication uses JSON over stdin/stdout with explicit `sys.exit(code)` to signal pass (0), ask/block (1), or fatal error (2).
+- Input parsing wraps `json.loads(sys.stdin.read())` in try/except that falls through to a safe default (exit 0) on malformed input.
+- External tool invocations are launched via `subprocess.run` with `capture_output=True`, `text=True`, and a bounded `timeout` to prevent hangs.
+- Missing or unavailable external dependencies are treated as non-blocking: the hook prints a `skipped` status and exits 0 rather than failing the edit.

@@ -1,0 +1,5 @@
+- Each schema file declares `$schema: http://json-schema.org/draft-07/schema#`, a stable `$id` URI, and an inline `example` object describing a valid instance.
+- Reusable sub-types inside a schema are factored into a top-level `definitions` block and referenced via `$ref` rather than inlined.
+- Role entries in `catalog/roles.json` consistently expose the same shape (`id`, `title`, `phases`, `triggers`, `deliverables`, `repository_signals`, `risk`, `capability_refs`, `fallback_pack`) across every domain.
+- Library manifests (`library/components.json`, `library/tokens.json`) begin with a `schema_version` field and a human-readable `description` explaining how consumers should prefer the listed items over generated ones.
+- Token and style references in the design IR use string keys (`token_ref`, `token_refs`, `style_refs`) instead of embedding raw values, keeping the IR decoupled from concrete token definitions.

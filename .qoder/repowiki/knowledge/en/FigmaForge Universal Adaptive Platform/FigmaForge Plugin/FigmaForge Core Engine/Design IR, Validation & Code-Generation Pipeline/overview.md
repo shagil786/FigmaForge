@@ -1,0 +1,1 @@
+Defines the framework-neutral Figma Design IR data model, normalizes ingestion-layer nodes into it, validates the serialized IR against a JSON schema, and emits abstract VNode/VStyle trees consumed by React and CSS code generators.

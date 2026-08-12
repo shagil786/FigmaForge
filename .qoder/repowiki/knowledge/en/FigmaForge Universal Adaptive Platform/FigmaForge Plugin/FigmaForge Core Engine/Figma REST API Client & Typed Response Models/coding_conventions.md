@@ -1,0 +1,6 @@
+- Every model dataclass provides a static `from_dict` factory that defensively coerces missing or malformed fields to safe defaults rather than raising, keeping normalization deterministic and testable.
+- All failures are raised as typed exceptions from `figma_errors.FigmaError` subclasses (auth, not-found, rate limit, server, timeout, network, validation, response shape) so callers branch on exception class instead of parsing messages.
+- Secrets (the Figma token) are read from the `FIGMA_TOKEN` environment variable and never echoed in logs or included in exception messages.
+- HTTP transport is abstracted behind an injectable `transport` callable argument on `FigmaClient.__init__`, enabling unit tests to mock network behavior without a live token.
+- Retries use exponential backoff capped at 8 seconds and honor the `Retry-After` header when present, applied only to a fixed set of retryable status codes (408, 429, 5xx).
+- Input validation helpers (`_validate_file_key`, `_validate_node_ids`) raise `FigmaValidationError` early with descriptive messages before any network call is made.

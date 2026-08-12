@@ -1,0 +1,1 @@
+Requires a `python3` binary available on PATH (configured via `RuntimeConfig.pythonBin`) because tools execute external Python scripts from `config.pluginDir`; runs are persisted under `<outputDir>/<runId>/` with subdirectories `artifacts/` and `checkpoints/`, and can be resumed automatically by loading the latest valid checkpoint file.

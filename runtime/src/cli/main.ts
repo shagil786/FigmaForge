@@ -13,8 +13,8 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { PIPELINE_STAGES, DEFAULT_CONFIG, DEFAULT_BUDGETS, DEFAULT_RETRY, makeRunId } from "../core/types.js";
-import type { RuntimeConfig, PipelineStage } from "../core/types.js";
+import { PIPELINE_STAGES, DEFAULT_CONFIG, DEFAULT_BUDGETS, DEFAULT_RETRY, makeRunId, PRESET_TARGETS, parseTargetKey, targetKey } from "../core/types.js";
+import type { RuntimeConfig, PipelineStage, CodegenTarget } from "../core/types.js";
 import { EventLog } from "../core/events.js";
 import { CheckpointManager } from "../core/checkpoint.js";
 import { ArtifactStore } from "../core/artifacts.js";
@@ -82,6 +82,10 @@ Commands:
 Options:
   --file-key=<key>         Figma file key (required for 'run')
   --output-dir=<path>      Output directory (default: ./figmaforge-output)
+  --target=<framework+styling>  Code generation target (default: html+css)
+                           Format: <framework>+<styling> — any combination is valid.
+                           Presets: html+css, react+css, react+tailwind, vue+scoped_css,
+                           svelte+scoped_css, swiftui+swiftui_modifiers, flutter+flutter_widgets
   --run-id=<id>            Run ID (auto-generated if not specified)
   --resume                 Resume from latest checkpoint
   --threshold=<0.0-1.0>    Similarity threshold (default: 0.95)
@@ -122,6 +126,14 @@ function buildConfig(args: CliArgs): RuntimeConfig {
     approvedDirs.push(path.resolve(args.flags["approve-dir"]));
   }
 
+  const targetStr = args.flags["target"] ?? "html+css";
+  const target: CodegenTarget = parseTargetKey(targetStr);
+  const presetKeys = PRESET_TARGETS.map(t => targetKey(t));
+  if (!presetKeys.includes(targetKey(target))) {
+    console.log(`Note: "${targetKey(target)}" is not a preset — will use backend registry to resolve.`);
+    console.log(`  Presets: ${presetKeys.join(", ")}`);
+  }
+
   return {
     runId,
     fileKey,
@@ -140,6 +152,7 @@ function buildConfig(args: CliArgs): RuntimeConfig {
     viewport: { width: w || 1440, height: h || 900 },
     pythonBin: DEFAULT_CONFIG.pythonBin,
     pluginDir: path.resolve(args.flags["plugin-dir"] ?? "./plugin/figmaforge"),
+    target,
   };
 }
 

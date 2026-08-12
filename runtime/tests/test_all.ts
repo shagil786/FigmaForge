@@ -754,6 +754,7 @@ export async function runAllTests(): Promise<SuiteResult[]> {
           viewport: { width: 1440, height: 900 },
           pythonBin: "python3",
           pluginDir: ".",
+          target: { framework: "html", styling: "css" },
         };
 
         const events = new EventLog(config.runId);
@@ -793,6 +794,7 @@ export async function runAllTests(): Promise<SuiteResult[]> {
           viewport: { width: 1440, height: 900 },
           pythonBin: "python3",
           pluginDir: ".",
+          target: { framework: "html", styling: "css" },
         };
 
         const events = new EventLog(config.runId);
@@ -892,6 +894,7 @@ export async function runAllTests(): Promise<SuiteResult[]> {
           viewport: { width: 1440, height: 900 },
           pythonBin: "python3",
           pluginDir: ".",
+          target: { framework: "html", styling: "css" },
         };
 
         const runPipeline = async (runId: string) => {

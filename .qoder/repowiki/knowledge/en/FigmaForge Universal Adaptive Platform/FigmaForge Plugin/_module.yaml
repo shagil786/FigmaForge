@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: figma_plugin
+title: FigmaForge Plugin
+scope:
+    - plugin/figmaforge/
+source_files: []
+depends_on: []
+related_to: []

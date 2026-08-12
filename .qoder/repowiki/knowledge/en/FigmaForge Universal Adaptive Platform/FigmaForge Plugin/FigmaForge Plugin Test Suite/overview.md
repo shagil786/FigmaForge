@@ -1,0 +1,1 @@
+Python unittest suite that validates FigmaForge's core pipeline stages (IR, layout, resolution, rendering, CSS/React generation) using golden JSON snapshots and unit fixtures.

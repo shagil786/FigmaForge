@@ -1,0 +1,5 @@
+- Snapshot tests define a `build_snapshot_payload()` helper that constructs the current output deterministically from `FixtureLoader` + `core` builders, then assert equality against a file under `tests/snapshots/`.
+- Each snapshot test declares module-level constants `SNAPSHOT_DIR`, `SNAPSHOT_NAME`, and `REWRITE_ENV = 'REWRITE_SNAPSHOTS'`, and uses the env var to write the new snapshot and skip the assertion when regeneration is requested.
+- Tests add the plugin root to `sys.path` via `plugin_root = Path(__file__).parent.parent; sys.path.insert(0, str(plugin_root))` so they can import `core.*` modules directly without installing the package.
+- Snapshot tests include a `test_snapshot_is_valid_json` case that parses the generated payload through `json.loads` to catch serialization regressions before the golden-file comparison.
+- Assertions use `self.assertEqual(current, snapshot_path.read_text(...), ...)` with a human-readable message that instructs how to regenerate the snapshot when a mismatch occurs.

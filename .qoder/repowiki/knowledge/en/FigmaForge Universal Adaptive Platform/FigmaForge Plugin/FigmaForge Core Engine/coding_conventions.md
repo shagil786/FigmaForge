@@ -1,0 +1,5 @@
+- Cross-module data exchange uses frozen dataclasses with explicit `to_dict()` serialization rather than raw dicts or Pydantic models.
+- Long-running pipelines advance through the shared `StateMachine` instead of holding mutable global state, recording decisions, evidence, validations, approvals, and blockers on each phase transition.
+- External side effects (file writes, network calls, mutations) are gated by named approval gates computed by `Router._determine_approval_gates` before execution.
+- All Figma REST responses are parsed into typed dataclasses via the shared `figma_client` with retry/backoff, and errors bubble up as a structured exception hierarchy defined in `figma_errors.py`.
+- Configuration-driven behavior (role scoring, trigger-to-phase mapping, language-to-domain mapping) is kept as class-level dictionaries on orchestrator classes rather than scattered constants.

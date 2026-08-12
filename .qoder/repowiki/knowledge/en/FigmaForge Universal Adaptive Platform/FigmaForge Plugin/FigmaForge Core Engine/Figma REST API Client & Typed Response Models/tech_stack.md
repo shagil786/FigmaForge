@@ -1,0 +1,1 @@
+Python standard library only — `urllib.request` for HTTP, `json` for serialization, `dataclasses` for models, `time.monotonic` for throttling/backoff; targets Figma REST API v1 (`https://api.figma.com/v1`).

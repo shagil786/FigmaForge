@@ -1,0 +1,1 @@
+Pure Python stdlib only (dataclasses, typing, json); no external dependencies. Uses a deterministic heuristic for text measurement (`DEFAULT_CHAR_ADVANCE=0.55`, `DEFAULT_LINE_HEIGHT_FACTOR=1.2`) since font metrics are unavailable in the analysis path.

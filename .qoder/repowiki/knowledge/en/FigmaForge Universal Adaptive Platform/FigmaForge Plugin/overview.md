@@ -1,0 +1,1 @@
+Python-based Figma-to-code plugin that wires agent-driven routing, a stateful IR pipeline, and golden-backed tests around shared schemas, catalogs, and library manifests.

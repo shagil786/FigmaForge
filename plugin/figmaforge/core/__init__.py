@@ -18,3 +18,6 @@ __all__ = [
     "Catalog",
     "StateMachine",
 ]
+
+# NOTE: Backend adapters live in figmaforge.backends, not here.
+# Import them via: from figmaforge.backends import get_registry, BackendAdapter

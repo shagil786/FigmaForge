@@ -1,0 +1,13 @@
+schema_version: 1
+module_path: figma_plugin/core_engine/ir_builder_generator
+title: Design IR, Validation & Code-Generation Pipeline
+scope:
+    - plugin/figmaforge/core/ir_builder.py
+    - plugin/figmaforge/core/ir_types.py
+    - plugin/figmaforge/core/ir_validator.py
+    - plugin/figmaforge/core/generator_types.py
+    - plugin/figmaforge/core/css_generator.py
+    - plugin/figmaforge/core/react_generator.py
+source_files: []
+depends_on: []
+related_to: []

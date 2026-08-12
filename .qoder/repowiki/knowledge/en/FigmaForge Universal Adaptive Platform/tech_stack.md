@@ -1,0 +1,1 @@
+Python 3.8+ for the Claude Code plugin (detector/router/state machine/hooks), Node.js + TypeScript (ES2022, Node16 modules) for the runtime CLI; shared JSON schemas and golden fixtures bridge the two languages.

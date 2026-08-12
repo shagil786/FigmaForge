@@ -1,0 +1,1 @@
+Repository detection requires read access to the target root directory and optionally binaries like `pyright`, `gopls`, `rust-analyzer`, `clangd`, etc. on PATH to populate `lsp_candidates`; runs are persisted under `.figmaforge/runs/<run_id>/state.json` and require write permission there.

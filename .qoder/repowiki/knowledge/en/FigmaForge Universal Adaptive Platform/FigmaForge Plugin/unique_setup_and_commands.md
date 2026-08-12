@@ -1,0 +1,1 @@
+Tests are run via Python's unittest discover over `plugin/figmaforge/tests/`, using golden JSON fixtures under `fixtures/figma/` and expected outputs under `tests/snapshots/`.

@@ -1,0 +1,1 @@
+End-to-end pipeline that diffs rendered output against a layout plan, classifies mismatches into repair candidates, plans source-level patches, executes them with rollback, and iterates until visual similarity meets a threshold.

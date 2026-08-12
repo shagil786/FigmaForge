@@ -1,19 +1,24 @@
 /**
- * Render stage handler — generates HTML from VNode/VStyle and renders it.
+ * Render stage handler — generates output from VNode/VStyle and renders it.
  *
- * Supports two modes:
- * 1. File-based: Generates an HTML file and writes it to disk (always works)
- * 2. Browser-based: Uses Playwright via Python bridge for screenshots
- *    (requires Playwright installation)
+ * The target is a composable { framework, styling } pair — any combination
+ * is valid. The backend registry resolves whether a concrete adapter exists.
+ *
+ * - Web targets (browser renderer):
+ *   Generates HTML and optionally captures screenshots via Playwright.
+ * - Native targets (xcode_preview, flutter_simulator, etc.):
+ *   Generates metadata only; visual comparison requires platform simulators.
  *
  * The file-based mode always works and produces deterministic output.
- * The browser mode produces screenshots when available.
+ * The browser mode produces screenshots when available (web targets only).
  */
 
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
 import type { PipelineContext } from "./pipeline.js";
+import type { CodegenTarget, RendererType } from "./types.js";
+import { defaultRenderer, targetKey } from "./types.js";
 import { ScreenshotComparator } from "./screenshot_compare.js";
 
 // ---------------------------------------------------------------------------
@@ -203,9 +208,9 @@ export interface RenderOutput {
  * Render stage handler for the pipeline.
  *
  * Takes generated VNode/VStyle code and produces:
- * 1. An HTML file (always)
- * 2. A screenshot (when Playwright is available)
- * 3. Layout metadata (from the HTML structure)
+ * 1. An output file (always — HTML for web targets, metadata for native)
+ * 2. A screenshot (when Playwright is available, web targets only)
+ * 3. Layout metadata (from the HTML structure or static analysis)
  */
 export async function renderHandler(
   ctx: PipelineContext,
@@ -214,9 +219,15 @@ export async function renderHandler(
   const outputDir = path.join(ctx.config.outputDir, ctx.config.runId, "renders");
   fs.mkdirSync(outputDir, { recursive: true });
 
-  // Get the VNode tree from shared state or input
+  const target: CodegenTarget = ctx.config.target ?? { framework: "html", styling: "css" };
+  const renderer: RendererType = defaultRenderer(target.framework);
   const vnode = (input.vnode ?? ctx.shared.get("vnode")) as VNode | undefined;
   const viewport = input.viewport as { width: number; height: number } ?? ctx.config.viewport;
+
+  // Native targets cannot render in a browser — emit metadata only
+  if (renderer !== "browser") {
+    return generateNativeMetadata(outputDir, target, renderer, viewport, input);
+  }
 
   if (!vnode) {
     // If no VNode is available, generate a placeholder render
@@ -253,6 +264,39 @@ export async function renderHandler(
   ctx.shared.set("render_meta", layoutMeta);
 
   return result as unknown as Record<string, unknown>;
+}
+
+/**
+ * Generate metadata-only output for native targets (SwiftUI, Flutter).
+ * These targets cannot render in a browser, so visual comparison is deferred
+ * to platform-specific simulators.
+ */
+function generateNativeMetadata(
+  outputDir: string,
+  target: CodegenTarget,
+  renderer: RendererType,
+  viewport: { width: number; height: number },
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  const key = targetKey(target);
+  const meta = {
+    target: { framework: target.framework, styling: target.styling },
+    renderer,
+    viewport,
+    screenshotPath: null,
+    htmlPath: null,
+    layoutMeta: {},
+    note: `Visual comparison for ${key} requires ${renderer}. ` +
+      "Screenshot capture is not available in this environment.",
+  };
+
+  const metaPath = path.join(outputDir, `native_meta_${key}.json`);
+  fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), "utf-8");
+
+  return {
+    ...meta,
+    metaPath,
+  } as Record<string, unknown>;
 }
 
 /**
