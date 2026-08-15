@@ -1,7 +1,7 @@
 # FigmaForge Universal Adaptive Platform
 
 **Version:** 0.0.2-dev  
-**Status:** Parts 1–6 complete, validation pending
+**Status:** Parts 1–12 complete — full pixel-diff pipeline delivered in Part 12; validation gate green (370 Python / 113 TS tests)
 
 A technology-agnostic, adaptive, full-lifecycle Claude Code engineering platform that enables any software project type by detecting stack-specific signals and routing to appropriate capabilities. FigmaForge also converts normalized Figma design IR into framework-neutral layout plans and generates production-quality React/CSS output.
 
@@ -297,17 +297,20 @@ Md Shagil Nizami
 - ✅ **Part 5** Responsive layout engine + breakpoints (132 tests passing)
 - ✅ **Part 6** React/CSS generator (VNode protocol, deterministic golden tests)
 - ✅ **Part 7** Asset Pipeline + Browser Rendering (deterministic harness)
-- ⏳ Full validation suite (pending)
-- ⏳ CLAUDE.md update (pending)
+- ✅ **Part 8** Diff Engine + Repair Loop (per-category scoring, 9 repair categories, rollback)
+- ✅ **Part 9** TypeScript orchestration runtime (6-command CLI, composable targets)
+- ✅ **Part 10** Backend adapter architecture (HTML+CSS real; react_tailwind/vue/svelte/swiftui/flutter stubs)
+- ✅ **Part 11** Real browser render harness (Playwright + headless chromium, layout metadata)
+- ✅ **Part 12** Pixel diffing + Figma baseline download (stdlib PNG codec, pixel diff CLI, capped pixel weight)
+- ✅ Full validation suite green (370 Python + 113 TS tests, zero skips)
+- ✅ CLAUDE.md + docs updated through Part 12
 
 ---
 
 ## Next Steps
 
-1. Run full validation suite
-2. Execute end-to-end demo
-3. Update CLAUDE.md with new architecture
-4. Test with real repositories
-5. Document rollback procedure
-6. Extend generator adapters (CSS Modules / Tailwind / SCSS)
-7. Baseline auto-refresh + perceptual metrics (pixel diffing delivered in Part 12)
+1. Execute an end-to-end demo against a real Figma file
+2. Test with real repositories
+3. Document the rollback procedure
+4. Implement the five stub backend adapters (react+tailwind, vue, svelte, swiftui, flutter)
+5. Baseline auto-refresh + perceptual metrics (pixel diffing delivered in Part 12)

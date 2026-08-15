@@ -41,11 +41,11 @@ This is a complete platform implementation (version 0.0.1-dev), containing a 100
   - `schemas/`: `design-ir.schema.json`, `layout-plan.schema.json`, `resolution-report.schema.json`, `detection.schema.json`, `router.schema.json`, `task-state.schema.json`.
   - `templates/`: Inert examples for MCP and LSP configurations.
   - `library/`: `components.json` (5 project components), `tokens.json` (12 design tokens).
-  - `tests/` (25 test files, 273 tests): Unit, integration, snapshot, property-based, repair-loop, backend adapter, and render-harness tests.
+  - `tests/` (30 test files, 370 tests): Unit, integration, snapshot, property-based, repair-loop, backend adapter, render-harness, and pixel-diff tests.
 - `runtime/` (Part 9 — TypeScript Orchestration Runtime):
   - `src/core/` (15 modules): `types.ts` (composable `CodegenTarget = { framework, styling }`), `events.ts`, `checkpoint.ts`, `artifacts.ts`, `tools.ts`, `state.ts`, `budget.ts`, `retry.ts`, `security.ts`, `pipeline.ts`, `evaluation.ts`, `providers.ts`, `screenshot_compare.ts`, `render_handler.ts`, `index.ts`
   - `src/cli/main.ts`: CLI with 6 commands (run, inspect, render, compare, repair, replay) + `--target=<framework+styling>` flag
-  - `tests/` (3 files, 106 tests): Comprehensive test suite with custom test framework
+  - `tests/` (3 files, 113 tests): Comprehensive test suite with custom test framework
   - `evaluation/fixtures/golden/`: 3 golden fixtures (simple-button, login-screen, card-layout)
 - `docs/architecture.md` — In-depth architectural blueprint.
 - `docs/DEVELOPMENT_LOG.md` — Part-by-part development log with decisions and verification.
@@ -76,9 +76,9 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 > `buildConfig`), e.g. `PYTHON_BIN=/opt/homebrew/bin/python3.14 node dist/runtime/tests/run_all.js`
 > or `PYTHON_BIN=/opt/homebrew/bin/python3.14 node dist/runtime/src/cli/main.js compare ...`.
 
-* **Run all tests (273 tests):**
+* **Run all tests (370 tests):**
   `cd plugin/figmaforge && python3 -m unittest discover -s tests -v`
-* **Run runtime tests (106 tests):**
+* **Run runtime tests (113 tests):**
   `npx tsc && node dist/runtime/tests/run_all.js`
 * **Install browser rendering dependencies (required for the render stage):**
   `pip install playwright && playwright install chromium`
@@ -104,8 +104,8 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 
 ## 7. Testing Requirements
 
-- All 273 Python tests across 25 test files must pass (`python3 -m unittest discover -s tests`); browser-render tests skip cleanly without chromium.
-- All 106 TypeScript runtime tests must pass (`npx tsc && node dist/runtime/tests/run_all.js`).
+- All 370 Python tests across 30 test files must pass (`python3 -m unittest discover -s tests`); browser-render tests skip cleanly without chromium.
+- All 113 TypeScript runtime tests must pass (`npx tsc && node dist/runtime/tests/run_all.js`).
 - Test categories: unit tests, integration tests, golden-file snapshot tests, property-based tests.
 - Snapshot tests use `REWRITE_SNAPSHOTS=1` to regenerate golden files after intentional output changes.
 - Adding a new module requires corresponding test coverage.
@@ -123,7 +123,7 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 1. Discuss architecture impact (review `docs/architecture.md`).
 2. Run full test suite (`python3 -m unittest discover -s tests` from `plugin/figmaforge/`).
 3. Make atomic, minimal coherent changes explicitly matching schemas.
-4. Verify all 273 tests pass and regenerate snapshots if output changed intentionally.
+4. Verify all 370 tests pass and regenerate snapshots if output changed intentionally.
 5. Update `docs/DEVELOPMENT_LOG.md` with the change entry.
 6. Only document verified, executable routines.
 
@@ -131,7 +131,7 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 
 - Scope is strictly adhered to (no speculative integrations).
 - All changes maintain schema constraints (run `claude plugin validate --strict`).
-- Full test suite passes: `python3 -m unittest discover -s tests` (273 tests, 25 files).
+- Full test suite passes: `python3 -m unittest discover -s tests` (370 tests, 30 files).
 - Changes align exactly with architectural constraints in `docs/architecture.md`.
 - `docs/DEVELOPMENT_LOG.md` updated with the change entry.
 - No exposed credentials, secrets, or unintentional active `.lsp.json`/`.mcp.json` templates exist.
