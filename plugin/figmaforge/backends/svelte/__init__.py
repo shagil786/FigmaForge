@@ -31,6 +31,7 @@ from ..web_common import (
     ScopedCssGenerator,
     VNode,
     VNodeBuilder,
+    collect_component_refs,
     escape_attr,
     escape_html,
 )
@@ -123,13 +124,17 @@ class SvelteBackend(BackendAdapter):
         ir_by_id: Dict[str, IRNode] = {n.id: n for n in document.all_nodes()}
         style_gen = CssStyleGenerator()
         node_builder = VNodeBuilder(resolution)
+        instance_names = frozenset(
+            inst.get("resolved_name") for inst in (resolution.instances if resolution else [])
+            if inst.get("status") == "resolved" and inst.get("resolved_name")
+        )
 
         for screen_idx, screen in enumerate(layout_plan.screens):
             component_name = _to_pascal_case(screen.name or f"Screen{screen_idx}")
             root_vnode = node_builder.build(screen)
             svelte_content = self._generate_component(
                 root_vnode, screen, component_name, style_gen, ir_by_id,
-                assets=assets,
+                assets=assets, instance_names=instance_names,
             )
             node_ids = [n.node_id for n in screen.walk() if n.node_id]
 
@@ -158,6 +163,7 @@ class SvelteBackend(BackendAdapter):
         style_gen: CssStyleGenerator,
         ir_by_id: Dict[str, IRNode],
         assets: Optional[Dict[str, Dict[str, Any]]] = None,
+        instance_names: Optional[frozenset] = None,
     ) -> str:
         lines = ['<script lang="ts">']
         lines.append("  // FigmaForge generated Svelte component")
@@ -167,6 +173,22 @@ class SvelteBackend(BackendAdapter):
         lines.append(self._render_markup(
             root_vnode, screen, style_gen, ir_by_id, indent=0, assets=assets,
         ))
+        # Self-contained fallbacks (Part 21, S2): every referenced component
+        # name gets a snippet rendering that node's own subtree, so the file
+        # compiles + renders without the user's component library (Svelte 5).
+        instance_names = instance_names or frozenset()
+        for ref_name, ref_vnode, ref_plan in collect_component_refs(root_vnode, screen):
+            lines.append("")
+            if ref_name in instance_names:
+                lines.append(
+                    "  <!-- fidelity: component_instance approximated (fallback) -->"
+                )
+            lines.append(f"{{#snippet {ref_name}()}}")
+            lines.append(self._render_markup(
+                ref_vnode, ref_plan, style_gen, ir_by_id, indent=2,
+                assets=assets, tag_override="div",
+            ))
+            lines.append("{/snippet}")
         lines.append("")
         lines.append("<style>")
         rules, media = ScopedCssGenerator(ir_by_id, assets=assets).collect(
@@ -190,20 +212,28 @@ class SvelteBackend(BackendAdapter):
         ir_by_id: Dict[str, IRNode],
         indent: int,
         assets: Optional[Dict[str, Dict[str, Any]]] = None,
+        tag_override: Optional[str] = None,
     ) -> str:
         pad = "  " * indent
+        tag = tag_override if tag_override is not None else vnode.tag
+        # A component reference at the call site is a self-closing tag with
+        # identifying attrs only — the styling + subtree live in its fallback.
+        is_component_ref = vnode.is_component and tag_override is None
         attrs: List[str] = []
         if vnode.node_id:
             attrs.append(f'data-figma-id="{escape_attr(vnode.node_id)}"')
-        attrs.append(f'class="{_class_name(vnode.node_id)}"')
+        if not is_component_ref:
+            attrs.append(f'class="{_class_name(vnode.node_id)}"')
         for key, value in vnode.props.items():
             if key == "data-figma-id":
                 continue
             attrs.append(f'{key}="{escape_attr(str(value))}"')
         attr_str = (" " + " ".join(attrs)) if attrs else ""
 
-        if vnode.text_content is not None and not vnode.children:
-            element = f"{pad}<{vnode.tag}{attr_str}>{escape_html(vnode.text_content)}</{vnode.tag}>"
+        if is_component_ref:
+            element = f"{pad}<{tag}{attr_str}></{tag}>"
+        elif vnode.text_content is not None and not vnode.children:
+            element = f"{pad}<{tag}{attr_str}>{escape_html(vnode.text_content)}</{tag}>"
         elif vnode.children:
             children_html = "\n".join(
                 self._render_markup(
@@ -212,9 +242,9 @@ class SvelteBackend(BackendAdapter):
                 )
                 for child_vn, child_plan in zip(vnode.children, plan_node.children)
             )
-            element = f"{pad}<{vnode.tag}{attr_str}>\n{children_html}\n{pad}</{vnode.tag}>"
+            element = f"{pad}<{tag}{attr_str}>\n{children_html}\n{pad}</{tag}>"
         else:
-            element = f"{pad}<{vnode.tag}{attr_str}></{vnode.tag}>"
+            element = f"{pad}<{tag}{attr_str}></{tag}>"
 
         # An image fill is only marked when it has no resolved asset; a
         # resolved one emits a real scoped-CSS background (extend_ir_style).

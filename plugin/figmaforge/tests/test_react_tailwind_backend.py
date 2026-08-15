@@ -419,11 +419,13 @@ class TestReactTailwindBackend(unittest.TestCase):
         config = [f for f in output.files if f.path == "tailwind.config.figmaforge.js"][0]
         self.assertNotIn("TODO", config.content)
         # Colors: primary -> hex.
-        self.assertIn('primary: "#141f3d"', config.content)
+        # Part 21 S3: token keys are quoted (hyphenated names are invalid JS
+        # as bare identifiers), so all keys carry quotes.
+        self.assertIn('"primary": "#141f3d"', config.content)
         # Spacing.
-        self.assertIn('4: "16px"', config.content)
+        self.assertIn('"4": "16px"', config.content)
         # Typography family.
-        self.assertIn("button: 'Inter'", config.content)
+        self.assertIn('"button": \'Inter\'', config.content)
 
     # -- determinism + snapshot ---------------------------------------------
     def test_deterministic(self):

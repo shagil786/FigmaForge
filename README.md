@@ -1,7 +1,7 @@
 # FigmaForge Universal Adaptive Platform
 
 **Version:** 0.0.2-dev  
-**Status:** Parts 1–20 complete — full pixel-diff pipeline (Part 12), perceptual SSIM gating and baseline auto-refresh (Part 13), all six backend adapters implemented (Part 14: react+tailwind, vue, svelte, swiftui, flutter) with capability-vs-output honesty audits, the real-Figma end-to-end demo wired through the TS runtime (Part 15: Python pipeline CLI + ingest/generate stage handlers + `figmaforge demo`), the full front half wired (Part 16: IR/layout JSON round-trip loaders, normalize/resolve/layout subcommands, staged generate, five-stage `figmaforge run`), the assets stage wired (Part 17: asset-reference collector, `assets` subcommand, content-addressed image/SVG store, six-stage `figmaforge run`), resolved assets threaded into generated web code (Part 18: `generate --assets`, real `background-image`/`bg-[url(...)]` references, `FILLS_IMAGE` lifted to supported with the honesty audit locked), render+compare wired into the runtime (Part 19: `pipeline.py render` shot/reference/live-baseline modes, real browser screenshots of generated html, SSIM-gated diff_report with measured similarity + `Visual verdict`, eight-stage `figmaforge run`), and repair+verify wired into the runtime (Part 20: pixel→color repair fix, html_css `styles_override` seam, `pipeline.py repair` subcommand, TS repair/verify stage handlers with honest short-circuits, ten-stage `figmaforge run` with `Repairs:` and a `Verification:` pass/fail gate); validation gate green (565 Python / 155 TS tests)
+**Status:** Parts 1–21 complete — full pixel-diff pipeline (Part 12), perceptual SSIM gating and baseline auto-refresh (Part 13), all six backend adapters implemented (Part 14: react+tailwind, vue, svelte, swiftui, flutter) with capability-vs-output honesty audits, the real-Figma end-to-end demo wired through the TS runtime (Part 15: Python pipeline CLI + ingest/generate stage handlers + `figmaforge demo`), the full front half wired (Part 16: IR/layout JSON round-trip loaders, normalize/resolve/layout subcommands, staged generate, five-stage `figmaforge run`), the assets stage wired (Part 17: asset-reference collector, `assets` subcommand, content-addressed image/SVG store, six-stage `figmaforge run`), resolved assets threaded into generated web code (Part 18: `generate --assets`, real `background-image`/`bg-[url(...)]` references, `FILLS_IMAGE` lifted to supported with the honesty audit locked), render+compare wired into the runtime (Part 19: `pipeline.py render` shot/reference/live-baseline modes, real browser screenshots of generated html, SSIM-gated diff_report with measured similarity + `Visual verdict`, eight-stage `figmaforge run`), and repair+verify wired into the runtime (Part 20: pixel→color repair fix, html_css `styles_override` seam, `pipeline.py repair` subcommand, TS repair/verify stage handlers with honest short-circuits, ten-stage `figmaforge run` with `Repairs:` and a `Verification:` pass/fail gate), and bundler-rendered measurement for the web-framework backends (Part 21: real Vite scaffold for react/vue/svelte with pinned deps + asset rewrite, `render --bundle`, TS bundler render path with a `--no-bundle` escape, self-contained component fallbacks so generated output builds and renders, and a box-sizing reset matching the reference — so all four browser targets produce real measured scores); validation gate green (605 Python / 162 TS tests)
 
 A technology-agnostic, adaptive, full-lifecycle Claude Code engineering platform that enables any software project type by detecting stack-specific signals and routing to appropriate capabilities. FigmaForge also converts normalized Figma design IR into framework-neutral layout plans and generates production-quality React/CSS output.
 
@@ -327,8 +327,14 @@ Md Shagil Nizami
 - ✅ **Part 20** `pipeline.py repair` subcommand — `RepairLoop` + html_css regeneration in one atomic CLI unit with fake-harness tests
 - ✅ **Part 20** TS repair + verify stage handlers — real RepairLoop spawn with honest short-circuits (no score / gate satisfied / reference-baseline contract / `--no-repair`), verify re-renders regenerated files against the **same** baseline for the honest post-repair measurement
 - ✅ **Part 20** `figmaforge run` exercises **10 real stages** (ingest → … → compare → repair → verify) with `Repairs:`, `Visual verdict:`, and a `Verification: PASSED/FAILED/cannot-verify` terminal gate (`--no-repair`/`--similarity-threshold` flags)
-- ✅ Full validation suite green (565 Python + 155 TS tests, zero skips)
-- ✅ CLAUDE.md + docs updated through Part 20
+- ✅ **Part 21** Task 0 spike — real Tailwind v3.4 toolchain confirmed (arbitrary values + breakpoint variants) and caught two honesty bugs: unresolved component refs crash react/svelte with a blank page (S2) and hyphenated token keys break the tailwind config (S3)
+- ✅ **Part 21** Self-contained component references — react/vue/svelte emit local fallback definitions for every referenced component/instance name (build + render with zero errors), and the token config quotes hyphenated keys (valid JS)
+- ✅ **Part 21** `bundler_harness.py` — deterministic per-framework Vite scaffold (exact pinned deps, multi-page build, asset copy + `url(...)` rewrite, injectable builder) + `pipeline.py render --bundle` (scaffold → build → serve → screenshot in one atomic unit, exit codes 2/4/1)
+- ✅ **Part 21** Real-toolchain money tests — canonical react/vue/svelte output scaffolds, builds, and screenshots through the harness with real npm + chromium, zero console errors, ports never fixed
+- ✅ **Part 21** TS bundler render path — `invokeBundleRender` + the no-`.html` branch for bundler-backed targets feeds the existing compare/verify machinery unchanged; `--no-bundle` restores the honest degrade
+- ✅ **Part 21** `figmaforge run` CLI tests — `--target=react+tailwind` and `vue+scoped_css` each produce a real measured `Score` ≥ 0.95 with `Verification: PASSED` (react 0.9987 / vue 1.0000 / svelte 1.0000 SSIM-clean), `--no-bundle` degrades honestly, flutter stays a native degrade; root fidelity markers render inside the element (esbuild rejects sibling JSX children) and the scaffold carries the reference's box-sizing reset (Figma widths are border-box)
+- ✅ Full validation suite green (605 Python + 162 TS tests, zero skips)
+- ✅ CLAUDE.md + docs updated through Part 21
 
 ---
 
@@ -336,6 +342,6 @@ Md Shagil Nizami
 
 1. Test with real repositories
 2. Document the rollback procedure
-3. Wire the final TS pipeline stages (repair/verify) into the runtime
-4. Image-fill fit modes beyond cover/center + asset bundling for deployment
-5. Diff heatmap output + extended PNG formats (deferred non-goals from Parts 12–13)
+3. Image-fill fit modes beyond cover/center + asset bundling for deployment
+4. Diff heatmap output + extended PNG formats (deferred non-goals from Parts 12–13)
+5. **Web-backend repair regeneration** — the repair loop stays html_css-scoped today; react/vue/svelte measure through the bundler harness but their regeneration is a deferred extension (the honest contract is preserved: bundler builds are real, never faked)

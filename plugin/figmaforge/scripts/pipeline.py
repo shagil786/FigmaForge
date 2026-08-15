@@ -39,6 +39,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from backends.html_css import HtmlCssBackend  # noqa: E402
 from backends.registry import get_registry  # noqa: E402
+from bundler_harness import (  # noqa: E402
+    BundleBuildError,
+    BundleScaffoldError,
+    SPECS,
+    build as bundle_build,
+    scaffold as bundle_scaffold,
+    screenshot_url as bundle_screenshot_url,
+    serve_built,
+)
 from backends.web_common import (  # noqa: E402
     reference_styles_from_plan,
     styles_to_dict,
@@ -313,11 +322,13 @@ def _cmd_render(
     harness_cls=RenderHarness,
     client_cls=FigmaClient,
     transport=None,
+    builder=None,
+    screenshot_fn=None,
 ) -> int:
-    """Render generated HTML (shot), the IR reference (baseline), or the
-    live Figma baselines.
+    """Render generated HTML (shot), the IR reference (baseline), the live
+    Figma baselines, or a bundler target.
 
-    Three mutually exclusive modes:
+    Four mutually exclusive modes:
 
     - ``--html <file>`` — render a generated standalone HTML file (the
       code-under-test screenshot).
@@ -326,21 +337,31 @@ def _cmd_render(
       build the reference document with ``generate_render_html``, and render
       it (the baseline ``figmaforge run`` diffs against).
     - ``--baselines`` — download live Figma renders via ``download_baselines``.
+    - ``--bundle`` — scaffold/build/serve/screenshot a bundler-backed
+      backend's generated output (react/vue/svelte) through the Vite harness
+      (Part 21).
 
     ``--html``/``--ir`` modes print exactly one JSON line: ``{ok, kind,
-    screenshot, html, meta, viewport}``.  Failures raise ``_CliError``
-    (exit 2 usage / 4 input / 1 render) — never a traceback.
+    screenshot, html, meta, viewport}``; ``--bundle`` prints ``{ok, kind:
+    "bundle", backend, screens, build_ok, viewport}``.  Failures raise
+    ``_CliError`` (exit 2 usage / 4 input / 1 render/build) — never a
+    traceback.
     """
     html_mode = args.html is not None
     ref_mode = args.ir is not None or args.layout is not None
     baselines_mode = bool(args.baselines)
-    if int(html_mode) + int(ref_mode) + int(baselines_mode) != 1:
+    bundle_mode = bool(getattr(args, "bundle", False))
+    modes = [html_mode, ref_mode, baselines_mode, bundle_mode]
+    if sum(1 for m in modes if m) != 1:
         raise _CliError(
             2,
-            "render: exactly one of --html, --ir/--layout, or --baselines",
+            "render: exactly one of --html, --ir/--layout, --baselines, "
+            "or --bundle",
         )
     if ref_mode and (args.ir is None or args.layout is None):
         raise _CliError(2, "render: --ir and --layout must be provided together")
+    if bundle_mode:
+        return _cmd_render_bundle(args, builder=builder, screenshot_fn=screenshot_fn)
 
     out_dir = Path(args.out) if args.out else Path(tempfile.mkdtemp(prefix="ff-render-"))
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -393,18 +414,123 @@ def _cmd_render(
     return 0
 
 
+def _cmd_render_bundle(
+    args: argparse.Namespace,
+    builder=None,
+    screenshot_fn=None,
+) -> int:
+    """``render --bundle``: scaffold + build + serve + screenshot in one unit.
+
+    ``--backend react_tailwind|vue|svelte --dir <generated> [--assets
+    <manifest.json>] [--out <dir>] [--shot-dir <dir>] [--viewport WxH]``.
+
+    - Scaffold the Vite project (pure file writes, runs for real), build it
+      (injectable ``builder`` — the default runs real ``npm run build``),
+      serve the built ``dist`` on an ephemeral port, and screenshot each
+      generated component at the viewport.
+    - Emits exactly one JSON line: ``{ok, kind: "bundle", backend, screens:
+      [{component, png, html}], build_ok, viewport}`` — path-free and
+      deterministic (pngs are relative to the out dir; the port is never
+      in the payload).
+    - Exit codes: 2 usage/unknown backend, 4 missing dir / unreadable asset
+      manifest / scaffold error, 1 build or browser failure — never a
+      traceback.
+    """
+    backend = getattr(args, "backend", None)
+    generated_arg = getattr(args, "dir", None)
+    if backend is None or generated_arg is None:
+        raise _CliError(
+            2, "render --bundle: --backend and --dir are required",
+        )
+    if backend not in SPECS:
+        raise _CliError(
+            2,
+            f"render --bundle: no bundler harness for backend {backend!r} — "
+            f"available: {', '.join(sorted(SPECS))}",
+        )
+    generated = Path(generated_arg)
+    if not generated.is_dir():
+        raise _CliError(4, f"render --bundle: generated dir missing: {generated}")
+
+    assets: Dict[str, Any] = {}
+    if getattr(args, "assets", None):
+        try:
+            assets = _load_file_payload(args.assets)
+        except Exception:  # noqa: BLE001 — CLI boundary
+            raise _CliError(
+                4, f"render --bundle: unreadable asset manifest: {args.assets}",
+            ) from None
+
+    out_dir = Path(args.out) if getattr(args, "out", None) else \
+        Path(tempfile.mkdtemp(prefix="ff-bundle-"))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    bundle_dir = out_dir / "bundle"
+    shot_dir = Path(args.shot_dir) if getattr(args, "shot_dir", None) else \
+        out_dir / "screens"
+    shot_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        bundle_scaffold(backend, generated, bundle_dir, assets=assets)
+        bundle_build(bundle_dir, builder=builder)
+    except BundleScaffoldError as exc:
+        raise _CliError(4, str(exc)) from exc
+    except BundleBuildError as exc:
+        raise _CliError(1, str(exc)) from exc
+
+    width, height = _parse_viewport(args.viewport)
+    viewport = {"width": width, "height": height}
+    ext = SPECS[backend].extension
+    names = sorted(
+        p.name[: -len(ext)] for p in generated.iterdir()
+        if p.is_file() and p.name.endswith(ext)
+    )
+    shoot = screenshot_fn if screenshot_fn is not None else bundle_screenshot_url
+
+    url, stop = serve_built(bundle_dir / "dist")
+    try:
+        screens: List[Dict[str, str]] = []
+        for name in names:
+            page_url = f"{url}{name}.html"
+            png = shot_dir / f"{name}.png"
+            try:
+                shoot(page_url, viewport, png)
+            except Exception as exc:  # noqa: BLE001 — CLI boundary
+                raise _CliError(
+                    1, f"render --bundle: screenshot of {name!r} failed: {exc}",
+                ) from exc
+            screens.append({
+                "component": name,
+                "png": str(png.relative_to(out_dir)),
+                "html": f"{name}.html",
+            })
+    finally:
+        stop()
+
+    _emit({
+        "ok": True,
+        "kind": "bundle",
+        "backend": backend,
+        "screens": screens,
+        "build_ok": True,
+        "viewport": viewport,
+    })
+    return 0
+
+
 def render_main(
     argv: Optional[List[str]] = None,
     harness_cls=RenderHarness,
     client_cls=FigmaClient,
     transport=None,
+    builder=None,
+    screenshot_fn=None,
 ) -> int:
     """Entry point for the ``render`` subcommand alone (testable seam).
 
     Accepts the same arguments as ``pipeline.py render`` and lets tests
-    inject a fake harness / client / transport.  The harness is constructed
-    as ``harness_cls(out_dir)`` — a class (real usage) or a callable
-    instance (tests); the client as ``client_cls()``.
+    inject a fake harness / client / transport / builder / screenshot fn.
+    The harness is constructed as ``harness_cls(out_dir)`` — a class (real
+    usage) or a callable instance (tests); the client as ``client_cls()``.
     """
     parser = build_parser()
     try:
@@ -415,6 +541,7 @@ def render_main(
         return _cmd_render(
             args, harness_cls=harness_cls,
             client_cls=client_cls, transport=transport,
+            builder=builder, screenshot_fn=screenshot_fn,
         )
     except Exception as exc:  # noqa: BLE001 — CLI boundary: never traceback
         return _report_error(exc)
@@ -951,6 +1078,28 @@ def build_parser() -> argparse.ArgumentParser:
     render.add_argument(
         "--out",
         help="output directory for the screenshot + html (default: temp dir)",
+    )
+    render.add_argument(
+        "--bundle",
+        action="store_true",
+        help="scaffold/build/serve/screenshot a bundler backend's generated "
+             "output (react/vue/svelte) through the Vite harness",
+    )
+    render.add_argument(
+        "--backend",
+        help="bundler backend for --bundle (react_tailwind | vue | svelte)",
+    )
+    render.add_argument(
+        "--dir",
+        help="generated output dir for --bundle (one component file per screen)",
+    )
+    render.add_argument(
+        "--assets",
+        help="resolved asset manifest JSON for --bundle (Part 18 contract)",
+    )
+    render.add_argument(
+        "--shot-dir",
+        help="screenshot output dir for --bundle (default: <out>/screens)",
     )
 
     gen = sub.add_parser("generate", help="generate backend code from a Figma file JSON")

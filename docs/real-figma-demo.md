@@ -114,9 +114,18 @@ trio report image-asset/token approximations, and flutter reports the most
 
 `--render` renders the **html_css** reference output (complete standalone
 HTML) to PNGs under `--out/_renders/` via the Part-11 Playwright harness.
-React/Vue/Svelte outputs need a bundler and native targets need simulators,
-so they are noted, not rendered. Any render failure (e.g. Playwright not
-installed) degrades to a note — never a hard error.
+Native targets (swiftui/flutter) need simulators, so they are noted, not
+rendered. Any render failure (e.g. Playwright not installed) degrades to a
+note — never a hard error.
+
+**React/Vue/Svelte render through a real bundler (Part 21).** In
+`figmaforge run`, bundler-backed targets are measured through the Vite
+harness (`bundler_harness.py`): their generated components are scaffolded
+into a pinned multi-page Vite project (entry + `index.html` per screen,
+asset copy + `url(...)` rewrite), built with real `npm install` + `vite
+build`, served on an ephemeral port, and screenshotted in real chromium — a
+build failure is an explicit error with the real vite stderr, never a fake
+screenshot. `--no-bundle` restores the honest no-measured-score degrade.
 
 ## Single-backend runs
 
@@ -147,8 +156,10 @@ Artifacts land under `./figmaforge-output/<run-id>/artifacts/`:
   files are under `./figmaforge-output/<run-id>/generated/<backend>/`
 - `render_output_*.json` — the render output (`screenshot`): real chromium
   screenshots of every generated `*.html` under
-  `./figmaforge-output/<run-id>/renders/` (honest degrade to a note for
-  bundler/native targets)
+  `./figmaforge-output/<run-id>/renders/`, and for bundler-backed targets
+  (react/vue/svelte) real screenshots of the Vite-built pages under
+  `./figmaforge-output/<run-id>/renders/` (Part 21; `--no-bundle` and native
+  targets degrade to an honest note)
 - `compare_output_*.json` — the diff report (`diff_report`): SSIM-gated
   similarity vs the resolved baseline (explicit `--baseline` → `--figma-baseline`
   → reference render), with per-screen raster stats and the perceptual verdict
@@ -193,9 +204,11 @@ The render + compare stages make parity **measured**: the default baseline is
 a reference render of the same IR through the shared web style lowering (so a
 clean verdict means the generated code reproduces the intended render — a
 regression gate), and the run ends with a `Visual verdict:` line next to the
-real `Score`. Design judgment against actual Figma output uses `--baseline
-<your.png>` or `--figma-baseline` (live download via the Figma images API,
-token-gated).
+real `Score`. All four browser targets are measured — html_css directly and
+react/vue/svelte through the Part-21 bundler harness (real Vite build +
+chromium screenshot). Design judgment against actual Figma output uses
+`--baseline <your.png>` or `--figma-baseline` (live download via the Figma
+images API, token-gated).
 
 The repair + verify stages close the loop (Part 20): when the measured score
 is below the gate (`--similarity-threshold`, default 0.95) against an
@@ -232,10 +245,13 @@ Exit codes mirror the Python CLI: **2** = bad invocation/unknown backend,
 ## Verification scope
 
 The demo's verification is **structural** by design (repo rule): generated
-code is never compiled (no swiftc/dart/tsc) and generated apps are never
-executed. The gate is: all six backends generate cleanly, the manifests and
-loss counts match each backend's declarations, the generated html renders and
-diffs against its reference baseline with a measured score (with repair +
-verify closing the loop against external baselines), and the Python
-(`python3.14 -m unittest discover -s tests`, 565 tests) + TS
-(`node dist/runtime/tests/run_all.js`, 155 tests) suites are green.
+native code is never compiled (no swiftc/dart) and generated native apps are
+never executed. The web backends are stronger than structural since Part 21:
+react/vue/svelte output is **built and rendered** through the real Vite
+harness, and every browser target diffs against its reference baseline with a
+measured score (react 0.9987, vue 1.0000, svelte 1.0000, html_css 1.0 — all
+SSIM-clean on the checked-in fixture), with repair + verify closing the loop
+against external baselines. The gate: all six backends generate cleanly, the
+manifests and loss counts match each backend's declarations, and the Python
+(`python3.14 -m unittest discover -s tests`, 605 tests) + TS
+(`node dist/runtime/tests/run_all.js`, 162 tests) suites are green.
