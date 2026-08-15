@@ -31,10 +31,14 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import socket
 import subprocess
+import sys
+import time
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 
 class BundleHarnessError(RuntimeError):
@@ -311,7 +315,26 @@ Builder = Callable[[Path], Any]
 
 
 def _npm_build(out_dir: Path) -> Any:
-    """Real builder: ``npm run build`` in the scaffold (S4-aware)."""
+    """Real builder: install deps when missing, approve esbuild, build.
+
+    Self-contained: a fresh scaffold has no ``node_modules``, so the real
+    path installs the pinned deps first (npm's cache makes repeat installs
+    fast).  npm 11 blocks esbuild's postinstall — approve it best-effort
+    when supported (S4).  Returns the ``npm run build`` result, or the
+    failed install result so ``build()`` surfaces the real error.
+    """
+    out_dir = Path(out_dir)
+    if not (out_dir / "node_modules").is_dir():
+        install = subprocess.run(
+            ["npm", "install", "--no-audit", "--no-fund"],
+            cwd=out_dir, capture_output=True, text=True, timeout=300,
+        )
+        if install.returncode != 0:
+            return install
+    subprocess.run(
+        ["npm", "approve-scripts", "esbuild"], cwd=out_dir,
+        capture_output=True, text=True, timeout=60,
+    )
     return subprocess.run(
         ["npm", "run", "build"], cwd=out_dir,
         capture_output=True, text=True, timeout=300,
@@ -340,3 +363,94 @@ def build(out_dir: Path, builder: Optional[Builder] = None) -> None:
             f"vite build failed (exit {result.returncode})\n--- stdout ---\n"
             f"{stdout}\n--- stderr ---\n{stderr}{hint}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Serve + screenshot (Part 21 Task 3)
+# ---------------------------------------------------------------------------
+
+
+def serve_built(dist_dir: Path) -> Tuple[str, Callable[[], None]]:
+    """Serve a built ``dist`` on an ephemeral port; return ``(url, stop)``.
+
+    A stdlib static server (python ``http.server``) on ``127.0.0.1`` with a
+    readiness probe — deterministic, no npm at runtime.  The port is chosen
+    at serve time and never hardcoded (concurrent runs are safe).
+    """
+    dist_dir = Path(dist_dir)
+    if not dist_dir.is_dir():
+        raise BundleHarnessError(f"built dist dir missing: {dist_dir}")
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+    server = subprocess.Popen(
+        [sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1",
+         "--directory", str(dist_dir)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    url = f"http://127.0.0.1:{port}/"
+
+    def _stop() -> None:
+        if server.poll() is None:
+            server.terminate()
+            try:
+                server.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                server.kill()
+
+    # Readiness probe (fail fast with a clean error, not a later timeout).
+    for _ in range(20):
+        if server.poll() is not None:
+            _stop()
+            raise BundleHarnessError("static server exited during startup")
+        try:
+            with urllib.request.urlopen(url, timeout=1):
+                return url, _stop
+        except Exception:  # noqa: BLE001 — server still warming up
+            time.sleep(0.1)
+    _stop()
+    raise BundleHarnessError(f"static server did not become ready at {url}")
+
+
+def screenshot_url(
+    url: str,
+    viewport: Dict[str, int],
+    out_png: Path,
+) -> None:
+    """Screenshot a served URL with headless chromium (lazy playwright).
+
+    Mirrors ``RenderHarness.render`` (Part 19): network-idle wait, fonts
+    ready, full-page shot.  Missing playwright raises a typed error with the
+    install hint — never a traceback.
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        raise BundleHarnessError(
+            "playwright is required for browser rendering. Install it with: "
+            "pip install playwright && playwright install chromium"
+        ) from exc
+    out_png = Path(out_png)
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            try:
+                page = browser.new_page(viewport=viewport, device_scale_factor=1)
+                page.goto(url, timeout=15_000)
+                page.wait_for_load_state("networkidle", timeout=15_000)
+                page.evaluate("document.fonts.ready")
+                page.screenshot(path=str(out_png), full_page=True)
+            finally:
+                try:
+                    browser.close()
+                except Exception:  # noqa: BLE001
+                    pass
+    except BundleHarnessError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise BundleHarnessError(
+            f"browser rendering failed: {exc} — if chromium is not "
+            "installed, run: playwright install chromium"
+        ) from exc
