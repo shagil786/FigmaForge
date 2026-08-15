@@ -1,1 +1,0 @@
-Requires the `FIGMA_TOKEN` environment variable to be set before calling any authenticated endpoint; authentication can also be supplied via the `token` constructor parameter. Tests inject a custom `transport` callable instead of using real networking.

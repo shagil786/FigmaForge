@@ -1,1 +1,0 @@
-Pure Python stdlib (dataclasses, json, pathlib, uuid, datetime) with no third-party runtime dependencies at the core level; typed dataclass models for all cross-module contracts (IR, layout plans, patch records, lifecycle state).

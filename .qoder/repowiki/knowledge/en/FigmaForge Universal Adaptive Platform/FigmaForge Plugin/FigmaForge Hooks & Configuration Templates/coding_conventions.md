@@ -1,4 +1,0 @@
-- Hook entries pair a human-readable `description` with an executable `command` string, enabling the same JSON structure to document and drive behavior.
-- Template files include a `$schema` field pointing to a JSON Schema URL so editors can validate them against their expected shape.
-- MCP example templates avoid real secrets and endpoints, using `example.invalid` URLs and `${ENV_VAR}`-style placeholders instead of concrete values.
-- LSP official plugins are expressed as flat arrays of records with uniform fields (`language`, `plugin`, `binary`, `command`, `scope`) rather than ad-hoc objects.

@@ -1,2 +1,0 @@
-- Each golden case is isolated in its own subdirectory under `fixtures/golden/` containing paired `figma.json` and `config.json` files.
-- Per-case tolerance and repair behavior is configured through `config.json` using the `minSimilarity` and `maxRepairIterations` keys.

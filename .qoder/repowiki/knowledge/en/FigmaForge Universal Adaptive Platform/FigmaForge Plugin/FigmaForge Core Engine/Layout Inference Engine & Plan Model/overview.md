@@ -1,1 +1,0 @@
-Analyzes a Figma Design IR into a framework-neutral layout plan tree, inferring flex/grid/absolute display, per-axis sizing, anchoring, overflow, and responsive breakpoint changes.

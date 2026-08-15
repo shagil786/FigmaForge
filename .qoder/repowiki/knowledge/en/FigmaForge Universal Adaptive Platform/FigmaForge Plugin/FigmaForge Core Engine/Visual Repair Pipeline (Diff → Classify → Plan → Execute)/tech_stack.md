@@ -1,1 +1,0 @@
-Pure Python standard library only (dataclasses, typing, json, copy, pathlib); no external dependencies — rendering is abstracted behind a `RenderCallable` protocol so Playwright or headless browsers can be plugged in from outside this module.

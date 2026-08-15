@@ -1,1 +1,0 @@
-Routes user requests to roles via repository detection and scoring, then resolves Figma design IRs into matched components, variants, instances, and semantic tokens against a project library.

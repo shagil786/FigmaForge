@@ -1,1 +1,0 @@
-Schema validation expects a companion file at `plugin/figmaforge/schemas/design-ir.schema.json` (loaded via `DEFAULT_SCHEMA_PATH`); the IR version is tracked by the `IR_VERSION` constant which must be bumped on incompatible schema changes.

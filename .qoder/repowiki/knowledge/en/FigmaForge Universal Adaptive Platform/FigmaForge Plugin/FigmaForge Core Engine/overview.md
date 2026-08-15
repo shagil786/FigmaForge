@@ -1,1 +1,0 @@
-Orchestrates the full Figma-to-code lifecycle by wiring repository detection, role routing, asset/library resolution, IR building, layout inference, and visual repair into a single stateful pipeline.

@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: figma_plugin/core_engine/hooks
-title: Figma Plugin Lifecycle Hooks
-scope:
-    - plugin/figmaforge/core/hooks/
-source_files: []
-depends_on: []
-related_to: []

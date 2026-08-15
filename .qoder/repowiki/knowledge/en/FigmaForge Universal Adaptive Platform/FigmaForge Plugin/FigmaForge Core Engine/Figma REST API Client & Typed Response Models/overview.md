@@ -1,1 +1,0 @@
-Provides a stdlib-only Figma v1 REST client with retry/backoff and typed, defensively parsed dataclasses for files, nodes, images, plus a hierarchy of structured exceptions.

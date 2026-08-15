@@ -1,1 +1,0 @@
-`npm run build` compiles to `dist/`; `npm test` executes `node --experimental-vm-modules dist/tests/run_all.js`; `npm run figmaforge` invokes the installed `figmaforge` binary which supports subcommands `run`, `inspect`, `replay`, `render`, `compare`, `repair`, and `help`.

@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: runtime_cli/tests
-title: Runtime Test Suite & Framework
-scope:
-    - runtime/tests/
-source_files: []
-depends_on: []
-related_to: []

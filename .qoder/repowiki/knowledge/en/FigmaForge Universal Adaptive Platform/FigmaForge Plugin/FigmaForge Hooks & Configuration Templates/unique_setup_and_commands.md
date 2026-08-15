@@ -1,1 +1,0 @@
-MCP templates are intentionally inert — per the README, never run `claude mcp add` or `claude mcp login` against them; instead use `figmaforge mcp render` which prints merged output to stdout without writing `.mcp.json`. Hook commands reference `python3 core/hooks/*.py` scripts that must exist relative to the project root.

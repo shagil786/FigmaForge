@@ -1,1 +1,0 @@
-Golden fixture data and per-case configuration used by the runtime evaluation harness to validate generated UI outputs against expected Figma designs.

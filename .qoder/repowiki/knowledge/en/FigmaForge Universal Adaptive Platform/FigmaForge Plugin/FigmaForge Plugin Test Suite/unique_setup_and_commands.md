@@ -1,1 +1,0 @@
-Run a single snapshot test with `python3 tests/test_<name>_snapshot.py`; regenerate its golden file by running it with `REWRITE_SNAPSHOTS=1 python3 tests/test_<name>_snapshot.py`. Tests import sibling `core.*` packages by inserting `plugin_root` into `sys.path` at runtime rather than relying on package installation.

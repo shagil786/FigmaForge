@@ -1,6 +1,0 @@
-- Each pipeline stage exposes a single entry method (`diff`, `classify`, `plan`, `execute`, `run`) and keeps all helper logic in private `_method` functions.
-- All cross-stage state objects are `@dataclass` instances with a `to_dict()` method returning plain dicts, enabling deterministic JSON serialization via `json.dumps(..., sort_keys=True)`.
-- External collaborators (render step, human approval) are injected through `typing.Protocol` callables rather than concrete classes, allowing mock implementations in tests.
-- Every mutation is recorded before being applied, using a `MutationRecord` that stores both `old_value` and `new_value`, so `rollback()` restores state by reversing the recorded list.
-- Category constants are declared at module top (`CATEGORY_GEOMETRY`, `CATEGORY_TOKEN`, etc.) and referenced via string literals in planners/executors instead of enums, keeping the types flat and JSON-friendly.
-- Deterministic ordering is enforced by stable sort keys combining category priority, tree depth, and node id — no randomness anywhere in classification, planning, or execution.

@@ -1,1 +1,0 @@
-Plain TypeScript executed by Node.js; no external testing library — the suite ships its own assertion framework and uses only built-in `node:fs`, `node:path`, `node:os` for temp directories and golden fixtures.

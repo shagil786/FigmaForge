@@ -1,7 +1,0 @@
-The module is organized around four cooperating concerns with clear dependency direction:
-- `asset_types.py` defines the canonical in-memory models (`AssetManifest`, `AssetMetadata`) used by the persistence layer.
-- `asset_manager.py` implements content-addressed storage: it hashes incoming bytes with SHA-256, writes them under a two-level prefix directory (`<hash[:2]>/<hash>`), validates SVGs against a deny-list of dangerous patterns, and persists an index in `manifest.json`.
-- `asset_handler.py` is a lightweight, in-process registry that maps Figma node IDs to URL references and tracks download status; it deliberately excludes I/O and delegates actual downloading elsewhere.
-- `library_types.py` models the repository's *existing* design assets (`ProjectComponent`, `ProjectToken`, `ProjectLibrary`) loaded from `plugin/figmaforge/library/{components,tokens}.json` via `LibraryLoader`; deterministic name normalization (`normalize_name`, `slugify`) drives exact matching so resolvers prefer existing definitions over creating duplicates.
-- `catalog.py` loads the role catalog from `plugin/figmaforge/catalog/roles.json` and exposes query APIs (by domain, trigger keyword, flattened list) used by higher-level orchestration.
-Dependency direction is one-way: `asset_manager` depends on `asset_types`; `library_types` raises `FigmaResponseError` from `.figma_errors`; `asset_handler` and `catalog` are standalone registries with no cross-imports.

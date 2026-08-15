@@ -1,1 +1,0 @@
-Python `unittest` framework; golden-file snapshot testing driven by a `REWRITE_SNAPSHOTS=1` environment variable to regenerate `tests/snapshots/*.json` fixtures.

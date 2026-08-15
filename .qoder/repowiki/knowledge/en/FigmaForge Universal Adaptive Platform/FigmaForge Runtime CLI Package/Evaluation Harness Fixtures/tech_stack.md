@@ -1,1 +1,0 @@
-JSON-based fixtures; similarity thresholds and iteration caps are parameterized per case via `config.json`.

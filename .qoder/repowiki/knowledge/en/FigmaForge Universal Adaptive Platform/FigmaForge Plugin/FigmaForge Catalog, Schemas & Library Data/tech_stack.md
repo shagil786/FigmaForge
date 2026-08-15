@@ -1,1 +1,0 @@
-JSON Schema Draft-07 for all `schemas/*.schema.json` files; plain JSON manifests for role catalog and library assets.

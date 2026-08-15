@@ -1,1 +1,0 @@
-JSON-based configuration format; LSP templates declare JSON Schema draft-07 metadata via `$schema`; MCP templates follow the MCP server config schema used by Claude Code.

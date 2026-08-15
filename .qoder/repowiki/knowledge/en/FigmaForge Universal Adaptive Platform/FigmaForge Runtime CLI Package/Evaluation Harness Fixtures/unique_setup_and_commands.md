@@ -1,1 +1,0 @@
-New evaluation cases are added by creating a new folder under `fixtures/golden/` with a `figma.json` and a matching `config.json`; existing cases include `card-layout`, `login-screen`, and `simple-button`.

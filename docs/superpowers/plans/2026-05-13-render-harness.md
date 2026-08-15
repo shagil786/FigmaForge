@@ -83,7 +83,7 @@ git status --short | head -20
 
 Expected: branch is `feat/part-10-final-fixes-part-one`; `git diff --cached --name-only`
 prints NOTHING (empty index). The working tree may show pre-existing unrelated changes in
-`.gitignore` and `.qoder/repowiki/**` — leave them unstaged and uncommitted; never
+`.gitignore` — leave it unstaged and uncommitted; never
 `git add -A` in this plan.
 
 - [ ] **Step 2: Verify `gh` CLI is available (stop if not)**
@@ -125,7 +125,7 @@ git log --oneline -3
 ```
 
 Expected: `main` now contains the merge commit and the spec commit `b0f7810`. The unrelated
-`.gitignore` / `.qoder/repowiki` working-tree changes carry over unstaged — leave them alone.
+`.gitignore` working-tree changes carry over unstaged — leave them alone.
 
 - [ ] **Step 6: Commit** — nothing to commit in this task.
 
@@ -1803,7 +1803,7 @@ git status --short | grep -vE '^ M|^ D|^\?\?' || echo "no staged/unexpected chan
 ```
 
 Expected: six Part 11 commits (Tasks 3–8) on top of `main`, an EMPTY staged list, and no
-status lines other than the known pre-existing unstaged `.gitignore` / `.qoder/repowiki`
+status lines other than the known pre-existing unstaged `.gitignore`
 modifications. The pre-existing unrelated working-tree changes remain uncommitted — leave them.
 
 - [ ] **Step 5: Push and open the Part 11 PR (project convention: branch → PR → merge)**

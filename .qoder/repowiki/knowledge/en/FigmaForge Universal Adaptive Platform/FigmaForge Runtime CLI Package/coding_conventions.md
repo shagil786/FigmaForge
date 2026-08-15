@@ -1,4 +1,0 @@
-- CLI commands are implemented as async functions receiving a parsed `{command, flags, positional}` object and exit via `process.exit(1)` on errors rather than throwing.
-- Configuration is built centrally in `buildConfig()` from argv flags and merged with `DEFAULT_*` constants from `../core/types.js` before being passed to service constructors.
-- All persistent state is scoped under `<output-dir>/<run-id>/` with subdirectories `artifacts`, `checkpoints`, and `renders`, and commands locate prior runs by scanning those directories for manifest/checkpoint/event files.
-- Cross-cutting concerns (events, checkpoints, artifacts, tools, budgets) are injected as constructor arguments into `PipelineCoordinator` instead of being accessed globally.

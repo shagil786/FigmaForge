@@ -26,6 +26,11 @@ env/
 .claude/projects/
 .claude.json
 
+# Former Qoder auto-generated knowledge base tooling (now removed)
+
+# Freebuff desktop local state (app database — never share)
+.freebuff/
+
 # FigmaForge runtime state (state machine writes .figmaforge/runs/...)
 .figmaforge/
 

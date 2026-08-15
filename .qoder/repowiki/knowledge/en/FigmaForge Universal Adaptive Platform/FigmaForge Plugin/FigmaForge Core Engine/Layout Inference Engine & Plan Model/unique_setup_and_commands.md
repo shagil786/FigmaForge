@@ -1,1 +1,0 @@
-None — the module is imported directly; `LayoutAnalyzer.analyze(document, library, viewport)` is the entry point, with optional `viewport` overriding the computed base width (widest top-level frame, defaulting to 1440).

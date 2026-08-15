@@ -1,4 +1,0 @@
-- Pipeline stages exchange data through typed IR objects validated against JSON-Schema files in `schemas/`.
-- Agent and skill behavior is declared in Markdown files with YAML frontmatter rather than hard-coded logic.
-- Test cases assert pipeline outputs by comparing generated JSON against golden snapshots stored alongside test modules.
-- External integrations (MCP servers, LSP servers) are configured via reusable JSON templates under `templates/` instead of inline config.

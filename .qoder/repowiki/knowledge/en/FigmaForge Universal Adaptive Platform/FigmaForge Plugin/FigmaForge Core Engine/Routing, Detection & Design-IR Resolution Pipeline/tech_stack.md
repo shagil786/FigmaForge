@@ -1,1 +1,0 @@
-Pure Python with `dataclasses` and `typing`; filesystem scanning via `os.walk` and `subprocess` (`which`) for LSP binary discovery; optional Playwright-based rendering in `render_harness`; JSON schema validation path at `schemas/resolution-report.schema.json`.

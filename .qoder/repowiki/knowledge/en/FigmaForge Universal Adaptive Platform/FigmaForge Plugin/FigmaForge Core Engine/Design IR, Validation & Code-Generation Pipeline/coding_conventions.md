@@ -1,6 +1,0 @@
-- Every IR dataclass provides a `to_dict()` method that delegates to nested objects' `to_dict()` and uses a `_compact` helper to drop `None` values while preserving falsy-but-present fields (0, "", False).
-- Raw Figma keys not explicitly mapped by the normalizer are preserved verbatim under `IRNode.unknown` / `IRDocument.unknown` by comparing against `CONSUMED_NODE_KEYS` / `CONSUMED_FILE_KEYS` frozensets, ensuring nothing is silently dropped.
-- Normalized enums are represented as string constants (e.g. `KIND_FRAME`, `mode='auto'|'grid'|'none'`, `kind='solid'|'gradient'|'image'|'none'`) rather than Python `Enum` classes, keeping the IR JSON-serializable without extra machinery.
-- Generators are stateless orchestrator classes (`CSSGenerator`, `ReactGenerator`) whose public entry points (`generate_style`, `generate`) take a plan object and return an abstract representation (`VStyle`, `VNode`) rather than emitting final source strings directly.
-- Floating-point values are rounded through a shared `_round` helper (4 decimal places) during serialization so snapshot tests remain stable across Python versions.
-- Unknown or unsupported properties are surfaced to callers via dedicated methods (`IRBuilder.unsupported_properties()`, validator error list) instead of being swallowed.

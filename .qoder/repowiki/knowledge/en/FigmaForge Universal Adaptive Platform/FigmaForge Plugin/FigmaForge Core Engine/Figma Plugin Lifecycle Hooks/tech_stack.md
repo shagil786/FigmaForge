@@ -1,1 +1,0 @@
-Pure Python 3 scripts using only stdlib (`json`, `re`, `subprocess`, `shutil`, `pathlib`); validation relies on external CLI tools (pyright, tsc, rustfmt, clang-format, gofmt, yamllint, jsonlint, sqlfluff) being available on PATH.

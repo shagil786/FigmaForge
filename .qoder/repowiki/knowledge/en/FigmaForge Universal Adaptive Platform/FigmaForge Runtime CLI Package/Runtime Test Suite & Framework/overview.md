@@ -1,1 +1,0 @@
-Self-contained test runner and suite that exercises all FigmaForge runtime core modules using a minimal zero-dependency assertion framework.

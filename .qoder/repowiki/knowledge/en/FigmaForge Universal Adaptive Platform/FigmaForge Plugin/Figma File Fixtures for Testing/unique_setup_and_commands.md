@@ -1,1 +1,0 @@
-No build or setup steps required; fixtures are consumed directly by importing or reading the JSON files from the test suite.

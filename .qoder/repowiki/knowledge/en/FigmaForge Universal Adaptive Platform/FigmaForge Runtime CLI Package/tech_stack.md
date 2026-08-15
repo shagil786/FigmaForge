@@ -1,1 +1,0 @@
-TypeScript ESM package targeting Node ≥20; compiled with `tsc`; CLI exposed via `package.json#bin` as `figmaforge`; optional Playwright screenshot capture invoked through an external Python process using `child_process.execFileSync`.

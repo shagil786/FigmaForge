@@ -1,1 +1,0 @@
-No build or test commands are defined in this scope; the default render path (`_default_render` in `repair_loop.py`) returns metadata derived directly from the `LayoutPlan` nodes, making it suitable for unit tests without a real browser.

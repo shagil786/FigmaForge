@@ -1,6 +1,0 @@
-- Each concern is exposed as a class with explicit constructor options and immutable configuration fields (e.g. `StateMachine`, `CheckpointManager`, `ArtifactStore`, `BudgetTracker`, `PathSandbox`, `SecretGuard`, `ShellGuard`, `AssetValidator`, `ApprovalGate`).
-- Cross-cutting state is passed downward through a single `PipelineContext` object rather than via globals or closures, keeping stage handlers pure with respect to side effects.
-- All persistent data structures (`RunState`, `Checkpoint`, `Artifact`, `PipelineEvent`, `BudgetState`) are plain JSON-serializable objects with no methods, enabling checkpoint save/load via `JSON.stringify`/`parse`.
-- Errors are modeled as named custom `Error` subclasses (`SecurityViolation`, `BudgetExceededError`, `RetryExhaustedError`, `CancelledError`) carrying structured fields instead of generic messages.
-- Stages and artifact kinds are enumerated via `as const` tuples plus a reverse index map (`PIPELINE_STAGES` / `STAGE_INDEX`, `ArtifactKind` union) so iteration order and mapping are type-safe.
-- Side-effecting operations go through guarded wrappers (`PathSandbox.readFileSync/writeFileSync`, `ShellGuard.assertAllowed`, `ApprovalGate.assertApproved`) rather than direct Node fs/spawn calls inside stage handlers.

@@ -1,1 +1,0 @@
-Declarative YAML-frontmattered Markdown definitions for FigmaForge's subagents (context-scout, fresh-verifier, lifecycle-planner) and skills (route, doctor, lifecycle, lsp-template, mcp-template, demo) that drive the plugin's routing and execution model.

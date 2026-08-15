@@ -1,1 +1,0 @@
-Plain Markdown with YAML frontmatter consumed at runtime by the FigmaForge plugin; relies on `detector.py` for repo introspection and `catalog/roles.json` for role metadata.

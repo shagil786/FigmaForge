@@ -1,1 +1,0 @@
-Standalone Python hook scripts invoked by the Figma plugin to gate external mutations, validate edited files against toolchain linters, and detect repository context at session start.

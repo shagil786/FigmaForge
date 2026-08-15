@@ -1,1 +1,0 @@
-Python runtime with JSON-Schema validation for IR/pipeline contracts, Markdown+YAML frontmatter for agent/skill definitions, and unittest with snapshot testing for end-to-end verification.

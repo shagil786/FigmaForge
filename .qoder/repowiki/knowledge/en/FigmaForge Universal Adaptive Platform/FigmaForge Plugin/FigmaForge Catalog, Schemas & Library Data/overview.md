@@ -1,1 +1,0 @@
-Data-only module providing JSON role catalogs, JSON-Schema type definitions for FigmaForge IR and pipeline messages, and project component/token library manifests consumed by the resolution layer.
