@@ -37,8 +37,12 @@ from typing import Any, Dict, List, Optional, Tuple
 # root importable so `core` / `backends` resolve like the test suite.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from backends.html_css import HtmlCssBackend  # noqa: E402
 from backends.registry import get_registry  # noqa: E402
-from backends.web_common import reference_styles_from_plan  # noqa: E402
+from backends.web_common import (  # noqa: E402
+    reference_styles_from_plan,
+    styles_to_dict,
+)
 from core.asset_collector import AssetRef, collect_asset_refs  # noqa: E402
 from core.asset_manager import AssetManager  # noqa: E402
 from core.figma_assets import (  # noqa: E402
@@ -58,8 +62,10 @@ from core.layout_analyzer import LayoutAnalyzer  # noqa: E402
 from core.layout_types import LayoutPlan  # noqa: E402
 from core.library_types import LibraryLoader  # noqa: E402
 from core.matcher import MatchResult  # noqa: E402
+from core.render_adapter import make_render_callable  # noqa: E402
 from core.render_harness import RenderHarness, RenderHarnessError  # noqa: E402
 from core.render_html import generate_render_html  # noqa: E402
+from core.repair_loop import RepairConfig, RepairLoop  # noqa: E402
 from core.resolver import ResolutionReport, Resolver  # noqa: E402
 from core.token_resolver import SemanticToken, TokenResolution  # noqa: E402
 
@@ -67,6 +73,9 @@ DEFAULT_VIEWPORT = 1440.0
 DEFAULT_OUT_DIR = "generated"
 DEFAULT_ASSETS_DIR = "assets"
 DEFAULT_RENDER_VIEWPORT = "1440x900"
+DEFAULT_REPAIR_HEIGHT = 900
+_DEFAULT_REPAIR_THRESHOLD = 0.95
+_DEFAULT_REPAIR_ITERATIONS = 10
 _TOKEN_ENV = "FIGMA_TOKEN"
 
 
@@ -659,6 +668,197 @@ def _cmd_generate(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# repair — the repair stage (Part 20)
+# ---------------------------------------------------------------------------
+
+
+def _parse_viewport(spec: Optional[str]) -> Optional[tuple]:
+    """Parse ``WxH`` into (width, height); invalid -> exit 2."""
+    if not spec:
+        return None
+    parts = spec.lower().split("x")
+    if len(parts) != 2:
+        raise _CliError(2, f"invalid viewport {spec!r} (expected WxH)")
+    try:
+        width, height = int(parts[0]), int(parts[1])
+    except ValueError:
+        raise _CliError(2, f"invalid viewport {spec!r} (expected WxH)")
+    if width <= 0 or height <= 0:
+        raise _CliError(2, f"invalid viewport {spec!r} (dimensions must be positive)")
+    return width, height
+
+
+def _repair_summaries(result: Any) -> List[Dict[str, Any]]:
+    """Per-iteration summaries WITHOUT paths — deterministic across out dirs."""
+    if result.history is None:
+        return []
+    summaries: List[Dict[str, Any]] = []
+    for rec in result.history.iterations:
+        applied = rejected = 0
+        if rec.execution_result:
+            applied = rec.execution_result.get("success_count", 0)
+            rejected = rec.execution_result.get("failure_count", 0)
+        summaries.append({
+            "iteration": rec.iteration,
+            "similarity_before": round(rec.similarity_before, 6),
+            "similarity_after": round(rec.similarity_after, 6),
+            "patch_count": len((rec.patch_plan or {}).get("patches", [])),
+            "applied": applied,
+            "rejected": rejected,
+        })
+    return summaries
+
+
+def _last_categories(result: Any) -> Dict[str, Any]:
+    """Categories of the final iteration's diff report."""
+    if result.history and result.history.iterations:
+        report = result.history.iterations[-1].diff_report
+        if report:
+            return report.get("categories", {})
+    return {}
+
+
+def _run_repair(args: argparse.Namespace, harness_cls: Any) -> int:
+    """The repair flow: RepairLoop against the baseline, then regenerate
+    html_css with the repaired styles (one atomic unit)."""
+    if args.backend != "html_css":
+        raise _CliError(
+            2,
+            f"repair regeneration supports 'html_css' only (the browser-\n"
+            f"renderable standalone output), got {args.backend!r}",
+        )
+    if not 0.0 <= args.threshold <= 1.0:
+        raise _CliError(
+            2, f"--threshold must be within [0, 1], got {args.threshold}"
+        )
+    baseline_path = Path(args.baseline)
+    if not baseline_path.is_file():
+        raise _CliError(4, f"baseline PNG not found: {args.baseline!r}")
+
+    doc = _load_ir(args.ir)
+    try:
+        plan = LayoutPlan.from_dict(_load_file_payload(args.layout))
+    except Exception as exc:  # noqa: BLE001 — CLI boundary
+        raise _CliError(4, f"cannot load layout plan {args.layout!r}: {exc}")
+    viewport = _parse_viewport(args.viewport)
+
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+
+    # The shared style layer the loop repairs (same lowering the html_css
+    # backend uses) + the project library for token patches.
+    styles = reference_styles_from_plan(doc, plan)
+    library = LibraryLoader().load()
+    harness = harness_cls(out / "renders")
+    default_height = viewport[1] if viewport else DEFAULT_REPAIR_HEIGHT
+    render_fn = make_render_callable(harness, default_height=default_height)
+
+    config = RepairConfig(
+        similarity_threshold=args.threshold,
+        max_iterations=args.max_iterations,
+        baseline_png=args.baseline,
+        ssim_enabled=not args.no_ssim,
+        require_approval=args.require_approval,
+    )
+    loop = RepairLoop(
+        config=config,
+        render_fn=render_fn,
+        # Non-interactive CLI: approval is denied when requested, never
+        # silently bypassed.
+        approval_fn=(
+            (lambda _plan, _iteration: False)
+            if args.require_approval else None
+        ),
+    )
+    result = loop.run(
+        plan, doc, library=library, styles=styles, run_id="pipeline-repair",
+    )
+
+    # Repaired styles always serialize (deterministic); the full history
+    # lands beside it as a file (keeps the stdout line lean + path-free).
+    repaired_styles = styles_to_dict(styles)
+    (out / "styles.repaired.json").write_text(
+        json.dumps(repaired_styles, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    if result.history is not None:
+        (out / "repair_history.json").write_text(
+            json.dumps(result.history.to_dict(), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+    payload: Dict[str, Any] = {
+        "ok": True,
+        "success": result.success,
+        "final_score": round(result.final_score, 6),
+        "iterations_run": result.iterations_run,
+        "stop_reason": result.stop_reason,
+        "unresolved_differences": result.unresolved_differences,
+        "repairs": _repair_summaries(result),
+        "categories": _last_categories(result),
+        "repaired_styles": "styles.repaired.json",
+        "generated": None,
+    }
+
+    # Regenerate html_css from the (mutated) plan + repaired styles so the
+    # fixes reach the generated code.  Skipped only when nothing ran.
+    if result.iterations_run > 0:
+        generated = HtmlCssBackend().generate(
+            document=doc,
+            layout_plan=plan,
+            viewport=float(viewport[0]) if viewport else DEFAULT_VIEWPORT,
+            options={"styles_override": repaired_styles},
+        )
+        gen_dir = out / "generated" / "html_css"
+        gen_dir.mkdir(parents=True, exist_ok=True)
+        files = []
+        for file_out in sorted(generated.files, key=lambda f: f.path):
+            (gen_dir / file_out.path).write_text(file_out.content, encoding="utf-8")
+            files.append({"path": file_out.path, "language": file_out.language})
+        payload["generated"] = {"backend": "html_css", "files": files}
+
+    _emit(payload)
+    return 0
+
+
+def _build_repair_parser() -> argparse.ArgumentParser:
+    """Standalone repair parser (mirrors the ``repair`` subparser) so
+    ``repair_main`` works in-process with an injected harness."""
+    parser = argparse.ArgumentParser(prog="pipeline.py repair")
+    parser.add_argument("--ir", required=True, help="design IR JSON (normalize output)")
+    parser.add_argument("--layout", required=True, help="layout plan JSON (layout output)")
+    parser.add_argument("--baseline", required=True, help="baseline PNG the loop converges toward")
+    parser.add_argument("--viewport", help="viewport WxH (default from the layout plan)")
+    parser.add_argument("--out", default="repair", help="output directory (default repair)")
+    parser.add_argument("--backend", default="html_css", help="backend to regenerate (only html_css)")
+    parser.add_argument("--max-iterations", type=int, default=_DEFAULT_REPAIR_ITERATIONS)
+    parser.add_argument("--threshold", type=float, default=_DEFAULT_REPAIR_THRESHOLD)
+    parser.add_argument("--no-ssim", action="store_true", help="disable SSIM gating")
+    parser.add_argument("--require-approval", action="store_true", help="deny non-interactively")
+    return parser
+
+
+def repair_main(
+    argv: Optional[List[str]] = None,
+    harness_cls: Any = RenderHarness,
+) -> int:
+    """Run the repair stage; ``harness_cls`` is injectable for tests."""
+    parser = _build_repair_parser()
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as exc:
+        return int(exc.code or 2)
+    try:
+        return _run_repair(args, harness_cls)
+    except _CliError as exc:
+        print(f"error: {exc.message}", file=sys.stderr)
+        return exc.exit_code
+    except Exception as exc:  # noqa: BLE001 — CLI boundary: never traceback
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+
+# ---------------------------------------------------------------------------
 # entry point
 # ---------------------------------------------------------------------------
 
@@ -776,6 +976,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="output directory; files are written under <out-dir>/<backend>/ "
              "(default %r)" % DEFAULT_OUT_DIR,
     )
+
+    rep = sub.add_parser(
+        "repair", help="run the visual repair loop against a baseline and regenerate html_css")
+    rep.add_argument("--ir", required=True, help="design IR JSON (normalize output)")
+    rep.add_argument("--layout", required=True, help="layout plan JSON (layout output)")
+    rep.add_argument("--baseline", required=True, help="baseline PNG the loop converges toward")
+    rep.add_argument("--viewport", help="viewport WxH (default from the layout plan)")
+    rep.add_argument("--out", default="repair", help="output directory (default repair)")
+    rep.add_argument("--backend", default="html_css", help="backend to regenerate (only html_css)")
+    rep.add_argument(
+        "--max-iterations", type=int, default=_DEFAULT_REPAIR_ITERATIONS,
+        help="max repair iterations (default %d)" % _DEFAULT_REPAIR_ITERATIONS,
+    )
+    rep.add_argument(
+        "--threshold", type=float, default=_DEFAULT_REPAIR_THRESHOLD,
+        help="similarity threshold (default %g)" % _DEFAULT_REPAIR_THRESHOLD,
+    )
+    rep.add_argument("--no-ssim", action="store_true", help="disable SSIM gating")
+    rep.add_argument("--require-approval", action="store_true", help="deny non-interactively")
     return parser
 
 
@@ -795,7 +1014,29 @@ def _execute(args: argparse.Namespace) -> int:
         return _cmd_render(args)
     if args.command == "generate":
         return _cmd_generate(args)
+    if args.command == "repair":
+        return repair_main(_repair_argv_from_args(args))
     raise _CliError(2, f"unknown command {args.command!r}")
+
+
+def _repair_argv_from_args(args: argparse.Namespace) -> List[str]:
+    """Reconstruct the repair subcommand argv for ``repair_main``."""
+    argv = ["--ir", args.ir, "--layout", args.layout, "--baseline", args.baseline]
+    if args.out:
+        argv += ["--out", args.out]
+    if args.backend:
+        argv += ["--backend", args.backend]
+    if args.viewport:
+        argv += ["--viewport", args.viewport]
+    if args.max_iterations is not None:
+        argv += ["--max-iterations", str(args.max_iterations)]
+    if args.threshold is not None:
+        argv += ["--threshold", str(args.threshold)]
+    if args.no_ssim:
+        argv.append("--no-ssim")
+    if args.require_approval:
+        argv.append("--require-approval")
+    return argv
 
 
 def _report_error(exc: BaseException) -> int:

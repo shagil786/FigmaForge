@@ -524,6 +524,52 @@ def extend_ir_style(
         style.breakpoints.setdefault(f"{_fmt_num(bp.width)}px", {})[css_prop] = value
 
 
+def reference_styles_from_plan(
+    document: Any,
+    layout_plan: Any,
+) -> Dict[str, VStyle]:
+    """Compute the intended per-node VStyles from a LayoutPlan (Part 20).
+
+    Walks every screen tree and lowers each node through the SAME shared
+    machinery the html_css backend uses (``CssStyleGenerator.generate_style``
+    + ``extend_ir_style``), keyed by node id.  The result feeds
+    ``core.render_html.generate_render_html(document, styles, viewport)`` to
+    produce the *reference render* — and, in the repair stage, is the style
+    layer the loop mutates.  Reusing the shared lowering keeps the reference
+    and the generated code on one style rule.
+    """
+    ir_by_id = {n.id: n for n in document.all_nodes()}
+    style_gen = CssStyleGenerator()
+    styles: Dict[str, VStyle] = {}
+
+    def _walk(node_plan: LayoutNodePlan) -> None:
+        if node_plan.node_id:
+            style = style_gen.generate_style(node_plan)
+            extend_ir_style(style, node_plan, ir_by_id.get(node_plan.node_id))
+            styles[node_plan.node_id] = style
+        for child in node_plan.children:
+            _walk(child)
+
+    for screen in layout_plan.screens:
+        _walk(screen)
+    return styles
+
+
+def styles_to_dict(styles: Dict[str, VStyle]) -> Dict[str, Dict[str, Any]]:
+    """Serialize VStyles (base + breakpoints) for the generate
+    ``styles_override`` seam (Part 20): ``{node_id: {base, breakpoints}}``.
+    """
+    return {
+        node_id: {
+            "base": dict(style.base),
+            "breakpoints": {
+                bp: dict(props) for bp, props in style.breakpoints.items()
+            },
+        }
+        for node_id, style in styles.items()
+    }
+
+
 class ScopedCssGenerator:
     """Collect per-node scoped CSS rules + ``@media`` breakpoint rules.
 
