@@ -19,6 +19,7 @@ import { spawn } from "node:child_process";
 import type { CodegenTarget } from "./types.js";
 import { defaultRenderer, targetKey } from "./types.js";
 import type { PipelineContext, StageHandler } from "./pipeline.js";
+import { ScreenshotComparator } from "./screenshot_compare.js";
 
 // ---------------------------------------------------------------------------
 // Target → backend map
@@ -604,6 +605,233 @@ export function createRenderStageHandler(): StageHandler {
     }
     ctx.shared.set("renderOutputs", screenshots);
     return { screenshots, rendersDir };
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Compare stage (Part 19) — measured similarity vs a baseline
+// ---------------------------------------------------------------------------
+
+/**
+ * Render the IR reference (the intended render) via ``pipeline.py render
+ * --ir + --layout``.  ``outDir`` (``<run>/baselines/``) holds the baseline
+ * PNG + written HTML; the JSON is staged to a temp file like the other
+ * stage invocations.
+ */
+export async function invokeRenderReference(
+  cfg: { pythonBin: string; pluginDir: string },
+  irJson: unknown,
+  layoutJson: unknown,
+  viewport: { width: number; height: number },
+  outDir: string,
+): Promise<{ screenshot: string; html: string; meta: Record<string, unknown> }> {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ff-ref-"));
+  try {
+    const irPath = path.join(tmp, "ir.json");
+    const layoutPath = path.join(tmp, "layout.json");
+    fs.writeFileSync(irPath, JSON.stringify(irJson), "utf-8");
+    fs.writeFileSync(layoutPath, JSON.stringify(layoutJson), "utf-8");
+    const result = await spawnPython(
+      cfg.pythonBin,
+      path.join(cfg.pluginDir, "scripts", "pipeline.py"),
+      [
+        "render", "--ir", irPath, "--layout", layoutPath,
+        "--viewport", `${viewport.width}x${viewport.height}`,
+        "--out", outDir,
+      ],
+      cfg.pluginDir,
+    );
+    if (result.exitCode !== 0) {
+      const detail = result.stderr.trim() || result.stdout.trim();
+      throw new Error(
+        `pipeline.py render (reference) exited ${result.exitCode}: ${detail}`,
+      );
+    }
+    const parsed = parseJsonLine(result.stdout);
+    return {
+      screenshot: String(parsed.screenshot ?? ""),
+      html: String(parsed.html ?? ""),
+      meta: (parsed.meta ?? {}) as Record<string, unknown>,
+    };
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Download live Figma baselines via ``pipeline.py render --baselines``.
+ * Requires ``FIGMA_TOKEN`` + a real file key (exit 3/2 from the CLI, surfaced
+ * as a typed stage error).  Returns ``node_id -> local_path``.
+ */
+export async function invokeRenderBaselines(
+  cfg: { pythonBin: string; pluginDir: string },
+  fileKey: string,
+  nodeIds: string[],
+  outDir: string,
+): Promise<Record<string, string>> {
+  fs.mkdirSync(outDir, { recursive: true });
+  const result = await spawnPython(
+    cfg.pythonBin,
+    path.join(cfg.pluginDir, "scripts", "pipeline.py"),
+    [
+      "render", "--baselines",
+      "--file-key", fileKey,
+      "--nodes", nodeIds.join(","),
+      "--out", outDir,
+    ],
+    cfg.pluginDir,
+  );
+  if (result.exitCode !== 0) {
+    const detail = result.stderr.trim() || result.stdout.trim();
+    throw new Error(
+      `pipeline.py render (baselines) exited ${result.exitCode}: ${detail}`,
+    );
+  }
+  const parsed = parseJsonLine(result.stdout);
+  return (parsed.baselines ?? {}) as Record<string, string>;
+}
+
+/**
+ * Compare stage handler — screenshots vs a baseline → measured similarity.
+ *
+ * Baseline resolution (priority): shared ``baselinePath`` (explicit
+ * ``--baseline``) → shared ``figmaBaseline`` flag (live ``download_baselines``,
+ * token-gated) → the IR reference render (default).  Each screenshot row is
+ * compared with the SSIM-gated ``ScreenshotComparator``; the headline score
+ * is the mean across screens.  The diff report (shaped like the Python
+ * ``DiffReport``) is stored as the ``diff_report`` artifact AND the score is
+ * written into run metrics via ``ctx.updateMetrics`` so ``figmaforge run``
+ * prints a real measured Score.  No screenshots (render degraded) → null
+ * score + note, metrics untouched — never a fabricated score.
+ */
+export function createCompareStageHandler(): StageHandler {
+  return async (ctx: PipelineContext) => {
+    const rendersDir = path.join(ctx.config.outputDir, ctx.config.runId, "renders");
+    const baselinesDir = path.join(ctx.config.outputDir, ctx.config.runId, "baselines");
+    const renderOutputs = ctx.shared.get("renderOutputs") as RenderOutputRow[] | undefined;
+
+    if (!renderOutputs || renderOutputs.length === 0) {
+      return {
+        similarity_score: null,
+        categories: { geometry: null, style: null, pixels: null },
+        raster_stats: null,
+        screens: [],
+        baseline: null,
+        baseline_kind: null,
+        note: "no screenshots to compare — the render stage degraded " +
+          "(non-browser target or bundler-required output); no measured score.",
+      };
+    }
+
+    const cfg = { pythonBin: ctx.toolCtx.pythonBin, pluginDir: ctx.config.pluginDir };
+
+    // Baseline resolution.
+    let baseline: string;
+    let baselineKind: "explicit" | "figma" | "reference";
+    const explicit = ctx.shared.get("baselinePath") as string | undefined;
+    if (explicit) {
+      if (!fs.existsSync(explicit)) {
+        throw new Error(`compare stage: --baseline file not found: ${explicit}`);
+      }
+      baseline = explicit;
+      baselineKind = "explicit";
+    } else if (ctx.shared.get("figmaBaseline")) {
+      const layoutJson = ctx.shared.get("layoutJson") as
+        | { screens?: Array<{ node_id: string }> }
+        | undefined;
+      const nodeIds = (layoutJson?.screens ?? [])
+        .map((s) => s.node_id)
+        .filter((n) => n.length > 0);
+      if (nodeIds.length === 0) {
+        throw new Error(
+          "compare stage (--figma-baseline): no screen node ids in the layout plan",
+        );
+      }
+      const baselines = await invokeRenderBaselines(
+        cfg, ctx.config.fileKey, nodeIds, baselinesDir,
+      );
+      const first = nodeIds.find((n) => baselines[n]);
+      if (!first) {
+        throw new Error(
+          "compare stage (--figma-baseline): no baseline downloaded for the screens",
+        );
+      }
+      baseline = baselines[first];
+      baselineKind = "figma";
+    } else {
+      const irJson = ctx.shared.get("irJson");
+      const layoutJson = ctx.shared.get("layoutJson");
+      if (!irJson || !layoutJson) {
+        throw new Error(
+          "compare stage requires normalize/layout output for the reference " +
+          "baseline (no irJson/layoutJson available)",
+        );
+      }
+      const ref = await invokeRenderReference(
+        cfg, irJson, layoutJson, ctx.config.viewport, baselinesDir,
+      );
+      baseline = ref.screenshot;
+      baselineKind = "reference";
+    }
+
+    const comparator = new ScreenshotComparator({ colorThreshold: 16 }, cfg);
+    const screens: Array<{
+      file: string;
+      similarity: number;
+      ssim: number | null;
+      ssimClean: boolean | null;
+    }> = [];
+    let totalSimilarity = 0;
+    let firstStats: {
+      ssim: number | null;
+      minRegionSsim: number | null;
+      ssimClean: boolean | null;
+      diffPercentage: number;
+      meanAbsoluteError: { r: number; g: number; b: number };
+    } | null = null;
+    for (const row of renderOutputs) {
+      const cmp = comparator.compare(row.screenshot, baseline);
+      if (firstStats === null) {
+        firstStats = {
+          ssim: cmp.ssim ?? null,
+          minRegionSsim: cmp.minRegionSsim ?? null,
+          ssimClean: cmp.ssimClean ?? null,
+          diffPercentage: cmp.diffPercentage,
+          meanAbsoluteError: cmp.meanAbsoluteError,
+        };
+      }
+      screens.push({
+        file: row.file,
+        similarity: cmp.similarity,
+        ssim: cmp.ssim ?? null,
+        ssimClean: cmp.ssimClean ?? null,
+      });
+      totalSimilarity += cmp.similarity;
+    }
+    const overall = screens.length > 0
+      ? totalSimilarity / screens.length
+      : 0;
+
+    const report = {
+      similarity_score: overall,
+      categories: { geometry: null, style: null, pixels: overall },
+      raster_stats: firstStats
+        ? {
+            ssim: firstStats.ssim,
+            min_region_ssim: firstStats.minRegionSsim,
+            ssim_clean: firstStats.ssimClean,
+            diff_percentage: firstStats.diffPercentage,
+            mae: firstStats.meanAbsoluteError,
+          }
+        : null,
+      screens,
+      baseline,
+      baseline_kind: baselineKind,
+      note: null,
+    };
+    ctx.shared.set("diffReport", report);
+    ctx.updateMetrics({ similarityScore: overall });
+    return report;
   };
 }
 

@@ -13,7 +13,7 @@ import type { PipelineStage, RuntimeConfig } from "./types.js";
 import { PIPELINE_STAGES, makeTaskId } from "./types.js";
 import type { EventLog } from "./events.js";
 import { EventLog as EventLogClass } from "./events.js";
-import type { CheckpointManager } from "./checkpoint.js";
+import type { CheckpointManager, CheckpointMetrics } from "./checkpoint.js";
 import { CheckpointManager as CheckpointManagerClass, EMPTY_METRICS } from "./checkpoint.js";
 import type { ArtifactStore } from "./artifacts.js";
 import { ArtifactStore as ArtifactStoreClass } from "./artifacts.js";
@@ -73,6 +73,8 @@ export interface PipelineContext {
   abortSignal?: AbortSignal;
   /** Share data between stages. */
   shared: Map<string, unknown>;
+  /** Update run metrics (e.g. the compare stage sets similarityScore). */
+  updateMetrics: (partial: Partial<CheckpointMetrics>) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -120,6 +122,7 @@ export class PipelineCoordinator {
       security: { sandbox, secrets, shell, assets, approval: approvalGate },
       toolCtx,
       shared: new Map(),
+      updateMetrics: (partial) => this.sm.updateMetrics(partial),
     };
   }
 

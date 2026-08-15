@@ -31,6 +31,7 @@ import {
   createLayoutStageHandler,
   createAssetsStageHandler,
   createRenderStageHandler,
+  createCompareStageHandler,
 } from "../src/core/backend_codegen.js";
 import { EventLog } from "../src/core/events.js";
 import { CheckpointManager } from "../src/core/checkpoint.js";
@@ -620,6 +621,209 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
         assertEqual(stored.screenshotPath, null,
           "non-browser targets must report no screenshot, never a fabricated one");
         assert(stored.note.length > 0, "degrade must carry an explanatory note");
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("updateMetrics seam lets a stage write metrics.similarityScore", async () => {
+      const dir = tmpDir();
+      try {
+        const config = makeConfig(dir);
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.onStage("ingest", async (ctx) => {
+          ctx.updateMetrics({ similarityScore: 0.42 });
+          return {};
+        });
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "completed");
+        const cp = checkpoints.loadLatest();
+        assert(cp !== null, "expected a saved checkpoint");
+        assertEqual(cp!.metrics.similarityScore, 0.42,
+          "stage-written metrics must persist into the checkpoint");
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("compare stage measures a diff_report against the reference baseline", async () => {
+      const dir = tmpDir();
+      try {
+        const config = makeConfig(dir, {
+          target: { framework: "html", styling: "css" },
+        });
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.setShared("filePath", FIXTURE);
+        pipeline.onStage("ingest", createIngestStageHandler());
+        pipeline.onStage("normalize", createNormalizeStageHandler());
+        pipeline.onStage("resolve", createResolveStageHandler());
+        pipeline.onStage("layout", createLayoutStageHandler());
+        pipeline.onStage("assets", createAssetsStageHandler());
+        pipeline.onStage("generate", createGenerateStageHandler());
+        pipeline.onStage("render", createRenderStageHandler());
+        pipeline.onStage("compare", createCompareStageHandler());
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "completed");
+        assertEqual(result.errors.length, 0);
+
+        const compareArtifacts = artifacts.byStage("compare");
+        assertGreaterThan(compareArtifacts.length, 0, "expected a diff_report artifact");
+        const report = artifacts.loadJSON(compareArtifacts[0]) as {
+          similarity_score: number;
+          categories: { geometry: unknown; style: unknown; pixels: number };
+          raster_stats: {
+            ssim: number | null;
+            min_region_ssim: number | null;
+            ssim_clean: boolean | null;
+            diff_percentage: number;
+          };
+          screens: Array<{ file: string; similarity: number }>;
+          baseline: string;
+          baseline_kind: string;
+        };
+        assertEqual(report.baseline_kind, "reference");
+        assert(fs.existsSync(report.baseline), "reference baseline PNG should exist");
+        assert(typeof report.raster_stats.ssim_clean === "boolean",
+          "SSIM verdict should be a real boolean");
+        assertGreaterThan(report.similarity_score, 0.9,
+          "html_css output should closely reproduce the reference render");
+        assertGreaterThan(report.screens.length, 0);
+        assertEqual(report.screens[0].file, "screen_0.html");
+        assertEqual(report.categories.pixels, report.similarity_score);
+
+        // The measured score must reach run metrics + the checkpoint.
+        const cp = checkpoints.loadLatest();
+        assert(cp !== null);
+        assertEqual(
+          cp!.metrics.similarityScore, report.similarity_score,
+          "run metrics.similarityScore must equal the diff_report score",
+        );
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("explicit --baseline override wins and detects a real visual change", async () => {
+      const dir = tmpDir();
+      try {
+        // A deliberately-different baseline: a full-red render at the exact
+        // viewport (margin reset so the full-page capture is 1440x900, the
+        // same size as the reference render the generated output matches).
+        const redHtml = path.join(dir, "red.html");
+        fs.writeFileSync(
+          redHtml,
+          '<!DOCTYPE html><html><head><style>' +
+            '*{margin:0;padding:0;box-sizing:border-box}' +
+            'body{width:1440px;height:900px;overflow:hidden}' +
+            '</style></head><body>' +
+            '<div style="width:1440px;height:900px;background:#ff0000"></div>' +
+            '</body></html>',
+          "utf-8",
+        );
+        const red = await invokeRender(
+          { pythonBin: PYTHON_BIN, pluginDir: PLUGIN_DIR },
+          redHtml,
+          { width: 1440, height: 900 },
+          dir,
+        );
+
+        const config = makeConfig(dir, {
+          target: { framework: "html", styling: "css" },
+        });
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.setShared("filePath", FIXTURE);
+        pipeline.setShared("baselinePath", red.screenshot);
+        pipeline.onStage("ingest", createIngestStageHandler());
+        pipeline.onStage("normalize", createNormalizeStageHandler());
+        pipeline.onStage("resolve", createResolveStageHandler());
+        pipeline.onStage("layout", createLayoutStageHandler());
+        pipeline.onStage("assets", createAssetsStageHandler());
+        pipeline.onStage("generate", createGenerateStageHandler());
+        pipeline.onStage("render", createRenderStageHandler());
+        pipeline.onStage("compare", createCompareStageHandler());
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "completed");
+        const compareArtifacts = artifacts.byStage("compare");
+        const report = artifacts.loadJSON(compareArtifacts[0]) as {
+          similarity_score: number;
+          baseline_kind: string;
+          raster_stats: { ssim_clean: boolean | null };
+        };
+        assertEqual(report.baseline_kind, "explicit");
+        assert(report.similarity_score < 0.9,
+          "a full-red baseline vs the fixture render must drop the score");
+        assertEqual(report.raster_stats.ssim_clean, false,
+          "a real visual change must fail the SSIM gate");
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("compare stage degrades with no measured score when there is no screenshot", async () => {
+      const dir = tmpDir();
+      try {
+        const config = makeConfig(dir); // flutter — render degrades
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.setShared("filePath", FIXTURE);
+        pipeline.onStage("ingest", createIngestStageHandler());
+        pipeline.onStage("normalize", createNormalizeStageHandler());
+        pipeline.onStage("resolve", createResolveStageHandler());
+        pipeline.onStage("layout", createLayoutStageHandler());
+        pipeline.onStage("assets", createAssetsStageHandler());
+        pipeline.onStage("generate", createGenerateStageHandler());
+        pipeline.onStage("render", createRenderStageHandler());
+        pipeline.onStage("compare", createCompareStageHandler());
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "completed");
+        const compareArtifacts = artifacts.byStage("compare");
+        assertGreaterThan(compareArtifacts.length, 0);
+        const report = artifacts.loadJSON(compareArtifacts[0]) as {
+          similarity_score: number | null;
+          note: string;
+        };
+        assertEqual(report.similarity_score, null,
+          "no screenshot → no measured score, never a fabricated one");
+        assertGreaterThan(report.note.length, 0);
+        const cp = checkpoints.loadLatest();
+        assert(cp !== null);
+        assertEqual(cp!.metrics.similarityScore, 0,
+          "metrics must stay untouched when no score is measured");
       } finally {
         cleanDir(dir);
       }
