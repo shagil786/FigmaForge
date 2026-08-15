@@ -21,7 +21,9 @@ import {
   backendForTarget,
   UnsupportedTargetError,
   invokeBackendGenerator,
+  invokeBackendGeneratorFromStages,
   invokeNormalize,
+  invokeLayout,
   invokeAssets,
   createIngestStageHandler,
   createGenerateStageHandler,
@@ -55,6 +57,44 @@ function cleanDir(dir: string): void {
   if (fs.existsSync(dir)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+}
+
+/** Inject an image fill into the first IR node with an id; return it + id. */
+function injectImageFill(irJson: Record<string, unknown>): {
+  ir: Record<string, unknown>;
+  nodeId: string;
+} {
+  const STRUCTURAL = new Set(["DOCUMENT", "CANVAS", "PAGE"]);
+  const pick = (node: Record<string, any> | undefined): Record<string, any> | null => {
+    if (node && node.id && !STRUCTURAL.has(node.node_type)) return node;
+    for (const child of node?.children ?? []) {
+      const hit = pick(child);
+      if (hit) return hit;
+    }
+    return null;
+  };
+  const target = pick((irJson as Record<string, any>).root);
+  if (!target) throw new Error("no node to inject an image fill");
+  target.style = target.style ?? {};
+  target.style.fills = [{
+    kind: "image", image_ref: "img:1", visible: true, opacity: 1.0,
+  }];
+  return { ir: irJson, nodeId: target.id };
+}
+
+/** A Part-17-shaped asset manifest with one downloaded entry. */
+function buildAssetsManifest(nodeId: string, localPath: string): Record<string, unknown> {
+  return {
+    schema_version: 1,
+    file_key: "layout_desktop",
+    assets: [{
+      node_id: nodeId, url: "file:///tmp/photo.png", image_ref: "img:1",
+      kind: "image", status: "downloaded", content_hash: "abc123",
+      local_path: localPath,
+    }],
+    counts: { total: 1, downloaded: 1, unresolved: 0 },
+    assets_dir: "/tmp/assets",
+  };
 }
 
 function makeConfig(dir: string, overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
@@ -425,6 +465,86 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
           "hashed asset file should exist on disk");
         assert(fs.readFileSync(entry.local_path!).equals(png),
           "stored bytes must match the source");
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("staged generate with an asset manifest emits real image references", async () => {
+      const dir = tmpDir();
+      try {
+        const cfg = { pythonBin: PYTHON_BIN, pluginDir: PLUGIN_DIR };
+        const fileJson = JSON.parse(fs.readFileSync(FIXTURE, "utf-8"));
+        const { ir, nodeId } = injectImageFill(await invokeNormalize(cfg, fileJson));
+        const layoutJson = await invokeLayout(cfg, ir, 1440);
+
+        const result = await invokeBackendGeneratorFromStages(
+          cfg,
+          { framework: "html", styling: "css" },
+          { irJson: ir, layoutJson, assetsManifest: buildAssetsManifest(nodeId, "assets/photo.png") },
+          dir,
+        );
+        const html = fs.readdirSync(result.filesDir)
+          .map((f) => fs.readFileSync(path.join(result.filesDir, f), "utf-8"))
+          .join("\n");
+        assertIncludes(html, "background-image: url(assets/photo.png)",
+          "a resolved asset manifest should emit the real background url");
+        assert(!html.includes("fills_image approximated"),
+          "a resolved image must not carry the fidelity marker");
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("the generate stage threads the asset manifest from the assets stage", async () => {
+      const dir = tmpDir();
+      try {
+        const cfg = { pythonBin: PYTHON_BIN, pluginDir: PLUGIN_DIR };
+        const fileJson = JSON.parse(fs.readFileSync(FIXTURE, "utf-8"));
+        const { ir, nodeId } = injectImageFill(await invokeNormalize(cfg, fileJson));
+        const png = Buffer.from("photo-bytes", "utf-8");
+        const src = path.join(dir, "photo.png");
+        fs.writeFileSync(src, png);
+        (ir as Record<string, any>).assets = {
+          ...((ir as Record<string, any>).assets ?? {}),
+          [nodeId]: "file://" + src,
+        };
+
+        const config = makeConfig(dir, { target: { framework: "html", styling: "css" } });
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        // Trivial upstream stubs (ingest reads the fixture verbatim; a real
+        // normalize would rebuild the IR without our injected image fill). The
+        // assets + generate stages below are the REAL Part 17/18 handlers.
+        pipeline.onStage("ingest", async (ctx) => {
+          ctx.shared.set("fileJson", fileJson);
+          return { fileJson };
+        });
+        pipeline.onStage("normalize", async (ctx) => {
+          ctx.shared.set("irJson", ir);
+          return { irJson: ir };
+        });
+        pipeline.onStage("layout", createLayoutStageHandler());
+        pipeline.onStage("assets", createAssetsStageHandler());
+        pipeline.onStage("generate", createGenerateStageHandler());
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "completed", result.errors.join(" | "));
+        assertEqual(result.errors.length, 0);
+
+        const filesDir = path.join(dir, config.runId, "generated", "html_css");
+        const html = fs.readdirSync(filesDir)
+          .map((f) => fs.readFileSync(path.join(filesDir, f), "utf-8"))
+          .join("\n");
+        assertIncludes(html, "background-image: url(",
+          "the generate stage should thread the assets-stage manifest");
+        assert(!html.includes("fills_image approximated"));
       } finally {
         cleanDir(dir);
       }

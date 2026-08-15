@@ -15,8 +15,9 @@ export const PIPELINE_STAGES = [
   "normalize",     // Raw JSON → Design IR
   "resolve",       // IR + library → ResolutionReport
   "layout",        // IR → LayoutPlan
+  "assets",        // Load and hash image/SVG assets (before generate: its
+                   // manifest threads resolved paths into generated code)
   "generate",      // LayoutPlan → VNode/VStyle (code)
-  "assets",        // Load and hash image/SVG assets
   "render",        // Generated code → browser screenshot + metadata
   "compare",       // Screenshot vs Figma → DiffReport
   "repair",        // DiffReport → patches → re-render (iterative)

@@ -259,6 +259,8 @@ async function cmdRun(args: CliArgs): Promise<void> {
   pipeline.onStage("layout", createLayoutStageHandler());
   pipeline.onStage("assets", createAssetsStageHandler());
   pipeline.onStage("generate", createGenerateStageHandler());
+  // NOTE: PIPELINE_STAGES runs assets before generate (Part 18) so the
+  // assets-stage manifest can thread resolved paths into generated code.
 
   const result = await pipeline.run();
 
