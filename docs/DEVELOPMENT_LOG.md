@@ -1009,3 +1009,128 @@ LLM-driven/human-approval repair iterations beyond the loop's
 `--require-approval` gate; multi-backend repair (html_css only today);
 compiling or executing generated SwiftUI/Flutter/TSX code; Figma OAuth
 (token-only).
+
+## Part 21 — Bundler-Rendered Measurement (real scores for react/vue/svelte)
+
+The measured loop (Parts 19–20) was html_css-only **by construction**: the
+render stage globbed `*.html`, and the three web-framework backends emit
+only components (`.tsx`/`.vue`/`.svelte` + config) — no entry, no bundler
+config. So three of six backends — including the primary React+Tailwind
+target — generated code that had **never been rendered, measured, compared,
+or verified**: `figmaforge run --target=react+tailwind` ended with an honest
+but hollow "no measured score". Part 21 closes that gap with a real Vite
+bundler harness, so all four browser targets are measured.
+
+### What Changed
+
+1. **Task 0 spike (Tailwind toolchain + honesty probe)** — generated the
+   canonical honesty-audit fixture through the real `ReactTailwindBackend`,
+   built it with Vite 5 + Tailwind v3.4.14 + PostCSS, and rendered it in real
+   chromium with computed-style probes. **S1 — v3.4 CONFIRMED**: every
+   emitted class compiled and applied (arbitrary values, arbitrary shadow /
+   radius / gradient stops, quoted `font-['Inter']`, and the
+   `max-[768px]:...` breakpoint variants flipped correctly at a narrow
+   viewport); no v4 fallback needed. **S2 — real honesty violation (all
+   three web backends)**: the canonical output **crashes at runtime with a
+   blank page** — `ReferenceError: ButtonCard is not defined`; the
+   resolution report mapped `comp:1`/`inst:1` to component names with no
+   definitions behind them, and `vite build` succeeded silently (JSX tags are
+   runtime calls). The honesty audit checks output *substrings*, never
+   *buildability*. **S3 — real bug**: the generated
+   `tailwind.config.figmaforge.js` was invalid JS for hyphenated token names
+   (`brand-blue:` → `SyntaxError`). **S4 — env note**: npm 11 blocks
+   esbuild's postinstall; the harness emits a typed error with an approve hint.
+2. **Self-contained component references (Task 1, S2/S3 fix)** — react,
+   vue, and svelte now emit a local definition for every referenced
+   component/instance name (react `function ButtonCard(...)` fallback
+   rendering that node's subtree as a div; vue render-function fallbacks in
+   `<script setup>`; svelte 5 `{#snippet}` blocks). Call sites keep the
+   component tags (audit signals preserved) and instance fallbacks carry the
+   `component_instance approximated (fallback)` marker. The token config
+   quotes every key (valid JS, verified loading in node). New
+   `test_component_fallback.py` (12 tests) + a **buildability audit**
+   (`test_bundler_buildability.py`) that scaffolds the canonical output and
+   builds + renders it with the real toolchain — zero console errors — so S2
+   can never silently regress again.
+3. **`bundler_harness.py` (Task 2)** — deterministic per-framework
+   `BundleSpec` (react_tailwind / vue / svelte) with exact probe-validated
+   pins (vite 5.4.11, tailwind 3.4.14, vue 3.5.13, svelte 5.16.0, …),
+   multi-page `vite.config.ts`, entry + `index.html` per component, Tailwind
+   v3.4 + PostCSS for react, asset copy + `url(<store path>)` rewrite to
+   `./assets/<basename>`, injectable `build()` (real path self-installs and
+   raises a typed `BundleBuildError` with the vite stderr, esbuild hint on
+   S4), and `serve_built` + `screenshot_url` on ephemeral ports.
+4. **`pipeline.py render --bundle` (Task 3)** — scaffold → install/build →
+   serve → screenshot **each** component in one atomic unit; one path-free,
+   deterministic JSON line; exit codes 2/4/1; injectable builder/screenshot
+   seams. Real end-to-end smoke: canonical react output → real npm install +
+   vite build + ephemeral-port serve + real chromium screenshot.
+5. **Money tests (Tasks 4 + 6, real toolchain)** — `test_bundler_harness_smoke.py`
+   builds + renders the canonical react/vue/svelte output through the real
+   harness (zero console errors, ports never fixed); the CLI tests drive
+   `figmaforge run --target=react+tailwind` / `vue+scoped_css` end-to-end and
+   assert a real `Score` ≥ 0.95 with `Verification: PASSED`.
+6. **TS bundler render path (Task 5)** — `invokeBundleRender` spawns
+   `render --bundle` (asset manifest converted to the harness dict shape);
+   `createRenderStageHandler({ noBundle })`'s no-`.html` branch bundles
+   bundler-backed backends through the real Vite harness, whose
+   `RenderOutputRow`s feed the **existing** compare/verify machinery
+   unchanged — zero compare changes needed. `--no-bundle` and native targets
+   keep the honest degrade.
+7. **`cmdRun` wiring (Task 6)** — `--no-bundle` flag + help text; the CLI
+   money tests locked the measured loop for react/vue/svelte and the honest
+   degrades for `--no-bundle` and `flutter+flutter_widgets`.
+
+### Real findings from the Task 6 money tests (the S2 class, again)
+
+- **Root fidelity markers broke the react build**: the root's
+  `{/* fidelity: … */}` marker was emitted as a **sibling** of the root
+  element inside `return ( ... )` — two JSX children, which esbuild rejects
+  (verified on both 0.21.5 and 0.25.0; Babel is lenient with comments, esbuild
+  is not). Markers now render **inside** the element; a regression test locks
+  the single-root invariant.
+- **Missing box-sizing reset silently killed vue/svelte scores**: the
+  scaffolds had no reset, so Figma's border-box widths overflowed —
+  `width: 1440px` + 48px padding rendered **1488 wide** (+ body margin →
+  1496), vs the reference's 1440. The SSIM compare then degraded to
+  similarity 0 / SSIM null (dimension mismatch) — not a crash, a silent
+  measurement kill. The scaffolded `index.html` now carries the same
+  `* { margin: 0; padding: 0; box-sizing: border-box; }` reset as the
+  reference render (a double-brace f-string leak made my first attempt a dead
+  selector — the tests assert the exact rule and reject `{{ margin`).
+
+### Honesty contract (verified by construction + tests)
+
+- A bundler build failure is an **explicit error** with the real vite stderr
+  — never a fake screenshot. `--no-bundle` restores the honest
+  no-measured-score degrade; native targets stay degraded.
+- The box-sizing reset + component fallbacks mean the measured scores are
+  real render comparisons, and the CLI tests prove react 0.9987 / vue 1.0000
+  / svelte 1.0000 (SSIM-clean) against the reference baseline.
+
+### Testing
+
+- Python: **605** tests OK, zero skips (51 test files) — +40 on the merged
+  Part-20 base: +13 component-fallback/quoting tests (Task 1), +11
+  bundler-harness tests (Task 2), +13 `render --bundle` CLI tests (Task 3),
+  +2 real-toolchain money tests (Task 4), +1 root-marker placement test
+  (Task 6).
+- TS: **162** runtime tests passing, `npx tsc` clean — +7 on the merged
+  Part-20 base: +3 bundler-path tests (Task 5: bundler render on a full run
+  with faked invoker, `--no-bundle` honest degrade, typed exit-4 error) and
+  +4 cmdRun CLI tests (Task 6: react + vue measured `PASSED` runs,
+  `--no-bundle` degrade, flutter native degrade).
+- Smoke: real CLI — react+tailwind run → `Score: 0.9987`, `Verification:
+  PASSED (0.9987 >= 0.95)`; vue+scoped_css → `Score: 1.0000` PASSED;
+  svelte+scoped_css → `Score: 1.0000` PASSED; `--no-bundle` → `cannot
+  verify`; flutter+flutter_widgets → native degrade.
+- `claude plugin validate --strict` clean (final gate, Task 8).
+
+### Non-goals (deferred)
+
+Web-backend repair regeneration (the repair loop stays html_css-scoped; the
+bundler targets measure but don't auto-repair yet); a production
+`vite.config.ts`/publishable scaffold (the harness is a measurement
+scaffold, not a template library); bundling swiftui/flutter (native
+simulators remain out of scope); vendoring node_modules for fully-offline
+installs.
