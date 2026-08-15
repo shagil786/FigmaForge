@@ -276,6 +276,7 @@ class ReactTailwindBackend(BackendAdapter):
     ) -> GeneratedOutput:
         output = GeneratedOutput()
         opts = options or {}
+        assets: Dict[str, Dict[str, Any]] = opts.get("assets") or {}
         ir_by_id: Dict[str, IRNode] = {n.id: n for n in document.all_nodes()}
         style_gen = CssStyleGenerator()
         node_builder = VNodeBuilder(resolution)
@@ -286,6 +287,7 @@ class ReactTailwindBackend(BackendAdapter):
             root_vnode = node_builder.build(screen)
             tsx_content = self._render_component(
                 root_vnode, screen, component_name, style_gen, ir_by_id,
+                assets=assets,
             )
             node_ids = [n.node_id for n in screen.walk() if n.node_id]
 
@@ -323,13 +325,17 @@ class ReactTailwindBackend(BackendAdapter):
         name: str,
         style_gen: CssStyleGenerator,
         ir_by_id: Dict[str, IRNode],
+        assets: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> str:
         lines = ["import React from 'react';", ""]
         lines.append(
             f"export function {name}({{ className = '' }}: {{ className?: string }}) {{"
+
         )
         lines.append("  return (")
-        lines.append(self._render_node(root_vnode, screen, style_gen, ir_by_id, indent=3))
+        lines.append(self._render_node(
+            root_vnode, screen, style_gen, ir_by_id, indent=3, assets=assets,
+        ))
         lines.append("  );")
         lines.append("}")
         lines.append("")
@@ -343,10 +349,11 @@ class ReactTailwindBackend(BackendAdapter):
         style_gen: CssStyleGenerator,
         ir_by_id: Dict[str, IRNode],
         indent: int,
+        assets: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> str:
         pad = "  " * indent
         ir = ir_by_id.get(vnode.node_id)
-        classes, markers = self._classes_for(vnode, plan_node, style_gen, ir)
+        classes, markers = self._classes_for(vnode, plan_node, style_gen, ir, assets=assets)
 
         attrs: List[str] = []
         if vnode.node_id:
@@ -363,7 +370,10 @@ class ReactTailwindBackend(BackendAdapter):
             element = f"{pad}<{vnode.tag}{attr_str}>{_escape_jsx(vnode.text_content)}</{vnode.tag}>"
         elif vnode.children:
             children_html = "\n".join(
-                self._render_node(child_vn, child_plan, style_gen, ir_by_id, indent + 1)
+                self._render_node(
+                    child_vn, child_plan, style_gen, ir_by_id, indent + 1,
+                    assets=assets,
+                )
                 for child_vn, child_plan in zip(vnode.children, plan_node.children)
             )
             element = f"{pad}<{vnode.tag}{attr_str}>\n{children_html}\n{pad}</{vnode.tag}>"
@@ -381,6 +391,7 @@ class ReactTailwindBackend(BackendAdapter):
         plan_node: LayoutNodePlan,
         style_gen: CssStyleGenerator,
         ir: Optional[IRNode],
+        assets: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> Tuple[List[str], List[str]]:
         """Return (classes, fidelity markers) for one node."""
         classes: List[str] = []
@@ -400,7 +411,7 @@ class ReactTailwindBackend(BackendAdapter):
             markers.append("fidelity: absolute_positioning approximated (in-flow)")
 
         if ir is not None:
-            self._ir_style_classes(ir, classes, markers)
+            self._ir_style_classes(ir, classes, markers, assets=assets)
             self._ir_typography_classes(ir, classes)
 
         if plan_node.overflow is not None:
@@ -423,8 +434,9 @@ class ReactTailwindBackend(BackendAdapter):
         ir: IRNode,
         classes: List[str],
         markers: List[str],
+        assets: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> None:
-        """Solid/gradient fills, shadows, blur, borders, radius, opacity."""
+        """Solid/gradient/image fills, shadows, blur, borders, radius, opacity."""
         if ir.style is None:
             return
         style = ir.style
@@ -443,6 +455,16 @@ class ReactTailwindBackend(BackendAdapter):
                     classes.append(f"to-[{_hex6(stops[-1].color)}]")
                     break
                 markers.append("fidelity: fills_gradient approximated (omitted)")
+                break
+            if fill.kind == "image":
+                asset = (assets or {}).get(ir.id)
+                if asset and asset.get("path"):
+                    # Real background image (Figma's default cover/center fit).
+                    classes.append(f"bg-[url({asset['path']})]")
+                    classes.append("bg-cover")
+                    classes.append("bg-center")
+                else:
+                    markers.append("fidelity: fills_image approximated (omitted)")
                 break
             markers.append(f"fidelity: fills_{fill.kind} approximated (omitted)")
             break
