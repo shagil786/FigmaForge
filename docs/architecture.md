@@ -340,16 +340,28 @@ concrete adapter exists for a given combination.
 - `backends/registry.py` — `BackendRegistry` with register/unregister/get/
   require/find/list, auto-discovery via `discover_builtins()`, global
   singleton via `get_registry()`.
-- `backends/html_css/` — **Fully implemented** reference backend. Internal
-  `VNode`/`VStyle` types (moved from core), `_CSSStyleGenerator`,
-  `_VNodeBuilder`, `_HtmlEmitter`. Generates HTML + CSS files.
-- `backends/react_tailwind/` — Stub (React + Tailwind CSS).
-- `backends/vue/` — Stub (Vue 3 SFC with scoped CSS).
-- `backends/svelte/` — Stub (Svelte components with scoped styles).
-- `backends/swiftui/` — Stub (SwiftUI view structs, unsupported features
-  declared explicitly).
-- `backends/flutter/` — Stub (Flutter widget trees, unsupported features
-  declared explicitly).
+- `backends/web_common.py` — **Shared web machinery (Part 14):** `VStyle`/`VNode`,
+  `CssStyleGenerator`, `VNodeBuilder`, `ScopedCssGenerator`, `extend_ir_style` (IR
+  fills/radius/borders/opacity/shadows/blur/typography/overflow/breakpoints),
+  `bp_to_css_prop`. ONE style-mapping implementation for every web target.
+- `backends/html_css/` — **Fully implemented** reference backend (Part 10).
+  `_HtmlEmitter` + `_wrap_html_document`; reuses the shared web machinery.
+  Generates HTML + CSS files.
+- `backends/react_tailwind/` — **Implemented (Part 14).** Real TSX generator with
+  arbitrary-value Tailwind classes, IR-sourced style/typography, breakpoint variants,
+  and token extraction into `tailwind.config.figmaforge.js`.
+- `backends/vue/` — **Implemented (Part 14).** Vue 3 SFC: `<template>` scoped
+  `n-{id}` classes, `<script setup>`, `<style scoped>` from the shared CSS rules.
+- `backends/svelte/` — **Implemented (Part 14).** Svelte component: `<script lang="ts">`
+  props, scoped class markup, shared scoped CSS.
+- `backends/swiftui/` — **Implemented (Part 14).** SwiftUI view structs: VStack/HStack
+  + spacing/alignment, modifier chains (frame/padding/background/cornerRadius/opacity/
+  font/shadow), real LinearGradient and `.position()`; unsupported features declared
+  explicitly.
+- `backends/flutter/` — **Implemented (Part 14).** Flutter widget trees: Row/Column
+  with main/cross axis alignment + SizedBox gap separators, Container+BoxDecoration,
+  EdgeInsets, Text+TextStyle, Stack+Positioned; unsupported features declared
+  explicitly.
 
 **Core modules remain framework-neutral:**
 - `ir_types.py` (784 lines) — framework-neutral semantic vocabulary.
@@ -644,7 +656,7 @@ FigmaForge is a planned, not-implemented, technology-agnostic, adaptive platform
 - **Evidence-driven transitions** (not prose claims)
 - **Strict safety invariants** and backup/rollback strategy
 
-**Implementation status:** Core modules (detector, router, catalog, state machine) are implemented and tested. The Figma-to-Code pipeline (Parts 1-8) is fully implemented. The backend adapter architecture (Part 10) is implemented with 1 fully working backend (HTML+CSS) and 5 stubs (React+Tailwind, Vue, Svelte, SwiftUI, Flutter). The TypeScript orchestration runtime (Part 9) is implemented with composable code-generation targets. Integration between the Adaptive Platform and the Figma pipeline is in progress.
+**Implementation status:** Core modules (detector, router, catalog, state machine) are implemented and tested. The Figma-to-Code pipeline (Parts 1-8) is fully implemented. The backend adapter architecture (Parts 10 + 14) is implemented with all six backends real — HTML+CSS (reference), React+Tailwind, Vue, Svelte, SwiftUI, and Flutter — sharing one web style-mapping implementation (`web_common.py`) and enforcing the capability-vs-output honesty rule via a repo-wide audit. The TypeScript orchestration runtime (Part 9) is implemented with composable code-generation targets. Integration between the Adaptive Platform and the Figma pipeline is in progress.
 
 ---
 
