@@ -32,8 +32,9 @@ from ..web_common import (
     camel_to_kebab,
     escape_attr,
     escape_html,
+    extend_ir_style,
 )
-from core.ir_types import IRDocument
+from core.ir_types import IRDocument, IRNode
 from core.layout_types import LayoutNodePlan, LayoutPlan
 from core.resolver import ResolutionReport
 
@@ -45,32 +46,44 @@ from core.resolver import ResolutionReport
 class _HtmlEmitter:
     """Convert a VNode tree into HTML + CSS strings."""
 
-    def emit(self, root: VNode) -> tuple:
+    def emit(self, root: VNode, image_fill_ids: frozenset = frozenset()) -> tuple:
         """Return (html_str, css_str)."""
         css_rules: List[str] = []
-        html = self._render_node(root, css_rules, indent=1)
+        html = self._render_node(root, css_rules, indent=1, image_fill_ids=image_fill_ids)
         return html, "\n".join(css_rules)
 
-    def _render_node(self, node: VNode, css_rules: List[str], indent: int) -> str:
+    def _render_node(
+        self,
+        node: VNode,
+        css_rules: List[str],
+        indent: int,
+        image_fill_ids: frozenset,
+    ) -> str:
         pad = "  " * indent
         tag = node.tag
         attrs = self._render_attrs(node, css_rules)
         self_closing = tag in ("img", "br", "hr", "input", "meta", "link")
 
         if self_closing and not node.children:
-            return f"{pad}<{tag}{attrs} />"
+            element = f"{pad}<{tag}{attrs} />"
+        elif node.text_content is not None:
+            element = f"{pad}<{tag}{attrs}>{escape_html(node.text_content)}</{tag}>"
+        elif not node.children:
+            element = f"{pad}<{tag}{attrs}></{tag}>"
+        else:
+            children_html = "\n".join(
+                self._render_node(
+                    child, css_rules, indent + 1, image_fill_ids=image_fill_ids,
+                )
+                for child in node.children
+            )
+            element = f"{pad}<{tag}{attrs}>\n{children_html}\n{pad}</{tag}>"
 
-        if node.text_content is not None:
-            return f"{pad}<{tag}{attrs}>{escape_html(node.text_content)}</{tag}>"
-
-        if not node.children:
-            return f"{pad}<{tag}{attrs}></{tag}>"
-
-        children_html = "\n".join(
-            self._render_node(child, css_rules, indent + 1)
-            for child in node.children
-        )
-        return f"{pad}<{tag}{attrs}>\n{children_html}\n{pad}</{tag}>"
+        # Image fills degrade to a solid fallback in CSS; never silent.
+        if node.node_id in image_fill_ids:
+            marker = f"{pad}<!-- fidelity: fills_image approximated (solid fallback) -->"
+            return f"{marker}\n{element}"
+        return element
 
     def _render_attrs(self, node: VNode, css_rules: List[str]) -> str:
         parts: List[str] = []
@@ -99,13 +112,34 @@ class _HtmlEmitter:
 # HtmlCssBackend — the public adapter
 # ---------------------------------------------------------------------------
 
-# Features HTML+CSS fully supports
-_HTML_CSS_SUPPORTED = WEB_COMMON_FEATURES | frozenset({
+# Features HTML+CSS can only approximate: image fills get a solid fallback
+# plus an inline marker; asset/token/reference plumbing, prototype links, and
+# interactions are outside the common IR surface (spec non-goals); margins
+# only exist as absolute-offset evidence, which is captured via
+# ``position``/anchors rather than a literal ``margin`` property; relative
+# positioning is representable in CSS but the plan model never produces it.
+_HTML_CSS_PARTIAL = frozenset({
+    Feature.CONSTRAINTS,  # mapped to CSS positioning but not 1:1
+    Feature.MARGIN,  # absolute offsets captured via position/anchors
+    Feature.RELATIVE_POSITIONING,  # representable in CSS, no plan source
+    Feature.FILLS_IMAGE,  # solid fallback + inline marker
+    Feature.IMAGE_ASSETS,  # asset plumbing (spec non-goal)
+    Feature.SVG_ASSETS,  # asset plumbing (spec non-goal)
+    Feature.DESIGN_TOKENS,  # token plumbing (spec non-goal)
+    Feature.TOKEN_REFERENCES,  # token plumbing (spec non-goal)
+    Feature.COMPONENTS,  # emitted as reusable HTML fragments, not real components
+    Feature.COMPONENT_VARIANTS,  # no native variant support
+    Feature.COMPONENT_INSTANCES,  # emitted as duplicated HTML
+    Feature.PROTOTYPE_LINKS,  # no router wiring (spec non-goal)
+    Feature.INTERACTIONS,  # no JS interactivity (spec non-goal)
+})
+
+# Features HTML+CSS fully supports and genuinely emits (everything else
+# representable in HTML/CSS lowers through the shared style machinery).
+_HTML_CSS_SUPPORTED = (WEB_COMMON_FEATURES - _HTML_CSS_PARTIAL) | frozenset({
     Feature.GRID,
-    Feature.MARGIN,
     Feature.ALIGN_SELF,
     Feature.FILLS_GRADIENT,
-    Feature.FILLS_IMAGE,
     Feature.SHADOWS,
     Feature.BLUR,
     Feature.PER_CORNER_RADIUS,
@@ -117,17 +151,6 @@ _HTML_CSS_SUPPORTED = WEB_COMMON_FEATURES | frozenset({
     Feature.BREAKPOINTS,
     Feature.MEDIA_QUERIES,
     Feature.RESPONSIVE_CONSTRAINTS,
-    Feature.SVG_ASSETS,
-    Feature.PROTOTYPE_LINKS,
-    Feature.INTERACTIONS,
-})
-
-# Features HTML+CSS partially supports (with caveats)
-_HTML_CSS_PARTIAL = frozenset({
-    Feature.CONSTRAINTS,  # mapped to CSS positioning but not 1:1
-    Feature.COMPONENTS,  # emitted as reusable HTML fragments, not real components
-    Feature.COMPONENT_VARIANTS,  # no native variant support
-    Feature.COMPONENT_INSTANCES,  # emitted as duplicated HTML
 })
 
 
@@ -151,7 +174,9 @@ class HtmlCssBackend(BackendAdapter):
     def capabilities(self) -> BackendCapabilities:
         return BackendCapabilities(
             supported_features=_HTML_CSS_SUPPORTED,
-            unsupported_features=frozenset(),  # HTML/CSS supports everything
+            # HTML/CSS has no unrepresentable common-IR feature: everything
+            # representable is emitted, everything else is declared partial.
+            unsupported_features=frozenset(),
             partial_features=_HTML_CSS_PARTIAL,
             styling_system="css",
             framework="html",
@@ -172,6 +197,13 @@ class HtmlCssBackend(BackendAdapter):
         node_builder = VNodeBuilder(resolution)
         emitter = _HtmlEmitter()
 
+        ir_by_id: Dict[str, IRNode] = {n.id: n for n in document.all_nodes()}
+        image_fill_ids = frozenset(
+            n.id for n in document.all_nodes()
+            if n.style is not None
+            and any(f.visible and f.kind == "image" for f in n.style.fills)
+        )
+
         output = GeneratedOutput()
         all_css: List[str] = []
         all_html: List[str] = []
@@ -182,10 +214,10 @@ class HtmlCssBackend(BackendAdapter):
             root_vnode = node_builder.build(screen)
 
             # Apply styles from layout plan
-            self._apply_styles(root_vnode, screen, style_gen)
+            self._apply_styles(root_vnode, screen, style_gen, ir_by_id)
 
             # Emit HTML + CSS
-            html, css = emitter.emit(root_vnode)
+            html, css = emitter.emit(root_vnode, image_fill_ids=image_fill_ids)
             all_html.append(html)
             if css:
                 all_css.append(css)
@@ -228,11 +260,13 @@ class HtmlCssBackend(BackendAdapter):
         vnode: VNode,
         plan: LayoutNodePlan,
         style_gen: CssStyleGenerator,
+        ir_by_id: Dict[str, IRNode],
     ) -> None:
         """Recursively apply CSS styles from the layout plan to VNodes."""
         vnode.style = style_gen.generate_style(plan)
+        extend_ir_style(vnode.style, plan, ir_by_id.get(vnode.node_id))
         for child_vnode, child_plan in zip(vnode.children, plan.children):
-            self._apply_styles(child_vnode, child_plan, style_gen)
+            self._apply_styles(child_vnode, child_plan, style_gen, ir_by_id)
 
     def _wrap_html_document(
         self,

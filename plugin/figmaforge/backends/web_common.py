@@ -125,7 +125,10 @@ class CssStyleGenerator:
     def generate_style(self, plan: LayoutNodePlan) -> VStyle:
         style = VStyle()
         display = self._map_display(plan)
-        style.base["display"] = display
+        # ``position: absolute`` (added below) already implies a block-level
+        # box; ``display: absolute`` is not valid CSS, so omit it entirely.
+        if display != "absolute":
+            style.base["display"] = display
 
         if plan.box:
             self._apply_sizing(style, plan, display)
@@ -159,6 +162,11 @@ class CssStyleGenerator:
                     style.base["justifyItems"] = self._map_justify(plan.alignment.justify)
                 if plan.alignment.align:
                     style.base["alignItems"] = self._map_align(plan.alignment.align)
+
+        # Per-item alignment override (layoutAlign) — wins over the
+        # fill-derived ``alignSelf: stretch`` set by ``_apply_sizing``.
+        if plan.alignment and plan.alignment.align_self and display != "absolute":
+            style.base["alignSelf"] = self._map_align(plan.alignment.align_self)
 
         if display == "absolute" and plan.box:
             style.base["position"] = "absolute"
@@ -349,6 +357,130 @@ def _rgba(color: Any) -> str:
     return f"rgba({_byte(color.r)}, {_byte(color.g)}, {_byte(color.b)}, {_fmt_num(a)})"
 
 
+def extend_ir_style(
+    style: VStyle,
+    plan_node: LayoutNodePlan,
+    ir: Optional[IRNode],
+) -> None:
+    """Add IR-sourced style (fills/radius/borders/opacity/shadows/blur/typography)
+    plus overflow behavior and breakpoint changes to a VStyle.
+
+    Shared by html_css, vue, and svelte so all web backends lower the IR
+    style surface identically.  Image fills degrade to a named fallback
+    (the calling backend emits the ``fidelity:`` marker in its markup);
+    breakpoints fold into ``style.breakpoints`` for ``@media`` emission.
+    """
+    if ir is not None and ir.style is not None:
+        s = ir.style
+        for fill in s.fills:
+            if not fill.visible or fill.kind == "none":
+                continue
+            if fill.kind == "solid" and fill.color is not None:
+                style.base["background"] = _hex6(fill.color)
+                break
+            if fill.kind == "gradient" and fill.gradient_stops:
+                stops = ", ".join(
+                    f"{_hex6(st.color)} {_fmt_num(st.position * 100)}%"
+                    for st in fill.gradient_stops
+                    if st.color is not None
+                )
+                style.base["background"] = f"linear-gradient(to bottom, {stops})"
+                break
+            # image fills -> named fallback, never silent
+            style.base["background"] = "#f0f0f0"
+            break
+
+        if s.radius is not None:
+            style.base["borderRadius"] = f"{_fmt_num(s.radius)}px"
+        elif s.corner_radii:
+            radii = s.corner_radii
+            if len(radii) == 4 and len(set(radii)) == 1:
+                style.base["borderRadius"] = f"{_fmt_num(radii[0])}px"
+            else:
+                for css_prop, r in zip(
+                    ("borderTopLeftRadius", "borderTopRightRadius",
+                     "borderBottomRightRadius", "borderBottomLeftRadius"),
+                    radii,
+                ):
+                    if r is not None:
+                        style.base[css_prop] = f"{_fmt_num(r)}px"
+
+        for border in s.borders:
+            if border.visible and border.weight is not None and border.color is not None:
+                style.base["border"] = (
+                    f"{_fmt_num(border.weight)}px solid {_hex6(border.color)}"
+                )
+                break
+
+        if s.opacity is not None and s.opacity < 1.0:
+            style.base["opacity"] = _fmt_num(s.opacity)
+        if ir.opacity < 1.0:
+            style.base["opacity"] = _fmt_num(ir.opacity)
+
+        for shadow in s.shadows:
+            if not shadow.visible or shadow.color is None:
+                continue
+            spread = (
+                f" {_fmt_num(shadow.spread)}px"
+                if shadow.spread
+                else ""
+            )
+            style.base["boxShadow"] = (
+                f"{_fmt_num(shadow.x)}px {_fmt_num(shadow.y)}px "
+                f"{_fmt_num(shadow.blur)}px{spread} "
+                f"{_rgba(shadow.color)}"
+            )
+            break
+
+        for blur in s.blurs:
+            if blur.visible and blur.radius:
+                style.base["filter"] = f"blur({_fmt_num(blur.radius)}px)"
+                break
+
+    if ir is not None and ir.typography is not None:
+        t = ir.typography
+        if t.font_size is not None:
+            style.base["fontSize"] = f"{_fmt_num(t.font_size)}px"
+        if t.font_weight is not None:
+            style.base["fontWeight"] = _fmt_num(t.font_weight)
+        if t.font_family:
+            style.base["fontFamily"] = t.font_family
+        if t.line_height is not None:
+            style.base["lineHeight"] = f"{_fmt_num(t.line_height)}px"
+        if t.letter_spacing is not None:
+            style.base["letterSpacing"] = f"{_fmt_num(t.letter_spacing)}px"
+        if t.text_align:
+            style.base["textAlign"] = {
+                "LEFT": "left", "CENTER": "center", "RIGHT": "right",
+            }.get(t.text_align, "left")
+        if t.text_decoration:
+            style.base["textDecoration"] = {
+                "UNDERLINE": "underline",
+                "STRIKETHROUGH": "line-through",
+            }.get(t.text_decoration.upper())
+        if t.text_case:
+            style.base["textTransform"] = {
+                "UPPER": "uppercase",
+                "LOWER": "lowercase",
+                "TITLE": "capitalize",
+            }.get(t.text_case.upper())
+
+    # Overflow behavior (clip / scroll) is representable in CSS.
+    if plan_node.overflow is not None:
+        if plan_node.overflow.x == OVERFLOW_CLIP or plan_node.overflow.y == OVERFLOW_CLIP:
+            style.base["overflow"] = "hidden"
+        elif plan_node.overflow.x == OVERFLOW_SCROLL or plan_node.overflow.y == OVERFLOW_SCROLL:
+            style.base["overflow"] = "auto"
+
+    # Breakpoints -> @media rules.
+    for bp in plan_node.breakpoints:
+        mapped = bp_to_css_prop(bp)
+        if mapped is None:
+            continue
+        css_prop, value = mapped
+        style.breakpoints.setdefault(f"{_fmt_num(bp.width)}px", {})[css_prop] = value
+
+
 class ScopedCssGenerator:
     """Collect per-node scoped CSS rules + ``@media`` breakpoint rules.
 
@@ -418,115 +550,7 @@ class ScopedCssGenerator:
         ir: Optional[IRNode],
     ) -> None:
         """Add IR-sourced style (fills/radius/opacity/typography) + breakpoints."""
-        if ir is not None and ir.style is not None:
-            s = ir.style
-            for fill in s.fills:
-                if not fill.visible or fill.kind == "none":
-                    continue
-                if fill.kind == "solid" and fill.color is not None:
-                    style.base["background"] = _hex6(fill.color)
-                    break
-                if fill.kind == "gradient" and fill.gradient_stops:
-                    stops = ", ".join(
-                        f"{_hex6(st.color)} {_fmt_num(st.position * 100)}%"
-                        for st in fill.gradient_stops
-                        if st.color is not None
-                    )
-                    style.base["background"] = f"linear-gradient(to bottom, {stops})"
-                    break
-                # image fills -> named fallback, never silent
-                style.base["background"] = "#f0f0f0"
-                break
-
-            if s.radius is not None:
-                style.base["borderRadius"] = f"{_fmt_num(s.radius)}px"
-            elif s.corner_radii:
-                radii = s.corner_radii
-                if len(radii) == 4 and len(set(radii)) == 1:
-                    style.base["borderRadius"] = f"{_fmt_num(radii[0])}px"
-                else:
-                    for css_prop, r in zip(
-                        ("borderTopLeftRadius", "borderTopRightRadius",
-                         "borderBottomRightRadius", "borderBottomLeftRadius"),
-                        radii,
-                    ):
-                        if r is not None:
-                            style.base[css_prop] = f"{_fmt_num(r)}px"
-
-            for border in s.borders:
-                if border.visible and border.weight is not None and border.color is not None:
-                    style.base["border"] = (
-                        f"{_fmt_num(border.weight)}px solid {_hex6(border.color)}"
-                    )
-                    break
-
-            if s.opacity is not None and s.opacity < 1.0:
-                style.base["opacity"] = _fmt_num(s.opacity)
-            if ir.opacity < 1.0:
-                style.base["opacity"] = _fmt_num(ir.opacity)
-
-            for shadow in s.shadows:
-                if not shadow.visible or shadow.color is None:
-                    continue
-                spread = (
-                    f" {_fmt_num(shadow.spread)}px"
-                    if shadow.spread
-                    else ""
-                )
-                style.base["boxShadow"] = (
-                    f"{_fmt_num(shadow.x)}px {_fmt_num(shadow.y)}px "
-                    f"{_fmt_num(shadow.blur)}px{spread} "
-                    f"{_rgba(shadow.color)}"
-                )
-                break
-
-            for blur in s.blurs:
-                if blur.visible and blur.radius:
-                    style.base["filter"] = f"blur({_fmt_num(blur.radius)}px)"
-                    break
-
-        if ir is not None and ir.typography is not None:
-            t = ir.typography
-            if t.font_size is not None:
-                style.base["fontSize"] = f"{_fmt_num(t.font_size)}px"
-            if t.font_weight is not None:
-                style.base["fontWeight"] = _fmt_num(t.font_weight)
-            if t.font_family:
-                style.base["fontFamily"] = t.font_family
-            if t.line_height is not None:
-                style.base["lineHeight"] = f"{_fmt_num(t.line_height)}px"
-            if t.letter_spacing is not None:
-                style.base["letterSpacing"] = f"{_fmt_num(t.letter_spacing)}px"
-            if t.text_align:
-                style.base["textAlign"] = {
-                    "LEFT": "left", "CENTER": "center", "RIGHT": "right",
-                }.get(t.text_align, "left")
-            if t.text_decoration:
-                style.base["textDecoration"] = {
-                    "UNDERLINE": "underline",
-                    "STRIKETHROUGH": "line-through",
-                }.get(t.text_decoration.upper())
-            if t.text_case:
-                style.base["textTransform"] = {
-                    "UPPER": "uppercase",
-                    "LOWER": "lowercase",
-                    "TITLE": "capitalize",
-                }.get(t.text_case.upper())
-
-        # Overflow behavior (clip / scroll) is representable in scoped CSS.
-        if plan_node.overflow is not None:
-            if plan_node.overflow.x == OVERFLOW_CLIP or plan_node.overflow.y == OVERFLOW_CLIP:
-                style.base["overflow"] = "hidden"
-            elif plan_node.overflow.x == OVERFLOW_SCROLL or plan_node.overflow.y == OVERFLOW_SCROLL:
-                style.base["overflow"] = "auto"
-
-        # Breakpoints -> scoped @media rules.
-        for bp in plan_node.breakpoints:
-            mapped = bp_to_css_prop(bp)
-            if mapped is None:
-                continue
-            css_prop, value = mapped
-            style.breakpoints.setdefault(f"{_fmt_num(bp.width)}px", {})[css_prop] = value
+        extend_ir_style(style, plan_node, ir)
 
 
 def bp_to_css_prop(bp: Any) -> Optional[Tuple[str, str]]:
