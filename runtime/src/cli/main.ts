@@ -31,6 +31,8 @@ import {
   createLayoutStageHandler,
   createGenerateStageHandler,
   createAssetsStageHandler,
+  createRenderStageHandler,
+  createCompareStageHandler,
   invokeIngest,
   invokeBackendGenerator,
   TARGET_BACKENDS,
@@ -112,6 +114,10 @@ Options:
   --max-repair=<n>         Max repair iterations (default: 10)
   --max-time=<ms>          Max time in milliseconds (default: 300000)
   --viewport=<WxH>         Viewport size (default: 1440x900)
+  --baseline=<path.png>    Compare the render against this explicit PNG baseline
+                           (overrides the default IR reference baseline)
+  --figma-baseline         Use live Figma renders as the baseline (requires
+                           --file-key and the FIGMA_TOKEN env var)
   --no-approval            Skip approval gates
   --approve-dir=<path>     Add an approved directory (repeatable)
   --verbose                Enable verbose output
@@ -250,8 +256,17 @@ async function cmdRun(args: CliArgs): Promise<void> {
   // pipeline CLI, assets downloads + content-addresses IR asset refs, and
   // generate lowers the stage artifacts through the backend
   // (Part 15: ingest+generate; Part 16: full front half; Part 17: assets).
+  // render + compare (Part 19) then measure the generated output against a
+  // baseline (explicit --baseline, live --figma-baseline, or the IR
+  // reference render) — repair/verify remain unwired (Part 20).
   if (localFile) {
     pipeline.setShared("filePath", path.resolve(localFile));
+  }
+  if (args.flags["baseline"]) {
+    pipeline.setShared("baselinePath", path.resolve(args.flags["baseline"]));
+  }
+  if (args.flags["figma-baseline"] === "true") {
+    pipeline.setShared("figmaBaseline", true);
   }
   pipeline.onStage("ingest", createIngestStageHandler());
   pipeline.onStage("normalize", createNormalizeStageHandler());
@@ -259,6 +274,8 @@ async function cmdRun(args: CliArgs): Promise<void> {
   pipeline.onStage("layout", createLayoutStageHandler());
   pipeline.onStage("assets", createAssetsStageHandler());
   pipeline.onStage("generate", createGenerateStageHandler());
+  pipeline.onStage("render", createRenderStageHandler());
+  pipeline.onStage("compare", createCompareStageHandler());
 
   const result = await pipeline.run();
 
@@ -269,6 +286,32 @@ async function cmdRun(args: CliArgs): Promise<void> {
   console.log(`  Tokens:     ${result.tokensUsed}`);
   console.log(`  Artifacts:  ${result.artifacts}`);
   console.log(`  Events:     ${result.events}`);
+
+  // Measured visual verdict from the compare stage's diff_report artifact
+  // (Part 19) — a real number or an honest "no measured score" note.
+  const diffArtifacts = artifacts.byKind("diff_report");
+  if (diffArtifacts.length > 0) {
+    const report = artifacts.loadJSON(diffArtifacts[0]) as {
+      similarity_score: number | null;
+      baseline_kind: string | null;
+      raster_stats?: { ssim?: number | null; ssim_clean?: boolean | null } | null;
+      note?: string | null;
+    };
+    if (report.similarity_score !== null) {
+      const verdict = report.raster_stats?.ssim_clean === true
+        ? "perceptually identical"
+        : report.raster_stats?.ssim_clean === false
+          ? "perceptual change"
+          : "unavailable";
+      console.log(
+        `  Visual verdict: similarity ${report.similarity_score.toFixed(4)} ` +
+        `vs ${report.baseline_kind ?? "?"} baseline — ${verdict} ` +
+        `(SSIM ${(report.raster_stats?.ssim ?? -1).toFixed(4)})`,
+      );
+    } else {
+      console.log(`  Visual verdict: no measured score (${report.note ?? "no screenshots"})`);
+    }
+  }
 
   if (result.errors.length > 0) {
     console.log(`\nErrors:`);

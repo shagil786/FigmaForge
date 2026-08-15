@@ -1428,6 +1428,109 @@ export async function runAllTests(): Promise<SuiteResult[]> {
     });
   }));
 
+  // 13b. cmdRun render+compare (Part 19) — measured visual verdict
+  results.push(await describe("cmdRun render+compare (Part 19)", async () => {
+    const dir = tmpDir();
+    const FIXTURE = path.resolve("plugin/figmaforge/fixtures/figma/layout_desktop.json");
+    const cli = path.resolve("dist/runtime/src/cli/main.js");
+    const PYTHON_BIN = process.env.PYTHON_BIN ?? "python3";
+    try {
+      await it("html+css run prints a measured score and visual verdict (reference baseline)", async () => {
+        const outDir = path.join(dir, "run-a");
+        const res = spawnSync(process.execPath, [
+          cli, "run", `--file=${FIXTURE}`, "--target=html+css", "--no-approval",
+          `--output-dir=${outDir}`,
+        ], {
+          cwd: path.resolve("."),
+          env: { ...process.env, PYTHON_BIN },
+          encoding: "utf-8",
+          timeout: 240_000,
+        });
+        assertEqual(res.status, 0, `run exited ${res.status}: ${res.stderr ?? ""}`);
+        const stdout = res.stdout ?? "";
+        const scoreLine = stdout.split("\n").find((l) => l.includes("Score:")) ?? "";
+        assert(scoreLine.length > 0, "run should print a Score line");
+        const score = parseFloat(scoreLine.split(":")[1] ?? "0");
+        assert(score > 0.9, `measured score should be > 0.9, got ${score}`);
+        assert(stdout.includes("Visual verdict"), "run should print the visual verdict");
+
+        const runs = fs.readdirSync(outDir).filter((f) => f.startsWith("run-"));
+        assertEqual(runs.length, 1, "expected exactly one run dir");
+        const runDir = path.join(outDir, runs[0]);
+        const manifest = JSON.parse(
+          fs.readFileSync(path.join(runDir, "manifest.json"), "utf-8"),
+        );
+        // 8 stage artifacts (ingest…compare) + the event log = 9.
+        assertEqual(manifest.artifacts.length, 9,
+          `expected 9 artifacts, got ${manifest.artifacts.length}`);
+        const diffArtifact = manifest.artifacts.find(
+          (a: { kind: string }) => a.kind === "diff_report",
+        );
+        assert(diffArtifact !== undefined, "expected a diff_report artifact");
+        const report = JSON.parse(
+          fs.readFileSync(path.join(runDir, "artifacts", diffArtifact.path), "utf-8"),
+        );
+        assertEqual(report.baseline_kind, "reference");
+        assert(typeof report.raster_stats.ssim_clean === "boolean",
+          "SSIM verdict should be a real boolean");
+        assert(report.similarity_score > 0.9,
+          "html_css should closely match the reference render");
+      });
+
+      await it("--baseline override detects a real change and records explicit kind", async () => {
+        const outDir = path.join(dir, "run-b");
+        const base = path.join(dir, "red-baseline.png");
+        fs.writeFileSync(base, makePng(1440, 900, [255, 0, 0]));
+        const res = spawnSync(process.execPath, [
+          cli, "run", `--file=${FIXTURE}`, "--target=html+css", "--no-approval",
+          `--output-dir=${outDir}`, `--baseline=${base}`,
+        ], {
+          cwd: path.resolve("."),
+          env: { ...process.env, PYTHON_BIN },
+          encoding: "utf-8",
+          timeout: 240_000,
+        });
+        assertEqual(res.status, 0, `run exited ${res.status}: ${res.stderr ?? ""}`);
+        const runs = fs.readdirSync(outDir).filter((f) => f.startsWith("run-"));
+        const runDir = path.join(outDir, runs[0]);
+        const manifest = JSON.parse(
+          fs.readFileSync(path.join(runDir, "manifest.json"), "utf-8"),
+        );
+        const diffArtifact = manifest.artifacts.find(
+          (a: { kind: string }) => a.kind === "diff_report",
+        );
+        assert(diffArtifact !== undefined, "expected a diff_report artifact");
+        const report = JSON.parse(
+          fs.readFileSync(path.join(runDir, "artifacts", diffArtifact.path), "utf-8"),
+        );
+        assertEqual(report.baseline_kind, "explicit");
+        assert(report.similarity_score < 0.9, "a red baseline must drop the score");
+        assertEqual(report.raster_stats.ssim_clean, false);
+      });
+
+      await it("--figma-baseline without a token fails with a token error", async () => {
+        const outDir = path.join(dir, "run-c");
+        const env: Record<string, string> = { ...process.env, PYTHON_BIN };
+        delete env.FIGMA_TOKEN;
+        const res = spawnSync(process.execPath, [
+          cli, "run", `--file=${FIXTURE}`, "--file-key=abc123", "--target=html+css",
+          "--no-approval", "--figma-baseline", `--output-dir=${outDir}`,
+        ], {
+          cwd: path.resolve("."),
+          env,
+          encoding: "utf-8",
+          timeout: 240_000,
+        });
+        assertEqual(res.status, 1, `run should fail: ${res.stdout ?? ""} ${res.stderr ?? ""}`);
+        const combined = (res.stdout ?? "") + (res.stderr ?? "");
+        assert(combined.includes("FIGMA_TOKEN"),
+          `expected a FIGMA_TOKEN error, got: ${combined}`);
+      });
+    } finally {
+      cleanDir(dir);
+    }
+  }));
+
   // 14. Backend code generation (Part 15) — real Python backends through the pipeline
   results.push(...await runBackendCodegenTests());
 
