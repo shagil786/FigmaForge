@@ -310,4 +310,4 @@ Md Shagil Nizami
 4. Test with real repositories
 5. Document rollback procedure
 6. Extend generator adapters (CSS Modules / Tailwind / SCSS)
-7. Screenshot comparison + automatic repair (future part)
+7. Baseline auto-refresh + perceptual metrics (pixel diffing delivered in Part 12)

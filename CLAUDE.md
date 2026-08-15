@@ -31,7 +31,7 @@ This is a complete platform implementation (version 0.0.1-dev), containing a 100
     - **Generators:** `react_generator.py` (wired to ResolutionReport), `css_generator.py` (all sizing modes), `generator_types.py`
     - **Backend Adapters (Part 10):** `backends/protocol.py` (BackendAdapter ABC, Feature vocabulary, FidelityLoss), `backends/registry.py` (discover/register/lookup), `backends/html_css/` (fully implemented), `backends/react_tailwind/`, `backends/vue/`, `backends/svelte/`, `backends/swiftui/`, `backends/flutter/` (stubs)
     - **Platform:** `detector.py`, `router.py` (trigger→phase + language→domain scoring), `catalog.py`, `state.py` (adjacent-only transitions)
-    - **Assets & Diff:** `asset_handler.py`, `asset_manager.py` (content-addressed, SVG security), `render_harness.py`, `diff_engine.py` (per-category scoring)
+    - **Assets & Diff:** `asset_handler.py`, `asset_manager.py` (content-addressed, SVG security), `figma_assets.py` (baseline download), `png_codec.py` + `pixel_diff.py` (stdlib pixel diffing + CLI), `render_harness.py`, `diff_engine.py` (per-category scoring + capped pixel weight)
     - **Repair Loop (Part 8):** `repair_classifier.py` (9 categories), `patch_planner.py` (strategy-ordered), `patch_executor.py` (with rollback), `repair_loop.py` (iteration controller), `repair_history.py` (manifest)
     - **Hooks:** `hooks/session_detector.py`, `hooks/external_mutation_gate.py` (regex matching), `hooks/post_edit_validator.py` (executes validators)
   - `catalog/`: `roles.json` (100 roles across 10 domains), `roles.json`.
