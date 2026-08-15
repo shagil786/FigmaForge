@@ -11,7 +11,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { spawnSync } from "node:child_process";
 
-import { describe, it, assert, assertEqual, assertThrows, assertGreaterThan, assertIncludes } from "./test_framework.js";
+import { describe, it, assert, assertEqual, assertDeepEqual, assertThrows, assertGreaterThan, assertIncludes } from "./test_framework.js";
 import type { SuiteResult } from "./test_framework.js";
 import { PRESET_TARGETS, targetKey } from "../src/core/types.js";
 import type { RuntimeConfig } from "../src/core/types.js";
@@ -22,6 +22,9 @@ import {
   invokeBackendGenerator,
   createIngestStageHandler,
   createGenerateStageHandler,
+  createNormalizeStageHandler,
+  createResolveStageHandler,
+  createLayoutStageHandler,
 } from "../src/core/backend_codegen.js";
 import { EventLog } from "../src/core/events.js";
 import { CheckpointManager } from "../src/core/checkpoint.js";
@@ -239,6 +242,138 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
           "demo should announce the offline fixture path");
         assert(fs.existsSync(path.join(dir, "html_css")),
           "offline demo should generate html_css");
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("five-stage run produces the full front-half artifact set", async () => {
+      const dir = tmpDir();
+      try {
+        const config = makeConfig(dir);
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.setShared("filePath", FIXTURE);
+        pipeline.onStage("ingest", createIngestStageHandler());
+        pipeline.onStage("normalize", createNormalizeStageHandler());
+        pipeline.onStage("resolve", createResolveStageHandler());
+        pipeline.onStage("layout", createLayoutStageHandler());
+        pipeline.onStage("generate", createGenerateStageHandler());
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "completed");
+        assertEqual(result.errors.length, 0);
+
+        const kinds = ["figma_raw", "design_ir", "resolution_report", "layout_plan", "generated_code"] as const;
+        for (const kind of kinds) {
+          assertGreaterThan(artifacts.byKind(kind).length, 0, `expected ${kind} artifacts`);
+        }
+        const genArtifacts = artifacts.byStage("generate");
+        const manifest = artifacts.loadJSON(genArtifacts[0]) as {
+          manifest: { backend: string; files: Array<{ path: string }> };
+        };
+        assertEqual(manifest.manifest.backend, "flutter");
+        assert(manifest.manifest.files.some((f) => f.path.endsWith(".dart")),
+          "manifest should name the flutter file");
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("five-stage generate manifest matches the file-mode backend invocation", async () => {
+      const dir = tmpDir();
+      try {
+        const config = makeConfig(dir);
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.setShared("filePath", FIXTURE);
+        pipeline.onStage("ingest", createIngestStageHandler());
+        pipeline.onStage("normalize", createNormalizeStageHandler());
+        pipeline.onStage("resolve", createResolveStageHandler());
+        pipeline.onStage("layout", createLayoutStageHandler());
+        pipeline.onStage("generate", createGenerateStageHandler());
+        await pipeline.run();
+
+        const genArtifacts = artifacts.byStage("generate");
+        const stored = artifacts.loadJSON(genArtifacts[0]) as {
+          manifest: unknown;
+        };
+        const fileJson = JSON.parse(fs.readFileSync(FIXTURE, "utf-8"));
+        const direct = await invokeBackendGenerator(
+          { pythonBin: PYTHON_BIN, pluginDir: PLUGIN_DIR },
+          { framework: "flutter", styling: "flutter_widgets" },
+          fileJson,
+          dir,
+        );
+        assertDeepEqual(stored.manifest, direct.manifest,
+          "staged (five-handler) manifest must match the file-mode backend manifest");
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("normalize without ingest fails with a clear stage error", async () => {
+      const dir = tmpDir();
+      try {
+        const config = makeConfig(dir);
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.onStage("normalize", createNormalizeStageHandler());
+        pipeline.onStage("resolve", createResolveStageHandler());
+        pipeline.onStage("layout", createLayoutStageHandler());
+        pipeline.onStage("generate", createGenerateStageHandler());
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "failed");
+        assert(result.errors.some((e) => e.includes("no fileJson")),
+          `expected a 'no fileJson' stage error, got: ${result.errors.join(" | ")}`);
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("ingest+generate only still completes (legacy fallback)", async () => {
+      const dir = tmpDir();
+      try {
+        const config = makeConfig(dir);
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.setShared("filePath", FIXTURE);
+        pipeline.onStage("ingest", createIngestStageHandler());
+        pipeline.onStage("generate", createGenerateStageHandler());
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "completed");
+        assertEqual(result.errors.length, 0);
+        assertGreaterThan(artifacts.byKind("generated_code").length, 0);
       } finally {
         cleanDir(dir);
       }
