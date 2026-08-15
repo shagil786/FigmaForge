@@ -23,9 +23,11 @@ web output through the real Playwright harness; the compare stage diffs it again
 
 - Branch: `feat/part-19-render-compare` (off main `40269c2`; PR #21 for Part 18 is open and
   may merge before/after — resolve the small `cmdRun` registration overlap when it does).
-- Baseline gate: Python `Ran 526 tests ... OK`, ZERO skips (43 files) via
-  `PYTHON_BIN=/opt/homebrew/bin/python3.14`; TS `npx tsc` clean and `133 passing, 0 failing`;
-  `claude plugin validate --strict plugin/figmaforge` passes.
+- Baseline gate (this branch, off main @ `40269c2`): Python `Ran 515 tests ... OK`, ZERO
+  skips (43 files) via `PYTHON_BIN=/opt/homebrew/bin/python3.14`; TS `npx tsc` clean and
+  `131 passing, 0 failing`; `claude plugin validate --strict plugin/figmaforge` passes. If
+  PR #21 (Part 18) merges first, the baseline shifts to 526/133 — re-derive the expected
+  counts from the actual gate at each task.
 - `scripts/pipeline.py` has subcommands `ingest|normalize|resolve|layout|assets|generate`
   (Parts 15–18); each prints ONE JSON line on success, `{"error": ...}` + nonzero exit on
   failure (argparse errors → exit 2, token missing → exit 3, invalid input → exit 4).
@@ -110,8 +112,8 @@ Steps:
      deterministic), print the single JSON line. Map failures: missing html file → exit 4;
      missing `--layout` → exit 2; `RenderHarnessError`/ValueError → exit 1 `{"error"}`;
      wrap `main()` so `scripts.pipeline render` dispatches to it.
-4. Run targeted → **expect PASS**. Full suite → **expect `Ran 53X tests ... OK`, ZERO skips**
-   (526 + new). Commit:
+4. Run targeted → **expect PASS**. Full suite → **expect `Ran 527 tests ... OK`, ZERO skips**
+   (515 on this branch + 12 new; if PR #21 merged first: 538). Commit:
    `git add core/render_html.py scripts/pipeline.py tests/test_pipeline_render.py && git commit
    -m "feat(pipeline): add render subcommand with generated-html and reference-IR modes"`.
 

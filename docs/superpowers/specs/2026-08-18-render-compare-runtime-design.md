@@ -2,7 +2,7 @@
 
 > **Status:** Approved for implementation planning.
 > **Branch:** `feat/part-19-render-compare` (from main @ `40269c2`, after Part 17 merged; Part 18 is PR #21, open — Part 19 assumes only the Part 17 main state).
-> **Gate baseline:** Python **526 OK, zero skips** (43 files) · TS `npx tsc` clean, **133 passing** · `claude plugin validate --strict` ✔.
+> **Gate baseline (this branch, off main):** Python **515 OK, zero skips** (43 files) · TS `npx tsc` clean, **131 passing** · `claude plugin validate --strict` ✔. If PR #21 merges before Part 19's gate, the counts shift to 526/133 — the plan's per-task expectations state both.
 
 ## Problem
 

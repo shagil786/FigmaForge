@@ -357,6 +357,38 @@ def _rgba(color: Any) -> str:
     return f"rgba({_byte(color.r)}, {_byte(color.g)}, {_byte(color.b)}, {_fmt_num(a)})"
 
 
+def reference_styles_from_plan(
+    document: Any,
+    layout_plan: Any,
+) -> Dict[str, VStyle]:
+    """Compute the intended per-node VStyles from a LayoutPlan (Part 19).
+
+    Walks every screen tree and lowers each node through the SAME shared
+    machinery the html_css backend uses (``CssStyleGenerator.generate_style``
+    + ``extend_ir_style``), keyed by node id.  The result feeds
+    ``core.render_html.generate_render_html(document, styles, viewport)`` to
+    produce the *reference render* — the baseline ``figmaforge run`` diffs
+    generated output against.  Reusing the shared lowering keeps the
+    baseline and the generated code on one style rule, so a clean verdict
+    measures codegen fidelity, not style drift.
+    """
+    ir_by_id = {n.id: n for n in document.all_nodes()}
+    style_gen = CssStyleGenerator()
+    styles: Dict[str, VStyle] = {}
+
+    def _walk(node_plan: LayoutNodePlan) -> None:
+        if node_plan.node_id:
+            style = style_gen.generate_style(node_plan)
+            extend_ir_style(style, node_plan, ir_by_id.get(node_plan.node_id))
+            styles[node_plan.node_id] = style
+        for child in node_plan.children:
+            _walk(child)
+
+    for screen in layout_plan.screens:
+        _walk(screen)
+    return styles
+
+
 def extend_ir_style(
     style: VStyle,
     plan_node: LayoutNodePlan,
