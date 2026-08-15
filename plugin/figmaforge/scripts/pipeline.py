@@ -45,6 +45,7 @@ from core.figma_assets import (  # noqa: E402
     DEFAULT_MAX_RETRIES,
     DEFAULT_TIMEOUT_SECONDS,
     default_transport,
+    download_baselines,
     fetch_with_retry,
 )
 from core.figma_client import FigmaClient  # noqa: E402
@@ -238,10 +239,76 @@ def _parse_viewport(spec: str) -> Tuple[int, int]:
 # ---------------------------------------------------------------------------
 
 
-def _cmd_render(args: argparse.Namespace, harness_cls=RenderHarness) -> int:
-    """Render generated HTML (shot) or the IR reference (baseline) to a PNG.
+def _parse_node_list(spec: Optional[str]) -> List[str]:
+    """Parse a comma-separated node id list; a bad list is a usage error (2)."""
+    if not spec or not spec.strip():
+        raise _CliError(
+            2, "render --baselines: --nodes is required "
+            "(comma-separated Figma node ids)",
+        )
+    node_ids = [n.strip() for n in spec.split(",") if n.strip()]
+    if not node_ids:
+        raise _CliError(2, "render --baselines: --nodes lists no node ids")
+    return node_ids
 
-    Two mutually exclusive modes:
+
+def _cmd_render_baselines(
+    args: argparse.Namespace,
+    client_cls,
+    transport,
+    out_dir: Path,
+) -> int:
+    """Download live Figma baseline renders for the given nodes (Part 19).
+
+    Wraps ``figma_assets.download_baselines``: ``get_images`` presigned URLs
+    → bounded-retry fetch → ``AssetManager`` content-addressed store under
+    ``<out>/assets``.  Requires ``--file-key`` (exit 2) and ``FIGMA_TOKEN``
+    (exit 3, mirroring the assets stage).  Emits ``{ok, kind: "figma",
+    baselines: {node_id: local_path}, assets_dir}``.
+    """
+    if not args.file_key:
+        raise _CliError(2, "render --baselines: --file-key is required")
+    node_ids = _parse_node_list(args.nodes)
+
+    client = client_cls()
+    try:
+        client.require_token()
+    except FigmaAuthError as exc:
+        raise _CliError(3, str(exc)) from exc
+
+    assets_dir = out_dir / "assets"
+    manager = AssetManager(assets_dir)
+    results = download_baselines(
+        client,
+        args.file_key,
+        node_ids,
+        manager,
+        transport=transport,
+        timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+        max_retries=DEFAULT_MAX_RETRIES,
+    )
+    _emit({
+        "ok": True,
+        "kind": "figma",
+        "baselines": {
+            node_id: asset.local_path
+            for node_id, asset in sorted(results.items())
+        },
+        "assets_dir": str(assets_dir),
+    })
+    return 0
+
+
+def _cmd_render(
+    args: argparse.Namespace,
+    harness_cls=RenderHarness,
+    client_cls=FigmaClient,
+    transport=None,
+) -> int:
+    """Render generated HTML (shot), the IR reference (baseline), or the
+    live Figma baselines.
+
+    Three mutually exclusive modes:
 
     - ``--html <file>`` — render a generated standalone HTML file (the
       code-under-test screenshot).
@@ -249,25 +316,31 @@ def _cmd_render(args: argparse.Namespace, harness_cls=RenderHarness) -> int:
       layout plan via the shared web lowering (``reference_styles_from_plan``),
       build the reference document with ``generate_render_html``, and render
       it (the baseline ``figmaforge run`` diffs against).
+    - ``--baselines`` — download live Figma renders via ``download_baselines``.
 
-    Prints exactly one JSON line: ``{ok, kind, screenshot, html, meta,
-    viewport}``.  Failures raise ``_CliError`` (exit 2 usage / 4 input / 1
-    render) — never a traceback.
+    ``--html``/``--ir`` modes print exactly one JSON line: ``{ok, kind,
+    screenshot, html, meta, viewport}``.  Failures raise ``_CliError``
+    (exit 2 usage / 4 input / 1 render) — never a traceback.
     """
     html_mode = args.html is not None
     ref_mode = args.ir is not None or args.layout is not None
-    if html_mode and ref_mode:
-        raise _CliError(2, "render: use either --html or --ir/--layout, not both")
+    baselines_mode = bool(args.baselines)
+    if int(html_mode) + int(ref_mode) + int(baselines_mode) != 1:
+        raise _CliError(
+            2,
+            "render: exactly one of --html, --ir/--layout, or --baselines",
+        )
     if ref_mode and (args.ir is None or args.layout is None):
         raise _CliError(2, "render: --ir and --layout must be provided together")
-    if not html_mode and not ref_mode:
-        raise _CliError(2, "render: requires --html, or --ir and --layout together")
-
-    width, height = _parse_viewport(args.viewport)
-    viewport = {"width": width, "height": height}
 
     out_dir = Path(args.out) if args.out else Path(tempfile.mkdtemp(prefix="ff-render-"))
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    if baselines_mode:
+        return _cmd_render_baselines(args, client_cls, transport, out_dir)
+
+    width, height = _parse_viewport(args.viewport)
+    viewport = {"width": width, "height": height}
 
     if html_mode:
         content = _read_text(args.html)
@@ -314,12 +387,15 @@ def _cmd_render(args: argparse.Namespace, harness_cls=RenderHarness) -> int:
 def render_main(
     argv: Optional[List[str]] = None,
     harness_cls=RenderHarness,
+    client_cls=FigmaClient,
+    transport=None,
 ) -> int:
     """Entry point for the ``render`` subcommand alone (testable seam).
 
     Accepts the same arguments as ``pipeline.py render`` and lets tests
-    inject a fake harness.  The harness is constructed as ``harness_cls(
-    out_dir)`` — a class (real usage) or a callable instance (tests).
+    inject a fake harness / client / transport.  The harness is constructed
+    as ``harness_cls(out_dir)`` — a class (real usage) or a callable
+    instance (tests); the client as ``client_cls()``.
     """
     parser = build_parser()
     try:
@@ -327,7 +403,10 @@ def render_main(
     except SystemExit as exc:
         return int(exc.code or 2)
     try:
-        return _cmd_render(args, harness_cls=harness_cls)
+        return _cmd_render(
+            args, harness_cls=harness_cls,
+            client_cls=client_cls, transport=transport,
+        )
     except Exception as exc:  # noqa: BLE001 — CLI boundary: never traceback
         return _report_error(exc)
 
@@ -623,6 +702,20 @@ def build_parser() -> argparse.ArgumentParser:
     render.add_argument(
         "--viewport", default=DEFAULT_RENDER_VIEWPORT,
         help="viewport as WxH (default %s)" % DEFAULT_RENDER_VIEWPORT,
+    )
+    render.add_argument(
+        "--baselines",
+        action="store_true",
+        help="download live Figma baseline renders for the given nodes "
+             "(requires --file-key + the %s env var)" % _TOKEN_ENV,
+    )
+    render.add_argument(
+        "--file-key",
+        help="Figma file key for --baselines mode",
+    )
+    render.add_argument(
+        "--nodes",
+        help="comma-separated Figma node ids to download as baselines",
     )
     render.add_argument(
         "--out",

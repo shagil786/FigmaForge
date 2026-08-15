@@ -32,6 +32,8 @@ plugin_root = Path(__file__).resolve().parent.parent
 if str(plugin_root) not in sys.path:
     sys.path.insert(0, str(plugin_root))
 
+from core.figma_client import FigmaClient  # noqa: E402
+from core.figma_errors import FigmaAuthError  # noqa: E402
 from core.figma_types import FigmaFile  # noqa: E402
 from core.ir_builder import IRBuilder  # noqa: E402
 from core.layout_analyzer import LayoutAnalyzer  # noqa: E402
@@ -73,6 +75,49 @@ class FakeHarness:
         )
 
 
+class _ImageSetShim:
+    """Minimal stand-in for ``ImageSet``: ``.images`` maps node_id -> url."""
+
+    def __init__(self, images):
+        self.images = images
+
+
+class FakeClient:
+    """FigmaClient-like stub: token optional, get_images returns canned URLs."""
+
+    def __init__(self):
+        self.urls = {
+            "1:2": "https://assets.example.invalid/one.png",
+            "3:4": "https://assets.example.invalid/two.png",
+        }
+
+    def require_token(self):
+        pass
+
+    def get_images(self, file_key, node_ids, fmt="png", scale=1.0):
+        return _ImageSetShim(
+            {n: self.urls[n] for n in node_ids if n in self.urls}
+        )
+
+
+class NoTokenClient:
+    """FigmaClient-like stub whose token check fails (mirrors FigmaClient)."""
+
+    def require_token(self):
+        raise FigmaAuthError(
+            "Figma API token is not configured. Set the FIGMA_TOKEN "
+            "environment variable before running ingestion against the live API."
+        )
+
+    def get_images(self, *a, **k):
+        raise AssertionError("get_images must not run without a token")
+
+
+def _stub_transport(url, timeout):
+    """Transport stub: every baseline URL returns the same deterministic PNG."""
+    return b"\x89PNG-stub-baseline-" + url.encode("utf-8")[-16:]
+
+
 class FailingHarness:
     """Callable harness whose render raises the Playwright-missing error."""
 
@@ -86,11 +131,16 @@ class FailingHarness:
         )
 
 
-def _run(argv, harness):
+def _run(argv, harness, client_cls=FigmaClient, transport=None):
     """Run render_main, returning (exit_code, stdout_text, stderr_text)."""
     stdout, stderr = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-        code = render_main(argv, harness_cls=harness)
+        code = render_main(
+            argv,
+            harness_cls=harness,
+            client_cls=client_cls,
+            transport=transport,
+        )
     return code, stdout.getvalue(), stderr.getvalue()
 
 
@@ -230,6 +280,98 @@ class TestRenderMain(unittest.TestCase):
         )
         self.assertEqual(code, 4)
         self.assertIn("design IR", err)
+
+    # ------------------------------------------------------ --baselines mode
+
+    def test_baselines_mode_downloads(self):
+        code, out, err = _run(
+            ["--baselines", "--file-key", "fk123", "--nodes", "1:2,3:4",
+             "--out", str(self.tmp)],
+            FakeHarness(),
+            client_cls=FakeClient,
+            transport=_stub_transport,
+        )
+        self.assertEqual(code, 0, err)
+        payload = _parse_stdout(out)
+        self.assertTrue(payload.pop("ok"))
+        self.assertEqual(payload["kind"], "figma")
+        self.assertEqual(
+            set(payload.keys()), {"kind", "baselines", "assets_dir"},
+        )
+        self.assertEqual(
+            sorted(payload["baselines"].keys()), ["1:2", "3:4"],
+        )
+        assets_dir = Path(payload["assets_dir"])
+        for node_id, local_path in payload["baselines"].items():
+            p = Path(local_path)
+            self.assertTrue(p.exists(), f"baseline for {node_id} missing")
+            self.assertTrue(
+                str(p).startswith(str(assets_dir)),
+                "baseline must live under the assets dir",
+            )
+            # Content-addressed: the bytes are the stub transport's output.
+            self.assertTrue(p.read_bytes().startswith(b"\x89PNG-stub-baseline-"))
+
+    def test_baselines_dedup_same_url(self):
+        # Two nodes pointing at the same URL → one stored hash, both recorded.
+        class SameUrlClient(FakeClient):
+            def __init__(self):
+                self.urls = {
+                    "1:2": "https://assets.example.invalid/same.png",
+                    "3:4": "https://assets.example.invalid/same.png",
+                }
+
+        code, out, err = _run(
+            ["--baselines", "--file-key", "fk", "--nodes", "1:2,3:4",
+             "--out", str(self.tmp)],
+            FakeHarness(),
+            client_cls=SameUrlClient,
+            transport=_stub_transport,
+        )
+        self.assertEqual(code, 0, err)
+        payload = _parse_stdout(out)
+        # Deterministic per-node keys; identical bytes → identical local paths
+        # (content-addressing dedup).
+        paths = set(payload["baselines"].values())
+        self.assertEqual(len(paths), 1, "identical bytes must dedup to one path")
+
+    def test_baselines_missing_token_exits_3(self):
+        code, out, err = _run(
+            ["--baselines", "--file-key", "fk", "--nodes", "1:2"],
+            FakeHarness(),
+            client_cls=NoTokenClient,
+            transport=_stub_transport,
+        )
+        self.assertEqual(code, 3)
+        self.assertEqual(out, "")
+        self.assertIn("FIGMA_TOKEN", err)
+
+    def test_baselines_missing_nodes_exits_2(self):
+        code, out, err = _run(
+            ["--baselines", "--file-key", "fk"], FakeHarness(),
+            client_cls=FakeClient, transport=_stub_transport,
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("--nodes", err)
+
+    def test_baselines_missing_file_key_exits_2(self):
+        code, out, err = _run(
+            ["--baselines", "--nodes", "1:2"], FakeHarness(),
+            client_cls=FakeClient, transport=_stub_transport,
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("--file-key", err)
+
+    def test_baselines_exclusive_with_html_exits_2(self):
+        html = self.tmp / "screen.html"
+        html.write_text("<p>x</p>", encoding="utf-8")
+        code, out, err = _run(
+            ["--baselines", "--file-key", "fk", "--nodes", "1:2",
+             "--html", str(html)],
+            FakeHarness(),
+            client_cls=FakeClient, transport=_stub_transport,
+        )
+        self.assertEqual(code, 2)
 
     # ---------------------------------------------------------- failure modes
 
