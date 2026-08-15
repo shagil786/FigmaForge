@@ -26,6 +26,7 @@ import {
   invokeLayout,
   invokeAssets,
   invokeRender,
+  invokeBundleRender,
   invokeRepair,
   createIngestStageHandler,
   createGenerateStageHandler,
@@ -744,6 +745,167 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
         assertEqual(stored.screenshotPath, null,
           "non-browser targets must report no screenshot, never a fabricated one");
         assert(stored.note.length > 0, "degrade must carry an explanatory note");
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("render stage bundles a bundler-backed target through invokeBundleRender", async () => {
+      const dir = tmpDir();
+      try {
+        const calls: Array<{
+          backend: string;
+          generatedDir: string;
+          assetManifest: unknown;
+          viewport: { width: number; height: number };
+          outDir: string;
+        }> = [];
+        const fakeBundle = async (
+          _cfg: { pythonBin: string; pluginDir: string },
+          backend: string,
+          generatedDir: string,
+          assetManifest: unknown,
+          viewport: { width: number; height: number },
+          outDir: string,
+        ) => {
+          calls.push({ backend, generatedDir, assetManifest, viewport, outDir });
+          const png = path.join(outDir, "screens", "Root.png");
+          fs.mkdirSync(path.dirname(png), { recursive: true });
+          fs.writeFileSync(png, Buffer.from("fake-png"));
+          return {
+            ok: true as const,
+            kind: "bundle" as const,
+            backend,
+            screens: [{
+              component: "Root", png: "screens/Root.png", html: "Root.html",
+            }],
+            build_ok: true as const,
+            viewport,
+          };
+        };
+
+        const config = makeConfig(dir, {
+          target: { framework: "react", styling: "tailwind" },
+        });
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.setShared("filePath", FIXTURE);
+        pipeline.onStage("ingest", createIngestStageHandler());
+        pipeline.onStage("normalize", createNormalizeStageHandler());
+        pipeline.onStage("resolve", createResolveStageHandler());
+        pipeline.onStage("layout", createLayoutStageHandler());
+        pipeline.onStage("assets", createAssetsStageHandler());
+        pipeline.onStage("generate", createGenerateStageHandler());
+        pipeline.onStage("render", createRenderStageHandler({ bundleInvoker: fakeBundle }));
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "completed");
+        assertEqual(result.errors.length, 0);
+
+        // The bundle path was taken, with the generated dir + viewport.
+        assertEqual(calls.length, 1, "expected exactly one bundle invocation");
+        assertEqual(calls[0].backend, "react_tailwind");
+        assert(
+          calls[0].generatedDir.endsWith(path.join("generated", "react_tailwind")),
+          `unexpected generated dir: ${calls[0].generatedDir}`,
+        );
+        assertEqual(calls[0].viewport.width, 1440);
+        assertEqual(calls[0].viewport.height, 900);
+        assert(
+          typeof calls[0].assetManifest === "object"
+            && calls[0].assetManifest !== null,
+          "asset manifest should be shared into the bundle invocation",
+        );
+
+        // renderOutputs shared with real rows pointing at the screenshots.
+        const shared = pipeline.getShared("renderOutputs") as
+          Array<{ file: string; html: string; screenshot: string; meta: unknown }>;
+        assertEqual(shared.length, 1);
+        assertEqual(shared[0].file, "Root.html");
+        assert(fs.existsSync(shared[0].screenshot),
+          `bundle screenshot missing: ${shared[0].screenshot}`);
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("render stage --no-bundle degrades honestly without spawning the bundler", async () => {
+      const dir = tmpDir();
+      try {
+        let spawns = 0;
+        const fakeBundle = async () => {
+          spawns++;
+          return {
+            backend: "react_tailwind",
+            screens: [],
+            viewport: { width: 1440, height: 900 },
+          };
+        };
+
+        const config = makeConfig(dir, {
+          target: { framework: "react", styling: "tailwind" },
+        });
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.setShared("filePath", FIXTURE);
+        pipeline.onStage("ingest", createIngestStageHandler());
+        pipeline.onStage("normalize", createNormalizeStageHandler());
+        pipeline.onStage("resolve", createResolveStageHandler());
+        pipeline.onStage("layout", createLayoutStageHandler());
+        pipeline.onStage("assets", createAssetsStageHandler());
+        pipeline.onStage("generate", createGenerateStageHandler());
+        pipeline.onStage("render",
+          createRenderStageHandler({ noBundle: true, bundleInvoker: fakeBundle }));
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "completed");
+        assertEqual(spawns, 0, "--no-bundle must never spawn the bundler");
+        assertEqual(pipeline.getShared("renderOutputs"), undefined,
+          "no render rows without a real render");
+
+        const renderArtifacts = artifacts.byStage("render");
+        assertGreaterThan(renderArtifacts.length, 0, "expected a render artifact");
+        const stored = artifacts.loadJSON(renderArtifacts[0]) as {
+          note: string;
+          screenshotPath: string | null;
+        };
+        assertEqual(stored.screenshotPath, null,
+          "--no-bundle must report no screenshot, never a fabricated one");
+        assert(stored.note.includes("no measured score"),
+          `expected the honest degrade note, got: ${stored.note}`);
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("invokeBundleRender surfaces a clean typed failure", async () => {
+      const dir = tmpDir();
+      try {
+        await assertRejects(
+          () => invokeBundleRender(
+            { pythonBin: PYTHON_BIN, pluginDir: PLUGIN_DIR },
+            "react_tailwind",
+            path.join(dir, "no-such-generated"),
+            undefined,
+            { width: 1440, height: 900 },
+            path.join(dir, "renders"),
+          ),
+          "exited 4",
+        );
       } finally {
         cleanDir(dir);
       }

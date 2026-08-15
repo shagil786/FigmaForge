@@ -552,16 +552,101 @@ export async function invokeRender(
 }
 
 /**
+ * Render a bundler-backed backend's generated output (react/vue/svelte)
+ * through the real Vite harness via ``scripts/pipeline.py render --bundle``
+ * (Part 21).  ``outDir`` (``<run>/renders/``) receives the built project
+ * (``bundle/``) and the per-component screenshots (``screens/*.png``).
+ * The shared asset manifest is converted from its list shape to the
+ * harness's ``{node_id: {path}}`` contract and staged to a temp file.
+ */
+export async function invokeBundleRender(
+  cfg: { pythonBin: string; pluginDir: string },
+  backend: string,
+  generatedDir: string,
+  assetManifest: AssetManifest | undefined,
+  viewport: { width: number; height: number },
+  outDir: string,
+): Promise<{
+  backend: string;
+  screens: Array<{ component: string; png: string; html: string }>;
+  viewport: { width: number; height: number };
+}> {
+  fs.mkdirSync(outDir, { recursive: true });
+  const args = [
+    "render", "--bundle", "--backend", backend,
+    "--dir", generatedDir,
+    "--out", outDir,
+    "--viewport", `${viewport.width}x${viewport.height}`,
+  ];
+  let manifestDir: string | null = null;
+  if (assetManifest && assetManifest.assets.length > 0) {
+    manifestDir = fs.mkdtempSync(path.join(os.tmpdir(), "ff-bundle-manifest-"));
+    const byNode: Record<string, { path: string }> = {};
+    for (const entry of assetManifest.assets) {
+      if (entry.status === "downloaded" && entry.local_path) {
+        byNode[entry.node_id] = { path: entry.local_path };
+      }
+    }
+    fs.writeFileSync(
+      path.join(manifestDir, "asset_manifest.json"),
+      JSON.stringify(byNode),
+      "utf-8",
+    );
+    args.push("--assets", path.join(manifestDir, "asset_manifest.json"));
+  }
+  try {
+    const result = await spawnPython(
+      cfg.pythonBin,
+      path.join(cfg.pluginDir, "scripts", "pipeline.py"),
+      args,
+      cfg.pluginDir,
+    );
+    if (result.exitCode !== 0) {
+      const detail = result.stderr.trim() || result.stdout.trim();
+      throw new Error(
+        `pipeline.py render (bundle) exited ${result.exitCode}: ${detail}`,
+      );
+    }
+    const parsed = parseJsonLine(result.stdout);
+    return {
+      backend: String(parsed.backend ?? backend),
+      screens: (parsed.screens ?? []) as Array<{
+        component: string;
+        png: string;
+        html: string;
+      }>,
+      viewport: (parsed.viewport ?? viewport) as {
+        width: number;
+        height: number;
+      },
+    };
+  } finally {
+    if (manifestDir) {
+      fs.rmSync(manifestDir, { recursive: true, force: true });
+    }
+  }
+}
+
+/** Bundler-backed backends the render stage can measure via ``render --bundle``. */
+const BUNDLE_BACKENDS = new Set(["react_tailwind", "vue", "svelte"]);
+
+/**
  * Render stage handler — generated code → browser screenshot + metadata.
  *
  * Browser-renderable targets with directly-renderable HTML (html_css
  * standalone files today) are rendered through the real harness; each file
  * becomes a ``RenderOutputRow`` stored in shared ``renderOutputs``.
- * Honest degradation (never a fabricated score): native renderers and
- * bundler-required outputs (react/vue/svelte) return a ``{note,
- * screenshotPath: null}`` payload instead of invoking Python.
+ * Bundler-backed targets (react/vue/svelte) are measured through the real
+ * Vite harness (``render --bundle``) — their screenshots feed the same
+ * compare/verify machinery.  Honest degradation (never a fabricated
+ * score): native renderers, ``--no-bundle``, and un-harnessed outputs
+ * return a ``{note, screenshotPath: null}`` payload instead of invoking
+ * Python.
  */
-export function createRenderStageHandler(): StageHandler {
+export function createRenderStageHandler(opts?: {
+  noBundle?: boolean;
+  bundleInvoker?: typeof invokeBundleRender;
+}): StageHandler {
   return async (ctx: PipelineContext) => {
     const rendersDir = path.join(ctx.config.outputDir, ctx.config.runId, "renders");
 
@@ -593,11 +678,42 @@ export function createRenderStageHandler(): StageHandler {
       .filter((f) => f.endsWith(".html"))
       .sort();
     if (htmlFiles.length === 0) {
-      // Browser renderer but no directly-renderable HTML (react/vue/svelte
-      // outputs need a bundler) — honest degrade, no fabricated score.
+      // No directly-renderable HTML: bundler-backed backends are measured
+      // through the real Vite harness; everything else degrades honestly
+      // (never a fabricated score).
+      const backend = generatedManifest.backend;
+      if (opts?.noBundle) {
+        return {
+          note: `--no-bundle: generated output for ${backend} has no ` +
+            "directly-renderable HTML; no measured score.",
+          screenshotPath: null,
+          rendersDir,
+        };
+      }
+      if (BUNDLE_BACKENDS.has(backend)) {
+        const bundle = opts?.bundleInvoker ?? invokeBundleRender;
+        const assetManifest = ctx.shared.get("assetManifest") as
+          AssetManifest | undefined;
+        const result = await bundle(
+          { pythonBin: ctx.toolCtx.pythonBin, pluginDir: ctx.config.pluginDir },
+          backend,
+          filesDir,
+          assetManifest,
+          ctx.config.viewport,
+          rendersDir,
+        );
+        const screenshots: RenderOutputRow[] = result.screens.map((s) => ({
+          file: s.html,
+          html: path.join(rendersDir, "bundle", "dist", s.html),
+          screenshot: path.join(rendersDir, s.png),
+          meta: {},
+        }));
+        ctx.shared.set("renderOutputs", screenshots);
+        return { screenshots, rendersDir, bundle: result.backend };
+      }
       return {
-        note: `generated output for ${generatedManifest.backend} has no directly-renderable ` +
-          "HTML (react/vue/svelte require a bundler); no measured score.",
+        note: `generated output for ${backend} has no directly-renderable HTML ` +
+          "and no bundler harness; no measured score.",
         screenshotPath: null,
         rendersDir,
       };
