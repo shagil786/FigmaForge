@@ -50,6 +50,7 @@ _SWIFTUI_SUPPORTED = frozenset({
     Feature.HUG_SIZE,
     Feature.PADDING,
     Feature.GAP,  # spacing parameter
+    Feature.JUSTIFY,  # Spacer() in stacks
     Feature.ALIGN_ITEMS,
     Feature.FILLS_SOLID,  # .background(Color)
     Feature.BORDERS,  # .border() / .overlay
@@ -68,7 +69,6 @@ _SWIFTUI_SUPPORTED = frozenset({
 })
 
 _SWIFTUI_PARTIAL = frozenset({
-    Feature.JUSTIFY,  # no main-axis justification in SwiftUI stacks (Spacer idiom)
     Feature.GRID,  # LazyVGrid exists but different semantics
     Feature.FILLS_GRADIENT,  # LinearGradient exists but limited
     Feature.PER_CORNER_RADIUS,  # UnevenRoundedCornerShape (iOS 16+)
@@ -247,10 +247,19 @@ struct {name}View: View {{
 
         if children:
             lines.append(f"{pad}{head} {{")
-            for child in plan_node.children:
-                lines.append(self._render(
+            justify = (
+                plan_node.alignment.justify
+                if plan_node.alignment is not None
+                else None
+            )
+            rendered_children = [
+                self._render(
                     child, ir_by_id.get(child.node_id), ir_by_id, indent + 1,
-                ))
+                )
+                for child in plan_node.children
+            ]
+            spacer = f"{pad}  Spacer()"
+            lines.extend(_justify_items(justify, rendered_children, spacer))
             lines.append(f"{pad}}}")
         else:
             lines.append(f"{pad}{head}")
@@ -425,6 +434,29 @@ def _primary_fill(ir: Optional[IRNode]) -> Optional[Tuple[str, Any, List]]:
             return ("gradient", None, fill.gradient_stops)
         return (fill.kind, None, [])
     return None
+
+
+def _justify_items(
+    justify: Optional[str],
+    children: List[str],
+    spacer_line: str,
+) -> List[str]:
+    """Insert ``Spacer()`` lines to express main-axis justification in a
+    VStack/HStack: MIN/None -> default packing, CENTER -> leading + trailing
+    spacers, MAX -> leading spacer, SPACE_BETWEEN -> a spacer between every
+    pair of children."""
+    if justify == "CENTER":
+        return [spacer_line] + children + [spacer_line]
+    if justify == "MAX":
+        return [spacer_line] + children
+    if justify == "SPACE_BETWEEN":
+        items: List[str] = []
+        for i, child in enumerate(children):
+            if i:
+                items.append(spacer_line)
+            items.append(child)
+        return items
+    return children
 
 
 def _stack_params(plan_node: LayoutNodePlan, vertical: bool) -> str:

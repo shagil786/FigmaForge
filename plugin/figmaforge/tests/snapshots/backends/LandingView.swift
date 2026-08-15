@@ -6,6 +6,7 @@ import SwiftUI
 struct LandingView: View {
     var body: some View {
     VStack(alignment: .trailing, spacing: 24) {
+      Spacer()
       Text("Welcome")
         .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.24))
         .font(.custom("Inter", size: 32, weight: .bold))
@@ -20,6 +21,7 @@ struct LandingView: View {
         .frame(width: 120, height: 48)
         .cornerRadius(8)
         .opacity(0.9)
+      Spacer()
     }
       .frame(width: 400, height: 600)
       .padding(24)
