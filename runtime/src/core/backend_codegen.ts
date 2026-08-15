@@ -17,7 +17,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { spawn } from "node:child_process";
 import type { CodegenTarget } from "./types.js";
-import { targetKey } from "./types.js";
+import { defaultRenderer, targetKey } from "./types.js";
 import type { PipelineContext, StageHandler } from "./pipeline.js";
 
 // ---------------------------------------------------------------------------
@@ -483,6 +483,127 @@ export function createLayoutStageHandler(): StageHandler {
     );
     ctx.shared.set("layoutJson", layoutJson);
     return { layoutJson };
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Render stage (Part 19) — browser screenshot of the generated output
+// ---------------------------------------------------------------------------
+
+/** One rendered generated file: path, screenshot, and measured meta. */
+export interface RenderOutputRow {
+  file: string;
+  html: string;
+  screenshot: string;
+  meta: Record<string, unknown>;
+}
+
+/**
+ * Render a generated standalone HTML file through the real Playwright
+ * harness via ``scripts/pipeline.py render --html``.  ``outDir`` is the
+ * persistent directory (``<run>/renders/``) where the PNG + written HTML
+ * land — unlike the temp-staged invoke helpers, the output must survive.
+ */
+export async function invokeRender(
+  cfg: { pythonBin: string; pluginDir: string },
+  htmlPath: string,
+  viewport: { width: number; height: number },
+  outDir: string,
+): Promise<{ screenshot: string; html: string; meta: Record<string, unknown> }> {
+  fs.mkdirSync(outDir, { recursive: true });
+  const result = await spawnPython(
+    cfg.pythonBin,
+    path.join(cfg.pluginDir, "scripts", "pipeline.py"),
+    [
+      "render", "--html", htmlPath,
+      "--viewport", `${viewport.width}x${viewport.height}`,
+      "--out", outDir,
+    ],
+    cfg.pluginDir,
+  );
+  if (result.exitCode !== 0) {
+    const detail = result.stderr.trim() || result.stdout.trim();
+    throw new Error(`pipeline.py render exited ${result.exitCode}: ${detail}`);
+  }
+  const parsed = parseJsonLine(result.stdout);
+  return {
+    screenshot: String(parsed.screenshot ?? ""),
+    html: String(parsed.html ?? ""),
+    meta: (parsed.meta ?? {}) as Record<string, unknown>,
+  };
+}
+
+/**
+ * Render stage handler — generated code → browser screenshot + metadata.
+ *
+ * Browser-renderable targets with directly-renderable HTML (html_css
+ * standalone files today) are rendered through the real harness; each file
+ * becomes a ``RenderOutputRow`` stored in shared ``renderOutputs``.
+ * Honest degradation (never a fabricated score): native renderers and
+ * bundler-required outputs (react/vue/svelte) return a ``{note,
+ * screenshotPath: null}`` payload instead of invoking Python.
+ */
+export function createRenderStageHandler(): StageHandler {
+  return async (ctx: PipelineContext) => {
+    const rendersDir = path.join(ctx.config.outputDir, ctx.config.runId, "renders");
+
+    // Native targets (xcode_preview, flutter_simulator, …) cannot render in
+    // a browser — degrade before touching the generated files.
+    if (defaultRenderer(ctx.config.target.framework) !== "browser") {
+      return {
+        note: `Visual comparison for ${targetKey(ctx.config.target)} requires ` +
+          `${defaultRenderer(ctx.config.target.framework)}; no browser screenshot available.`,
+        screenshotPath: null,
+        rendersDir,
+      };
+    }
+
+    const generatedManifest = ctx.shared.get("generatedManifest") as
+      BackendManifest | undefined;
+    if (!generatedManifest) {
+      throw new Error(
+        "render stage requires generate output (no generatedManifest available)",
+      );
+    }
+    const filesDir = path.join(
+      ctx.config.outputDir, ctx.config.runId, "generated", generatedManifest.backend,
+    );
+    if (!fs.existsSync(filesDir)) {
+      throw new Error(`render stage: generated files dir missing: ${filesDir}`);
+    }
+    const htmlFiles = fs.readdirSync(filesDir)
+      .filter((f) => f.endsWith(".html"))
+      .sort();
+    if (htmlFiles.length === 0) {
+      // Browser renderer but no directly-renderable HTML (react/vue/svelte
+      // outputs need a bundler) — honest degrade, no fabricated score.
+      return {
+        note: `generated output for ${generatedManifest.backend} has no directly-renderable ` +
+          "HTML (react/vue/svelte require a bundler); no measured score.",
+        screenshotPath: null,
+        rendersDir,
+      };
+    }
+
+    fs.mkdirSync(rendersDir, { recursive: true });
+    const cfg = { pythonBin: ctx.toolCtx.pythonBin, pluginDir: ctx.config.pluginDir };
+    const screenshots: RenderOutputRow[] = [];
+    for (const file of htmlFiles) {
+      const result = await invokeRender(
+        cfg,
+        path.join(filesDir, file),
+        ctx.config.viewport,
+        rendersDir,
+      );
+      screenshots.push({
+        file,
+        html: result.html,
+        screenshot: result.screenshot,
+        meta: result.meta,
+      });
+    }
+    ctx.shared.set("renderOutputs", screenshots);
+    return { screenshots, rendersDir };
   };
 }
 

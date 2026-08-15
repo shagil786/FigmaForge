@@ -23,12 +23,14 @@ import {
   invokeBackendGenerator,
   invokeNormalize,
   invokeAssets,
+  invokeRender,
   createIngestStageHandler,
   createGenerateStageHandler,
   createNormalizeStageHandler,
   createResolveStageHandler,
   createLayoutStageHandler,
   createAssetsStageHandler,
+  createRenderStageHandler,
 } from "../src/core/backend_codegen.js";
 import { EventLog } from "../src/core/events.js";
 import { CheckpointManager } from "../src/core/checkpoint.js";
@@ -502,6 +504,122 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
         assertEqual(result.status, "completed");
         assertEqual(result.errors.length, 0);
         assertGreaterThan(artifacts.byKind("generated_code").length, 0);
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("invokeRender renders a generated HTML file to a real screenshot", async () => {
+      const dir = tmpDir();
+      try {
+        const html = path.join(dir, "screen.html");
+        fs.writeFileSync(
+          html,
+          '<div style="width:200px;height:100px;background:#4a90d9"><p>hi</p></div>',
+          "utf-8",
+        );
+        const result = await invokeRender(
+          { pythonBin: PYTHON_BIN, pluginDir: PLUGIN_DIR },
+          html,
+          { width: 1440, height: 900 },
+          dir,
+        );
+        assert(result.screenshot !== "", "expected a screenshot path");
+        assert(fs.existsSync(result.screenshot),
+          `screenshot file missing: ${result.screenshot}`);
+        assert(fs.existsSync(result.html),
+          `written html file missing: ${result.html}`);
+        assert(typeof result.meta === "object", "meta should be an object");
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("render stage captures a real screenshot of generated html_css output", async () => {
+      const dir = tmpDir();
+      try {
+        const config = makeConfig(dir, {
+          target: { framework: "html", styling: "css" },
+        });
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.setShared("filePath", FIXTURE);
+        pipeline.onStage("ingest", createIngestStageHandler());
+        pipeline.onStage("normalize", createNormalizeStageHandler());
+        pipeline.onStage("resolve", createResolveStageHandler());
+        pipeline.onStage("layout", createLayoutStageHandler());
+        pipeline.onStage("assets", createAssetsStageHandler());
+        pipeline.onStage("generate", createGenerateStageHandler());
+        pipeline.onStage("render", createRenderStageHandler());
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "completed");
+        assertEqual(result.errors.length, 0);
+
+        const renderArtifacts = artifacts.byStage("render");
+        assertGreaterThan(renderArtifacts.length, 0, "expected render artifacts");
+        const stored = artifacts.loadJSON(renderArtifacts[0]) as {
+          screenshots: Array<{
+            file: string;
+            html: string;
+            screenshot: string;
+            meta: Record<string, unknown>;
+          }>;
+          rendersDir: string;
+        };
+        assertGreaterThan(stored.screenshots.length, 0, "expected at least one screenshot row");
+        assertEqual(stored.screenshots[0].file, "screen_0.html");
+        assert(fs.existsSync(stored.screenshots[0].screenshot),
+          `rendered screenshot missing: ${stored.screenshots[0].screenshot}`);
+        assert(fs.existsSync(stored.rendersDir), "renders dir should exist");
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("render stage degrades honestly for a non-browser target (flutter)", async () => {
+      const dir = tmpDir();
+      try {
+        const config = makeConfig(dir); // default target: flutter
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.setShared("filePath", FIXTURE);
+        pipeline.onStage("ingest", createIngestStageHandler());
+        pipeline.onStage("normalize", createNormalizeStageHandler());
+        pipeline.onStage("resolve", createResolveStageHandler());
+        pipeline.onStage("layout", createLayoutStageHandler());
+        pipeline.onStage("assets", createAssetsStageHandler());
+        pipeline.onStage("generate", createGenerateStageHandler());
+        pipeline.onStage("render", createRenderStageHandler());
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "completed");
+        assertEqual(result.errors.length, 0);
+
+        const renderArtifacts = artifacts.byStage("render");
+        assertGreaterThan(renderArtifacts.length, 0, "expected a render artifact");
+        const stored = artifacts.loadJSON(renderArtifacts[0]) as {
+          note: string;
+          screenshotPath: string | null;
+          rendersDir: string;
+        };
+        assertEqual(stored.screenshotPath, null,
+          "non-browser targets must report no screenshot, never a fabricated one");
+        assert(stored.note.length > 0, "degrade must carry an explanatory note");
       } finally {
         cleanDir(dir);
       }
