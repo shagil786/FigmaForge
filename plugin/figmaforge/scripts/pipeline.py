@@ -4,6 +4,7 @@ FigmaForge pipeline CLI (Part 15) — the bridge between the TypeScript
 runtime and the Python backend pipeline.
 
     pipeline.py ingest --file-key=<key> | --file <figmafile.json> [--out <path>]
+    pipeline.py assets --ir <ir.json> [--file-key <key>] [--assets-dir <dir>] [--out]
     pipeline.py generate --file <figmafile.json> --backend <name>
                          [--resolution <report.json>] [--viewport <w>]
                          [--out-dir <dir>]
@@ -35,6 +36,14 @@ from typing import Any, Dict, List, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from backends.registry import get_registry  # noqa: E402
+from core.asset_collector import AssetRef, collect_asset_refs  # noqa: E402
+from core.asset_manager import AssetManager  # noqa: E402
+from core.figma_assets import (  # noqa: E402
+    DEFAULT_MAX_RETRIES,
+    DEFAULT_TIMEOUT_SECONDS,
+    default_transport,
+    fetch_with_retry,
+)
 from core.figma_client import FigmaClient  # noqa: E402
 from core.figma_errors import FigmaAuthError, FigmaError  # noqa: E402
 from core.figma_types import FigmaFile  # noqa: E402
@@ -50,6 +59,7 @@ from core.token_resolver import SemanticToken, TokenResolution  # noqa: E402
 
 DEFAULT_VIEWPORT = 1440.0
 DEFAULT_OUT_DIR = "generated"
+DEFAULT_ASSETS_DIR = "assets"
 _TOKEN_ENV = "FIGMA_TOKEN"
 
 
@@ -191,6 +201,107 @@ def _cmd_layout(args: argparse.Namespace) -> int:
         doc, library=LibraryLoader().load(), viewport=args.viewport,
     )
     _emit_with_out(plan.to_dict(), args.out)
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# assets — the asset stage (Part 17)
+# ---------------------------------------------------------------------------
+
+
+def _group_by_format(refs: List[AssetRef]) -> Dict[str, List[AssetRef]]:
+    """Group refs by the Figma images-API format their kind needs."""
+    groups: Dict[str, List[AssetRef]] = {}
+    for ref in refs:
+        fmt = "svg" if ref.kind == "svg" else "png"
+        groups.setdefault(fmt, []).append(ref)
+    return groups
+
+
+def _cmd_assets(args: argparse.Namespace) -> int:
+    """Download + content-address the image/SVG assets an IR references.
+
+    Refs that already carry a URL (node ``asset`` refs, the document
+    ``assets`` map) are fetched through the ``figma_assets`` retry/cap
+    transport and stored via :class:`AssetManager` (content-addressed, SVG
+    validated).  Refs with only an ``image_ref`` / image fill need the live
+    images API to resolve — that requires ``FIGMA_TOKEN`` (exit 3) and a
+    file key (``--file-key`` or the IR's own).  The manifest is
+    deterministic: assets sorted by node_id, counts, and the resolved
+    assets dir.
+    """
+    doc = _load_ir(args.ir)
+    refs = collect_asset_refs(doc)
+
+    unresolved = [r for r in refs if not r.url]
+    if unresolved:
+        client = FigmaClient()
+        try:
+            client.require_token()
+        except FigmaAuthError as exc:
+            raise _CliError(3, str(exc))
+        file_key = args.file_key or doc.file_key
+        if not file_key:
+            raise _CliError(
+                2,
+                "assets: cannot resolve asset URLs without a file key; "
+                "pass --file-key or use an IR that carries one",
+            )
+        for fmt, group in _group_by_format(unresolved).items():
+            image_set = client.get_images(file_key, [r.node_id for r in group], fmt=fmt)
+            for ref in group:
+                ref.url = image_set.images.get(ref.node_id)
+
+    storage_dir = Path(args.assets_dir).resolve()
+    manager = AssetManager(storage_dir)
+    entries: List[Dict[str, Any]] = []
+    downloaded = 0
+    unresolved_count = 0
+    for ref in refs:
+        if not ref.url:
+            unresolved_count += 1
+            entries.append({
+                "node_id": ref.node_id,
+                "url": None,
+                "image_ref": ref.image_ref,
+                "kind": ref.kind,
+                "status": "unresolved",
+            })
+            continue
+        raw = fetch_with_retry(
+            default_transport, ref.url, DEFAULT_TIMEOUT_SECONDS, DEFAULT_MAX_RETRIES
+        )
+        extension = "svg" if ref.kind == "svg" else "png"
+        try:
+            content_hash = manager.ingest(
+                raw, ref.url, kind=ref.kind, extension=extension
+            )
+        except ValueError as exc:
+            raise _CliError(1, f"asset {ref.node_id}: {exc}")
+        local_path = str(manager.storage_dir / content_hash[:2] / content_hash)
+        downloaded += 1
+        entries.append({
+            "node_id": ref.node_id,
+            "url": ref.url,
+            "image_ref": ref.image_ref,
+            "kind": ref.kind,
+            "status": "downloaded",
+            "content_hash": content_hash,
+            "local_path": local_path,
+        })
+
+    manifest = {
+        "schema_version": 1,
+        "file_key": args.file_key or doc.file_key,
+        "assets": entries,
+        "counts": {
+            "total": len(entries),
+            "downloaded": downloaded,
+            "unresolved": unresolved_count,
+        },
+        "assets_dir": str(storage_dir),
+    }
+    _emit_with_out(manifest, args.out)
     return 0
 
 
@@ -357,6 +468,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     layout.add_argument("--out", help="optional path to also write the plan JSON")
 
+    assets = sub.add_parser(
+        "assets", help="download + content-address the image/SVG assets an IR references")
+    assets.add_argument("--ir", required=True, help="design IR JSON (normalize output)")
+    assets.add_argument(
+        "--file-key",
+        help="Figma file key for resolving asset URLs (default: from the IR)",
+    )
+    assets.add_argument(
+        "--assets-dir", default=DEFAULT_ASSETS_DIR,
+        help="content-addressed asset store directory (default %r)" % DEFAULT_ASSETS_DIR,
+    )
+    assets.add_argument("--out", help="optional path to also write the manifest JSON")
+
     gen = sub.add_parser("generate", help="generate backend code from a Figma file JSON")
     gen.add_argument("--file", help="Figma file JSON (recompute mode; ingest output or raw)")
     gen.add_argument("--ir", help="design IR JSON (staged mode; normalize output)")
@@ -395,6 +519,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             return _cmd_resolve(args)
         if args.command == "layout":
             return _cmd_layout(args)
+        if args.command == "assets":
+            return _cmd_assets(args)
         if args.command == "generate":
             return _cmd_generate(args)
         raise _CliError(2, f"unknown command {args.command!r}")
