@@ -135,6 +135,7 @@ class SvelteBackend(BackendAdapter):
             svelte_content = self._generate_component(
                 root_vnode, screen, component_name, style_gen, ir_by_id,
                 assets=assets, instance_names=instance_names,
+                overrides=opts.get("styles_override"),
             )
             node_ids = [n.node_id for n in screen.walk() if n.node_id]
 
@@ -164,6 +165,7 @@ class SvelteBackend(BackendAdapter):
         ir_by_id: Dict[str, IRNode],
         assets: Optional[Dict[str, Dict[str, Any]]] = None,
         instance_names: Optional[frozenset] = None,
+        overrides: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> str:
         lines = ['<script lang="ts">']
         lines.append("  // FigmaForge generated Svelte component")
@@ -191,9 +193,9 @@ class SvelteBackend(BackendAdapter):
             lines.append("{/snippet}")
         lines.append("")
         lines.append("<style>")
-        rules, media = ScopedCssGenerator(ir_by_id, assets=assets).collect(
-            root_vnode, screen,
-        )
+        rules, media = ScopedCssGenerator(
+            ir_by_id, assets=assets, overrides=overrides,
+        ).collect(root_vnode, screen)
         lines.extend(rules)
         for bp_width in sorted(media):
             lines.append(f"@media (max-width: {bp_width}) {{")

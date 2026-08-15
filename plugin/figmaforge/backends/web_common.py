@@ -608,9 +608,11 @@ class ScopedCssGenerator:
         self,
         ir_by_id: Dict[str, IRNode],
         assets: Optional[Dict[str, Dict[str, Any]]] = None,
+        overrides: Optional[Dict[str, Dict[str, Any]]] = None,
     ):
         self._ir_by_id = ir_by_id
         self._assets = assets
+        self._overrides = overrides or {}
         self._style_gen = CssStyleGenerator()
 
     def collect(
@@ -638,6 +640,19 @@ class ScopedCssGenerator:
     ) -> None:
         style = self._style_gen.generate_style(plan_node)
         self._extend(style, plan_node, self._ir_by_id.get(vnode.node_id))
+
+        # Repair override (Part 22): the html_css ``styles_override`` union —
+        # ``{node_id: {base, breakpoints}}`` applied ON TOP of the computed
+        # style.  Must run BEFORE the absolute-position pop below: the
+        # serialized layer carries ``position: absolute`` for absolute nodes
+        # (generate_style adds it), so applying the union after the pop would
+        # re-attach absolute positioning (design review F6).  Absent/empty
+        # override is a no-op (byte-identical output).
+        override = self._overrides.get(vnode.node_id) or {}
+        if override.get("base"):
+            style.base.update(override["base"])
+        if override.get("breakpoints"):
+            style.breakpoints.update(override["breakpoints"])
 
         # Absolute positioning is a preflight loss; degrade to in-flow by
         # dropping the positioning props (the backend's template carries the
