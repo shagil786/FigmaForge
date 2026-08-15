@@ -151,7 +151,7 @@ function buildConfig(args: CliArgs): RuntimeConfig {
     similarityThreshold: threshold,
     minProgress: DEFAULT_CONFIG.minProgress,
     viewport: { width: w || 1440, height: h || 900 },
-    pythonBin: DEFAULT_CONFIG.pythonBin,
+    pythonBin: process.env.PYTHON_BIN ?? DEFAULT_CONFIG.pythonBin,
     pluginDir: path.resolve(args.flags["plugin-dir"] ?? "./plugin/figmaforge"),
     target,
   };

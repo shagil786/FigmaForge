@@ -71,9 +71,10 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 > the default `python3` on PATH is 3.9.6 and fails with
 > `TypeError: unsupported operand type(s) for |` — use the Homebrew interpreter:
 > `export PYTHON_BIN=/opt/homebrew/bin/python3.14` (or call `python3.14` directly)
-> before running the suites below. The TypeScript runtime already honors
-> `PYTHON_BIN` for its Python shell-outs (`render_handler.ts` and
-> `screenshot_compare.ts`), e.g. `PYTHON_BIN=/opt/homebrew/bin/python3.14 node dist/runtime/tests/run_all.js`.
+> before running the suites below. The TypeScript runtime honors `PYTHON_BIN` for all its
+> Python shell-outs (`render_handler.ts`, `screenshot_compare.ts`, and the CLI via
+> `buildConfig`), e.g. `PYTHON_BIN=/opt/homebrew/bin/python3.14 node dist/runtime/tests/run_all.js`
+> or `PYTHON_BIN=/opt/homebrew/bin/python3.14 node dist/runtime/src/cli/main.js compare ...`.
 
 * **Run all tests (273 tests):**
   `cd plugin/figmaforge && python3 -m unittest discover -s tests -v`
