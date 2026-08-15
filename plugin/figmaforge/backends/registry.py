@@ -124,10 +124,19 @@ class BackendRegistry:
         ]
         for module_name, class_name in builtin_modules:
             try:
-                mod = __import__(
-                    f"figmaforge.backends.{module_name}",
-                    fromlist=[class_name],
-                )
+                # This repo runs with the plugin root on sys.path, so the
+                # backends package is top-level.  An installed-package layout
+                # imports the same modules as figmaforge.backends.<name>.
+                try:
+                    mod = __import__(
+                        f"backends.{module_name}",
+                        fromlist=[class_name],
+                    )
+                except ImportError:
+                    mod = __import__(
+                        f"figmaforge.backends.{module_name}",
+                        fromlist=[class_name],
+                    )
                 cls: Type[BackendAdapter] = getattr(mod, class_name)
                 instance = cls()
                 if instance.name not in self._backends:
