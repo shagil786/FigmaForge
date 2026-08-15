@@ -269,6 +269,70 @@ class TestHtmlCssBackend(unittest.TestCase):
         self.assertEqual(output.metadata["backend"], "html_css")
         self.assertEqual(output.metadata["screen_count"], 0)
 
+    def test_web_common_shared_machinery(self):
+        """The shared web machinery lives in web_common with public names."""
+        from backends import web_common
+        from core.layout_types import DISPLAY_FLEX, LayoutNodePlan
+
+        for name in (
+            "VNode",
+            "VStyle",
+            "CssStyleGenerator",
+            "VNodeBuilder",
+            "semantic_tag",
+            "camel_to_kebab",
+            "escape_html",
+            "escape_attr",
+        ):
+            self.assertTrue(
+                hasattr(web_common, name), f"web_common is missing {name}"
+            )
+
+        # A trivial one-node plan lowers to the expected flex base style,
+        # guarding the shared module in isolation.
+        plan = LayoutNodePlan(
+            node_id="1:1",
+            name="Row",
+            display=DISPLAY_FLEX,
+            direction="row",
+        )
+        style = web_common.CssStyleGenerator().generate_style(plan)
+        self.assertEqual(style.base.get("display"), "flex")
+        self.assertEqual(style.base.get("flexDirection"), "row")
+        self.assertEqual(web_common.semantic_tag("Header"), "header")
+        self.assertEqual(web_common.camel_to_kebab("paddingTop"), "padding-top")
+        self.assertEqual(web_common.escape_html("<b>&"), "&lt;b&gt;&amp;")
+
+    def test_html_css_emit_smoke(self):
+        """Refactored html_css still generates the full file set end-to-end."""
+        from core.figma_fixtures import FixtureLoader
+        from core.figma_types import FigmaFile
+        from core.ir_builder import IRBuilder
+        from core.layout_analyzer import LayoutAnalyzer
+        from core.library_types import LibraryLoader
+
+        plugin_root = Path(__file__).parent.parent
+        loader = FixtureLoader(plugin_root / "fixtures" / "figma")
+        doc = IRBuilder().build(
+            FigmaFile.from_dict("lay1440", loader.load("layout_desktop"))
+        )
+        plan = LayoutAnalyzer().analyze(doc, library=LibraryLoader().load())
+        output = self.backend.generate(document=doc, layout_plan=plan)
+
+        # One HTML file per screen plus a combined stylesheet.
+        html_files = [f for f in output.files if f.path.endswith(".html")]
+        self.assertEqual(len(html_files), len(plan.screens))
+        self.assertTrue(any(f.path == "styles.css" for f in output.files))
+        self.assertEqual(output.metadata["screen_count"], len(plan.screens))
+
+        # The first screen's HTML file covers all of its nodes.
+        screen_ids = {
+            n.node_id for n in plan.screens[0].walk() if n.node_id
+        }
+        self.assertTrue(screen_ids)
+        self.assertTrue(set(html_files[0].node_ids) >= screen_ids)
+        self.assertIn("<!DOCTYPE html>", html_files[0].content)
+
 
 # ---------------------------------------------------------------------------
 # Stub backend tests
