@@ -847,6 +847,10 @@ export function createCompareStageHandler(): StageHandler {
       note: null,
     };
     ctx.shared.set("diffReport", report);
+    // Share the resolved baseline so the repair/verify stages consume the
+    // exact PNG + kind this stage compared against (Part 20).
+    ctx.shared.set("compareBaseline", baseline);
+    ctx.shared.set("compareBaselineKind", baselineKind);
     ctx.updateMetrics({ similarityScore: overall });
     return report;
   };

@@ -836,6 +836,20 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
           cp!.metrics.similarityScore, report.similarity_score,
           "run metrics.similarityScore must equal the diff_report score",
         );
+
+        // Part 20: the compare stage shares its resolved baseline so the
+        // repair/verify stages consume it without re-resolving.
+        const sharedBaseline = pipeline.getShared("compareBaseline") as
+          string | undefined;
+        assert(
+          typeof sharedBaseline === "string",
+          "compare stage must share the resolved baseline path",
+        );
+        assert(
+          fs.existsSync(sharedBaseline as string),
+          "shared baseline PNG should exist",
+        );
+        assertEqual(pipeline.getShared("compareBaselineKind"), "reference");
       } finally {
         cleanDir(dir);
       }
@@ -901,6 +915,10 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
           "a full-red baseline vs the fixture render must drop the score");
         assertEqual(report.raster_stats.ssim_clean, false,
           "a real visual change must fail the SSIM gate");
+
+        // Part 20: the explicit baseline + kind are shared for repair/verify.
+        assertEqual(pipeline.getShared("compareBaselineKind"), "explicit");
+        assertEqual(pipeline.getShared("compareBaseline"), red.screenshot);
       } finally {
         cleanDir(dir);
       }

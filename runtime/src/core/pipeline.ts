@@ -136,6 +136,11 @@ export class PipelineCoordinator {
     this.ctx.shared.set(key, value);
   }
 
+  /** Read a shared stage value (e.g. after a run, for tests/inspection). */
+  getShared(key: string): unknown {
+    return this.ctx.shared.get(key);
+  }
+
   /** Set the abort signal for cancellation. */
   setAbortSignal(signal: AbortSignal): void {
     this.ctx.abortSignal = signal;
