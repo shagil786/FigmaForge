@@ -9,6 +9,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 
 import { describe, it, assert, assertEqual, assertDeepEqual, assertThrows, assertGreaterThan, assertIncludes } from "./test_framework.js";
@@ -20,11 +21,14 @@ import {
   backendForTarget,
   UnsupportedTargetError,
   invokeBackendGenerator,
+  invokeNormalize,
+  invokeAssets,
   createIngestStageHandler,
   createGenerateStageHandler,
   createNormalizeStageHandler,
   createResolveStageHandler,
   createLayoutStageHandler,
+  createAssetsStageHandler,
 } from "../src/core/backend_codegen.js";
 import { EventLog } from "../src/core/events.js";
 import { CheckpointManager } from "../src/core/checkpoint.js";
@@ -321,6 +325,130 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
         );
         assertDeepEqual(stored.manifest, direct.manifest,
           "staged (five-handler) manifest must match the file-mode backend manifest");
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("six-stage run produces the asset_manifest artifact (deterministic)", async () => {
+      const runOnce = async (dir: string) => {
+        const config = makeConfig(dir);
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.setShared("filePath", FIXTURE);
+        pipeline.onStage("ingest", createIngestStageHandler());
+        pipeline.onStage("normalize", createNormalizeStageHandler());
+        pipeline.onStage("resolve", createResolveStageHandler());
+        pipeline.onStage("layout", createLayoutStageHandler());
+        pipeline.onStage("assets", createAssetsStageHandler());
+        pipeline.onStage("generate", createGenerateStageHandler());
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "completed");
+        assertEqual(result.errors.length, 0);
+
+        const assetArtifacts = artifacts.byStage("assets");
+        assertGreaterThan(assetArtifacts.length, 0, "expected assets artifacts");
+        return artifacts.loadJSON(assetArtifacts[0]) as {
+          assetManifest: {
+            assets: unknown[];
+            counts: { total: number; downloaded: number; unresolved: number };
+            assets_dir: string;
+          };
+        };
+      };
+
+      const dir1 = tmpDir();
+      const dir2 = tmpDir();
+      try {
+        const first = await runOnce(dir1);
+        const second = await runOnce(dir2);
+        // assets_dir embeds each run's absolute output dir (like local_path in
+        // the generate manifest), so determinism means: identical except the
+        // store location.
+        const stripDir = (m: { assetManifest: { assets_dir?: string } }) => {
+          const copy = structuredClone(m);
+          delete copy.assetManifest.assets_dir;
+          return copy;
+        };
+        assertDeepEqual(stripDir(first), stripDir(second),
+          "asset manifests must be identical across runs (except assets_dir)");
+        const manifest = first.assetManifest;
+        assertDeepEqual(manifest.assets, [], "fixture IR carries no assets");
+        assertEqual(manifest.counts.total, 0);
+        assertEqual(manifest.counts.downloaded, 0);
+        assertEqual(manifest.counts.unresolved, 0);
+      } finally {
+        cleanDir(dir1);
+        cleanDir(dir2);
+      }
+    });
+
+    await it("invokeAssets downloads and content-addresses a file:// URL", async () => {
+      const dir = tmpDir();
+      try {
+        const png = Buffer.from("fake-asset-bytes-1234", "utf-8");
+        const src = path.join(dir, "photo.png");
+        fs.writeFileSync(src, png);
+        const url = "file://" + src;
+
+        const cfg = { pythonBin: PYTHON_BIN, pluginDir: PLUGIN_DIR };
+        const fileJson = JSON.parse(fs.readFileSync(FIXTURE, "utf-8"));
+        const ir = (await invokeNormalize(cfg, fileJson)) as Record<string, unknown> & {
+          assets: Record<string, string>;
+        };
+        ir.assets["2:1"] = url;
+
+        const store = path.join(dir, "store");
+        const manifest = await invokeAssets(cfg, ir, store);
+        assertEqual(manifest.counts.total, 1);
+        assertEqual(manifest.counts.downloaded, 1);
+        assertEqual(manifest.counts.unresolved, 0);
+        assertEqual(manifest.assets.length, 1);
+
+        const entry = manifest.assets[0];
+        assertEqual(entry.node_id, "2:1");
+        assertEqual(entry.status, "downloaded");
+        assertEqual(entry.url, url);
+        assertEqual(
+          entry.content_hash,
+          createHash("sha256").update(png).digest("hex"),
+        );
+        assert(!!entry.local_path && fs.existsSync(entry.local_path),
+          "hashed asset file should exist on disk");
+        assert(fs.readFileSync(entry.local_path!).equals(png),
+          "stored bytes must match the source");
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("assets without normalize fails with a clear stage error", async () => {
+      const dir = tmpDir();
+      try {
+        const config = makeConfig(dir);
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.onStage("assets", createAssetsStageHandler());
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "failed");
+        assert(result.errors.some((e) => e.includes("no irJson")),
+          `expected a 'no irJson' stage error, got: ${result.errors.join(" | ")}`);
       } finally {
         cleanDir(dir);
       }

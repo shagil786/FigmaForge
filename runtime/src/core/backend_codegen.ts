@@ -310,6 +310,78 @@ export function invokeLayout(
   );
 }
 
+// ---------------------------------------------------------------------------
+// Assets stage (Part 17) — download + content-address IR asset refs
+// ---------------------------------------------------------------------------
+
+export interface AssetManifestEntry {
+  node_id: string;
+  url: string | null;
+  image_ref: string | null;
+  kind: string;
+  status: string;
+  content_hash?: string;
+  local_path?: string;
+}
+
+export interface AssetManifest {
+  schema_version: number;
+  file_key: string;
+  assets: AssetManifestEntry[];
+  counts: { total: number; downloaded: number; unresolved: number };
+  assets_dir: string;
+}
+
+/**
+ * Download + content-address the image/SVG assets an IR references via
+ * ``scripts/pipeline.py assets``.  The IR JSON is staged to a temp file;
+ * the CLI writes the content-addressed store under ``assetsDir``.
+ */
+export async function invokeAssets(
+  cfg: { pythonBin: string; pluginDir: string },
+  irJson: unknown,
+  assetsDir: string,
+): Promise<AssetManifest> {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ff-assets-"));
+  const irPath = path.join(tmp, "ir.json");
+  fs.writeFileSync(irPath, JSON.stringify(irJson), "utf-8");
+  try {
+    const result = await spawnPython(
+      cfg.pythonBin,
+      path.join(cfg.pluginDir, "scripts", "pipeline.py"),
+      ["assets", "--ir", irPath, "--assets-dir", assetsDir],
+      cfg.pluginDir,
+    );
+    if (result.exitCode !== 0) {
+      const detail = result.stderr.trim() || result.stdout.trim();
+      throw new Error(
+        `pipeline.py assets exited ${result.exitCode}: ${detail}`,
+      );
+    }
+    return parseJsonLine(result.stdout) as unknown as AssetManifest;
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+/** Assets stage handler — irJson → assetManifest (shared + artifact). */
+export function createAssetsStageHandler(): StageHandler {
+  return async (ctx: PipelineContext) => {
+    const irJson = ctx.shared.get("irJson");
+    if (!irJson) {
+      throw new Error("assets stage requires normalize output (no irJson available)");
+    }
+    const assetsDir = path.join(ctx.config.outputDir, ctx.config.runId, "assets");
+    const manifest = await invokeAssets(
+      { pythonBin: ctx.toolCtx.pythonBin, pluginDir: ctx.config.pluginDir },
+      irJson,
+      assetsDir,
+    );
+    ctx.shared.set("assetManifest", manifest);
+    return { assetManifest: manifest };
+  };
+}
+
 /**
  * Generate backend code from front-half stage artifacts (no recompute):
  * ``generate --ir … --layout … [--resolution …]``.
