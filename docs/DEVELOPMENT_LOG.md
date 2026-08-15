@@ -567,5 +567,13 @@ silent — and a repo-wide honesty audit now locks that contract.
 
 ### Non-goals (deferred)
 Real-Figma end-to-end demo, real-repository testing, rollback procedure docs, diff heatmap
-output + extended PNG formats, flutter `Expanded`/`IntrinsicWidth`/`FractionallySizedBox`
-sizing idioms (declared partial), SwiftUI main-axis justification (Spacer idiom, partial).
+output + extended PNG formats, SwiftUI main-axis justification (Spacer idiom, partial).
+
+### Follow-up — real flutter sizing idioms (Expanded / IntrinsicWidth+Height / FractionallySizedBox)
+flutter's fill/hug/percent sizing now lower to the real Flutter idioms instead of computed box
+sizes: main-axis fill becomes `Expanded` (parent-level, flex only), cross-axis fill becomes
+`SizedBox(width/height: double.infinity)`, hug becomes `IntrinsicWidth`/`IntrinsicHeight`, and
+percent becomes `FractionallySizedBox(widthFactor/heightFactor:)` — with the computed box size
+suppressed on those axes. `FILL_SIZE`/`HUG_SIZE`/`PERCENT_SIZE` are lifted back from partial to
+supported; the repo-wide honesty audit gained the corresponding signals. Full gate: **466** tests
+OK (was 461), zero skips.
