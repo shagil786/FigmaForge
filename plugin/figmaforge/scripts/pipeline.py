@@ -39,10 +39,13 @@ from core.figma_client import FigmaClient  # noqa: E402
 from core.figma_errors import FigmaAuthError, FigmaError  # noqa: E402
 from core.figma_types import FigmaFile  # noqa: E402
 from core.ir_builder import IRBuilder  # noqa: E402
+from core.ir_types import IRDocument  # noqa: E402
+from core.ir_validator import IRValidationError, ensure_valid  # noqa: E402
 from core.layout_analyzer import LayoutAnalyzer  # noqa: E402
+from core.layout_types import LayoutPlan  # noqa: E402
 from core.library_types import LibraryLoader  # noqa: E402
 from core.matcher import MatchResult  # noqa: E402
-from core.resolver import ResolutionReport  # noqa: E402
+from core.resolver import ResolutionReport, Resolver  # noqa: E402
 from core.token_resolver import SemanticToken, TokenResolution  # noqa: E402
 
 DEFAULT_VIEWPORT = 1440.0
@@ -67,6 +70,31 @@ class _CliError(Exception):
 def _emit(payload: Dict[str, Any]) -> None:
     """Print one deterministic JSON line to stdout."""
     print(json.dumps(payload, sort_keys=True, ensure_ascii=False))
+
+
+def _emit_with_out(payload: Dict[str, Any], out: Optional[str]) -> None:
+    """Print the payload and optionally write it to ``--out`` (pretty JSON)."""
+    _emit(payload)
+    if out:
+        out_path = Path(out)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+
+
+def _load_ir(path_str: str) -> IRDocument:
+    """Read + validate a design IR JSON and rebuild the IR document.
+
+    Invalid IR (or non-IR JSON) is a user error (exit 4).
+    """
+    data = _load_file_payload(path_str)
+    try:
+        ensure_valid(data)
+    except IRValidationError as exc:
+        raise _CliError(4, f"input file {path_str!r} is not a valid design IR: {exc}")
+    return IRDocument.from_dict(data)
 
 
 def _load_file_payload(path_str: str) -> Dict[str, Any]:
@@ -125,14 +153,44 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
         file_key = figma_file.file_key
 
     payload = _ingest_payload(raw, file_key)
-    _emit(payload)
-    if args.out:
-        out_path = Path(args.out)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(
-            json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
+    _emit_with_out(payload, args.out)
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# normalize / resolve / layout — the front half (Part 16)
+# ---------------------------------------------------------------------------
+
+
+def _cmd_normalize(args: argparse.Namespace) -> int:
+    """Build + schema-validate the design IR from a Figma file JSON."""
+    raw = _load_file_payload(args.file)
+    file_key = raw.get("file_key") or Path(args.file).stem
+    doc = IRBuilder().build(FigmaFile.from_dict(file_key, raw))
+    payload = doc.to_dict()
+    try:
+        ensure_valid(payload)
+    except IRValidationError as exc:
+        raise _CliError(4, f"normalized IR failed schema validation: {exc}")
+    _emit_with_out(payload, args.out)
+    return 0
+
+
+def _cmd_resolve(args: argparse.Namespace) -> int:
+    """Resolve a design IR against the project library."""
+    doc = _load_ir(args.file)
+    report = Resolver(doc).resolve()
+    _emit_with_out(report.to_dict(), args.out)
+    return 0
+
+
+def _cmd_layout(args: argparse.Namespace) -> int:
+    """Infer the layout plan from a design IR."""
+    doc = _load_ir(args.file)
+    plan = LayoutAnalyzer().analyze(
+        doc, library=LibraryLoader().load(), viewport=args.viewport,
+    )
+    _emit_with_out(plan.to_dict(), args.out)
     return 0
 
 
@@ -202,10 +260,35 @@ def _cmd_generate(args: argparse.Namespace) -> int:
             + ", ".join(registry.names()),
         )
 
-    raw = _load_file_payload(args.file)
-    file_key = raw.get("file_key") or Path(args.file).stem
-    doc = IRBuilder().build(FigmaFile.from_dict(file_key, raw))
-    plan = LayoutAnalyzer().analyze(doc, library=LibraryLoader().load())
+    # Two input modes: --file recomputes the front half in-process; the
+    # staged mode consumes the normalize/resolve/layout artifacts directly.
+    file_mode = args.file is not None
+    staged_mode = args.ir is not None or args.layout is not None
+    if file_mode and staged_mode:
+        raise _CliError(
+            2, "use either --file (recompute) or --ir/--layout (staged), not both",
+        )
+    if not file_mode and not staged_mode:
+        raise _CliError(
+            2, "generate requires --file, or --ir and --layout together",
+        )
+
+    if file_mode:
+        raw = _load_file_payload(args.file)
+        file_key = raw.get("file_key") or Path(args.file).stem
+        doc = IRBuilder().build(FigmaFile.from_dict(file_key, raw))
+        plan = LayoutAnalyzer().analyze(
+            doc, library=LibraryLoader().load(), viewport=args.viewport,
+        )
+    else:
+        if args.ir is None or args.layout is None:
+            raise _CliError(2, "staged mode requires both --ir and --layout")
+        doc = _load_ir(args.ir)
+        plan_data = _load_file_payload(args.layout)
+        if "screens" not in plan_data:
+            raise _CliError(4, f"input file {args.layout!r} is not a layout plan document")
+        plan = LayoutPlan.from_dict(plan_data)
+
     resolution = _load_resolution(args.resolution) if args.resolution else None
 
     output = backend.generate(
@@ -255,8 +338,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="optional path to also write the normalized JSON payload",
     )
 
+    normalize = sub.add_parser(
+        "normalize", help="build + validate the design IR from a Figma file JSON")
+    normalize.add_argument("--file", required=True, help="Figma file JSON (ingest output or raw)")
+    normalize.add_argument("--out", help="optional path to also write the IR JSON")
+
+    resolve = sub.add_parser(
+        "resolve", help="resolve a design IR against the project library")
+    resolve.add_argument("--file", required=True, help="design IR JSON (normalize output)")
+    resolve.add_argument("--out", help="optional path to also write the report JSON")
+
+    layout = sub.add_parser(
+        "layout", help="infer the layout plan from a design IR")
+    layout.add_argument("--file", required=True, help="design IR JSON (normalize output)")
+    layout.add_argument(
+        "--viewport", type=float, default=DEFAULT_VIEWPORT,
+        help="target viewport width (default %g)" % DEFAULT_VIEWPORT,
+    )
+    layout.add_argument("--out", help="optional path to also write the plan JSON")
+
     gen = sub.add_parser("generate", help="generate backend code from a Figma file JSON")
-    gen.add_argument("--file", required=True, help="Figma file JSON (ingest output or raw)")
+    gen.add_argument("--file", help="Figma file JSON (recompute mode; ingest output or raw)")
+    gen.add_argument("--ir", help="design IR JSON (staged mode; normalize output)")
+    gen.add_argument("--layout", help="layout plan JSON (staged mode; layout output)")
     gen.add_argument("--backend", required=True, help="backend name")
     gen.add_argument(
         "--resolution",
@@ -285,6 +389,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     try:
         if args.command == "ingest":
             return _cmd_ingest(args)
+        if args.command == "normalize":
+            return _cmd_normalize(args)
+        if args.command == "resolve":
+            return _cmd_resolve(args)
+        if args.command == "layout":
+            return _cmd_layout(args)
         if args.command == "generate":
             return _cmd_generate(args)
         raise _CliError(2, f"unknown command {args.command!r}")
