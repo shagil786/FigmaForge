@@ -765,3 +765,64 @@ stage — `figmaforge run` now exercises six stages.
 Threading resolved local asset paths *into* generated code (the per-backend
 FILLS_IMAGE/IMAGE_ASSETS lift); wiring render/compare/repair/verify into the
 TS runtime; Figma OAuth (token-only).
+
+## Part 18 — Assets Into Generated Code (real image references in web backend output)
+
+Part 17 wired the assets stage but generated code never referenced the
+downloaded files: the four web backends declared `FILLS_IMAGE` partial and
+degraded image fills to a solid fallback + marker. Part 18 threads the
+content-addressed asset paths into generated code and lifts `FILLS_IMAGE` to
+**supported** for the web backends.
+
+### What Changed
+
+1. **`generate --assets`** (`scripts/pipeline.py`) — optional `--assets
+   <manifest.json>` in both `--file` and staged modes: loads the Part 17
+   manifest, builds `node_id -> {path, kind}` from `downloaded` entries only,
+   passes it as `options["assets"]` (invalid manifest → exit 4).
+2. **Shared web lowering** (`web_common.extend_ir_style`) — a resolved image
+   fill becomes `background-image: url(<path>)` + `background-size: cover` +
+   `background-position: center` (Figma's default image-fill fit); an
+   unresolved one keeps the marked `#f0f0f0` fallback. html_css splits
+   `image_fill_ids` into resolved/unresolved so the fidelity marker only fires
+   for unresolved fills.
+3. **react_tailwind** — `bg-[url(<path>)] bg-cover bg-center` for resolved
+   fills, marker otherwise (assets threaded through the render chain).
+4. **vue + svelte** — `ScopedCssGenerator` gains the assets map; resolved
+   fills emit the real scoped-CSS background, marker only when unresolved.
+5. **Capability lift** — `FILLS_IMAGE` moves from partial → **supported** for
+   html_css, react_tailwind, vue, svelte (real reference when the assets stage
+   resolved a path; unresolved keeps the marked fallback — documented in each
+   backend docstring). `IMAGE_ASSETS`/`SVG_ASSETS` stay partial; native
+   (flutter/swiftui) unchanged.
+6. **Honesty audit lock** — the canonical fixture gains an image-fill node,
+   `EXERCISED`/SIGNALS cover `FILLS_IMAGE`, `audit_backends()` passes
+   `options["assets"]`, and the coverage-guard test switches its unexercised
+   example to `SVG_ASSETS` — the whole class is locked against regression.
+7. **TS runtime** — `invokeBackendGenerator`/`invokeBackendGeneratorFromStages`
+   gain an optional `assetsManifest` (`--assets` passed); the generate stage
+   reads `ctx.shared["assetManifest"]` from the assets stage. **`PIPELINE_STAGES`
+   now runs assets before generate** — a real ordering flaw Part 18 exposed
+   (the manifest is a generate input, but the canonical order had generate
+   first).
+
+### Testing
+
+- Python: **526** tests OK, zero skips (43 files) — +11 (html_css resolved/
+  unresolved unit tests + CLI `--assets` invalid-manifest, emitted-url,
+  staged≡file; react/vue/svelte resolved/unresolved pairs) and audit/declaration
+  updates for the lift.
+- TS: **133** runtime tests passing, `npx tsc` clean — +2 backend-codegen tests
+  (staged generate with a manifest emits real background urls; the full
+  ingest→normalize→layout→assets→generate chain threads the downloaded asset).
+- Smoke: `figmaforge run` against a fixture with an IMAGE paint exits 3 at the
+  assets stage offline (unresolved `image_ref` without `FIGMA_TOKEN` — the
+  documented Part 17 contract); the threaded path is covered by the TS tests
+  with real Python spawns.
+- `claude plugin validate --strict` clean (verified at the Part 18 final gate).
+
+### Non-goals (deferred)
+
+Image-fill fit modes beyond cover/center (tile/stretch/crop); `IMAGE_ASSETS`/
+`SVG_ASSETS` lift; asset bundling/import wiring for deployment; native backend
+image fills; rendering the reordered run against a real file (needs a token).

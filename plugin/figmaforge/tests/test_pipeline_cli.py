@@ -324,6 +324,117 @@ class TestGenerate(unittest.TestCase):
             self.assertEqual(proc.returncode, 4)
             self.assertTrue(proc.stderr.strip())
 
+    def _fixture_with_image_fill(self, tmp: str):
+        """Write a Figma file JSON whose first filled node has an IMAGE paint;
+        return (path, node_id)."""
+        data = json.loads(FIXTURE.read_text(encoding="utf-8"))
+
+        def find(node):
+            # Skip structural containers: a fill must land on a node that the
+            # layout plan actually renders (not the DOCUMENT/CANVAS roots).
+            if (isinstance(node, dict) and node.get("id") and node.get("type")
+                    and node.get("type") not in ("DOCUMENT", "CANVAS", "PAGE")):
+                return node
+            for child in node.get("children") or []:
+                hit = find(child)
+                if hit:
+                    return hit
+            return None
+
+        target = find(data.get("document") or {})
+        self.assertIsNotNone(target, "fixture has no renderable node to attach an IMAGE fill to")
+        target["fills"] = [{
+            "type": "IMAGE", "imageRef": "img:1", "visible": True,
+            "opacity": 1.0, "blendMode": "NORMAL", "scaleMode": "FILL",
+        }]
+        out = Path(tmp) / "with_image.json"
+        out.write_text(json.dumps(data), encoding="utf-8")
+        return str(out), target["id"]
+
+    @staticmethod
+    def _asset_manifest_for(tmp: str, node_id: str) -> str:
+        manifest = Path(tmp) / "manifest.json"
+        manifest.write_text(json.dumps({
+            "schema_version": 1,
+            "file_key": "layout_desktop",
+            "assets": [{
+                "node_id": node_id, "url": "file:///tmp/photo.png",
+                "image_ref": "img:1", "kind": "image",
+                "status": "downloaded", "content_hash": "abc123",
+                "local_path": "/tmp/ff-a18/photo.png",
+            }],
+            "counts": {"total": 1, "downloaded": 1, "unresolved": 0},
+            "assets_dir": "/tmp/ff-a18/assets",
+        }), encoding="utf-8")
+        return str(manifest)
+
+    def _generated_content(self, tmp: str, out_sub: str, manifest: dict) -> str:
+        """Read back every generated file's content for one generate run."""
+        parts = []
+        for entry in manifest["files"]:
+            p = Path(tmp) / out_sub / entry["path"]
+            parts.append(p.read_text(encoding="utf-8"))
+        return "\n".join(parts)
+
+    def test_generate_assets_rejects_invalid_manifest(self):
+        """--assets with a non-manifest JSON exits 4."""
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = Path(tmp) / "bad_manifest.json"
+            bad.write_text(json.dumps({"foo": 1}), encoding="utf-8")
+            proc = _run(["generate", "--file", str(FIXTURE), "--backend", "html_css",
+                         "--assets", str(bad)])
+            self.assertEqual(proc.returncode, 4)
+            self.assertIn("asset manifest", proc.stderr)
+
+    def test_generate_assets_emits_image_url(self):
+        """generate --assets threads the resolved path into html_css output;
+        without it the honest fallback + marker stays."""
+        with tempfile.TemporaryDirectory() as tmp:
+            file_path, node_id = self._fixture_with_image_fill(tmp)
+            manifest_path = self._asset_manifest_for(tmp, node_id)
+
+            with_assets = _run(["generate", "--file", file_path,
+                                "--backend", "html_css", "--assets", manifest_path,
+                                "--out-dir", str(Path(tmp) / "wa")])
+            without = _run(["generate", "--file", file_path,
+                            "--backend", "html_css",
+                            "--out-dir", str(Path(tmp) / "wo")])
+            self.assertEqual(with_assets.returncode, 0, with_assets.stderr)
+            self.assertEqual(without.returncode, 0, without.stderr)
+
+            wa = self._generated_content(
+                tmp, "wa/html_css", json.loads(with_assets.stdout))
+            wo = self._generated_content(
+                tmp, "wo/html_css", json.loads(without.stdout))
+            self.assertIn("background-image: url(/tmp/ff-a18/photo.png)", wa)
+            self.assertIn("background-size: cover", wa)
+            self.assertNotIn("fills_image approximated", wa)
+            self.assertIn("background: #f0f0f0", wo)
+            self.assertIn("fills_image approximated", wo)
+
+    def test_generate_assets_staged_equals_file_mode(self):
+        """generate --ir/--layout --assets is byte-identical to --file --assets."""
+        with tempfile.TemporaryDirectory() as tmp:
+            file_path, node_id = self._fixture_with_image_fill(tmp)
+            manifest_path = self._asset_manifest_for(tmp, node_id)
+            ir_path = Path(tmp) / "ir.json"
+            proc = _run(["normalize", "--file", file_path, "--out", str(ir_path)])
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            layout_path = Path(tmp) / "layout.json"
+            proc = _run(["layout", "--file", str(ir_path), "--out", str(layout_path)])
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+
+            file_run = _run(["generate", "--file", file_path,
+                             "--backend", "html_css", "--assets", manifest_path,
+                             "--out-dir", str(Path(tmp) / "fm")])
+            staged_run = _run(["generate", "--ir", str(ir_path),
+                               "--layout", str(layout_path),
+                               "--backend", "html_css", "--assets", manifest_path,
+                               "--out-dir", str(Path(tmp) / "sm")])
+            self.assertEqual(file_run.returncode, 0, file_run.stderr)
+            self.assertEqual(staged_run.returncode, 0, staged_run.stderr)
+            self.assertEqual(file_run.stdout, staged_run.stdout)
+
     def test_generate_node_coverage(self):
         """react_tailwind's screen file node_ids cover the plan's screen."""
         from core.figma_types import FigmaFile

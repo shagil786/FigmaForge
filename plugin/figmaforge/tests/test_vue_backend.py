@@ -348,6 +348,31 @@ class TestVueBackend(unittest.TestCase):
         # Image fills (declared partial) are marked, never silent.
         self.assertIn("<!-- fidelity: fills_image", sfc.content)
 
+    def test_image_fill_resolved_emits_scoped_css(self):
+        """A resolved image-fill asset lowers to real scoped-CSS background."""
+        doc, plan = _unsupported_fixture()
+        output = self.backend.generate(
+            document=doc, layout_plan=plan,
+            options={"assets": {
+                "img:1": {"path": "assets/photo.png", "kind": "image"},
+            }},
+        )
+        sfc = [f for f in output.files if f.path.endswith(".vue")][0]
+        self.assertIn("background-image: url(assets/photo.png)", sfc.content)
+        self.assertIn("background-size: cover", sfc.content)
+        self.assertIn("background-position: center", sfc.content)
+        self.assertNotIn("fills_image approximated", sfc.content)
+
+    def test_image_fill_unresolved_keeps_marker(self):
+        """Without a resolved asset the honest marker stays."""
+        doc, plan = _unsupported_fixture()
+        output = self.backend.generate(
+            document=doc, layout_plan=plan,
+            options={"assets": {"other:1": {"path": "x.png", "kind": "image"}}},
+        )
+        sfc = [f for f in output.files if f.path.endswith(".vue")][0]
+        self.assertIn("<!-- fidelity: fills_image", sfc.content)
+
     def test_deterministic(self):
         a = self._sfc().content
         b = self._sfc().content
@@ -383,10 +408,11 @@ class TestVueBackend(unittest.TestCase):
         self.assertIn("absolute_positioning", caps.unsupported_features)
         # Declared partial, never supported: image fills, assets, prototype
         # links, interactions — each has a named fallback or inline marker.
-        for feature in ("fills_image", "prototype_links", "interactions",
-                        "design_tokens"):
+        for feature in ("prototype_links", "interactions", "design_tokens"):
             self.assertIn(feature, caps.partial_features)
             self.assertNotIn(feature, caps.supported_features)
+        # FILLS_IMAGE lifted to supported in Part 18 (resolved-asset path).
+        self.assertIn("fills_image", caps.supported_features)
 
 
 if __name__ == "__main__":

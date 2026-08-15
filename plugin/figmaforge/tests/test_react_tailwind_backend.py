@@ -278,11 +278,12 @@ class TestReactTailwindBackend(unittest.TestCase):
         self.doc = _make_document()
         self.plan = _web_plan()
 
-    def _generate(self, resolution=None):
+    def _generate(self, resolution=None, assets=None):
         return self.backend.generate(
             document=self.doc,
             layout_plan=self.plan,
             resolution=resolution,
+            options={"assets": assets} if assets else None,
         )
 
     # -- file set + coverage ------------------------------------------------
@@ -387,6 +388,31 @@ class TestReactTailwindBackend(unittest.TestCase):
         # Image fills (declared partial) degrade with a marker, never silently.
         self.assertIn("fidelity: fills_image", tsx.content)
 
+    def test_image_fill_resolved_emits_url_classes(self):
+        """A resolved image-fill asset becomes real tailwind background classes."""
+        doc, plan = _unsupported_fixture()
+        output = self.backend.generate(
+            document=doc, layout_plan=plan,
+            options={"assets": {
+                "img:1": {"path": "assets/photo.png", "kind": "image"},
+            }},
+        )
+        tsx = [f for f in output.files if f.path.endswith(".tsx")][0]
+        self.assertIn("bg-[url(assets/photo.png)]", tsx.content)
+        self.assertIn("bg-cover", tsx.content)
+        self.assertIn("bg-center", tsx.content)
+        self.assertNotIn("fills_image approximated", tsx.content)
+
+    def test_image_fill_unresolved_keeps_marker(self):
+        """Without a resolved asset the honest marker stays."""
+        doc, plan = _unsupported_fixture()
+        output = self.backend.generate(
+            document=doc, layout_plan=plan,
+            options={"assets": {"other:1": {"path": "x.png", "kind": "image"}}},
+        )
+        tsx = [f for f in output.files if f.path.endswith(".tsx")][0]
+        self.assertIn("fills_image approximated", tsx.content)
+
     # -- tokens -------------------------------------------------------------
     def test_tokens_extracted(self):
         output = self._generate(resolution=_token_resolution())
@@ -439,10 +465,11 @@ class TestReactTailwindBackend(unittest.TestCase):
         self.assertIn("absolute_positioning", caps.unsupported_features)
         # Declared partial, never supported: image fills, assets, prototype
         # links — each has a named fallback or inline marker.
-        for feature in ("fills_image", "prototype_links", "svg_assets",
-                        "image_assets"):
+        for feature in ("prototype_links", "svg_assets", "image_assets"):
             self.assertIn(feature, caps.partial_features)
             self.assertNotIn(feature, caps.supported_features)
+        # FILLS_IMAGE lifted to supported in Part 18 (resolved-asset path).
+        self.assertIn("fills_image", caps.supported_features)
 
 
 if __name__ == "__main__":

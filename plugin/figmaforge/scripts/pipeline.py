@@ -310,6 +310,35 @@ def _cmd_assets(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 
+def _load_asset_manifest(path_str: str) -> Dict[str, Dict[str, Any]]:
+    """Build the ``node_id -> {path, kind}`` map for backend options.
+
+    Consumes the ``assets`` stage manifest (Part 17): only ``downloaded``
+    entries with a ``local_path`` are threaded into generated code, so an
+    unresolved asset keeps the backend's honest marked fallback.  A missing
+    ``assets`` list (or non-object entries) is a user error (exit 4).
+    """
+    data = _load_file_payload(path_str)
+    entries = data.get("assets")
+    if not isinstance(entries, list):
+        raise _CliError(
+            4, f"input file {path_str!r} is not an asset manifest (missing 'assets' list)",
+        )
+    result: Dict[str, Dict[str, Any]] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise _CliError(4, f"asset manifest {path_str!r} has a non-object entry")
+        node_id = entry.get("node_id")
+        local_path = entry.get("local_path")
+        if not node_id or entry.get("status") != "downloaded" or not local_path:
+            continue
+        result[node_id] = {
+            "path": local_path,
+            "kind": entry.get("kind", "image"),
+        }
+    return result
+
+
 def _load_resolution(path_str: str) -> ResolutionReport:
     """Rebuild a ResolutionReport from a saved report JSON.
 
@@ -401,12 +430,14 @@ def _cmd_generate(args: argparse.Namespace) -> int:
         plan = LayoutPlan.from_dict(plan_data)
 
     resolution = _load_resolution(args.resolution) if args.resolution else None
+    assets_map = _load_asset_manifest(args.assets) if args.assets else None
 
     output = backend.generate(
         document=doc,
         layout_plan=plan,
         resolution=resolution,
         viewport=args.viewport,
+        options={"assets": assets_map} if assets_map else None,
     )
 
     out_dir = Path(args.out_dir) / backend.name
@@ -489,6 +520,11 @@ def build_parser() -> argparse.ArgumentParser:
     gen.add_argument(
         "--resolution",
         help="optional saved resolution report JSON to feed the backend",
+    )
+    gen.add_argument(
+        "--assets",
+        help="optional asset manifest JSON (assets stage output) to thread "
+             "resolved asset paths into the generated code",
     )
     gen.add_argument(
         "--viewport", type=float, default=DEFAULT_VIEWPORT,

@@ -112,17 +112,18 @@ class _HtmlEmitter:
 # HtmlCssBackend — the public adapter
 # ---------------------------------------------------------------------------
 
-# Features HTML+CSS can only approximate: image fills get a solid fallback
-# plus an inline marker; asset/token/reference plumbing, prototype links, and
-# interactions are outside the common IR surface (spec non-goals); margins
-# only exist as absolute-offset evidence, which is captured via
-# ``position``/anchors rather than a literal ``margin`` property; relative
-# positioning is representable in CSS but the plan model never produces it.
+# Features HTML+CSS can only approximate: asset/token/reference plumbing,
+# prototype links, and interactions are outside the common IR surface (spec
+# non-goals); margins only exist as absolute-offset evidence, which is
+# captured via ``position``/anchors rather than a literal ``margin`` property;
+# relative positioning is representable in CSS but the plan model never
+# produces it.  Image fills are SUPPORTED when the assets stage resolved a
+# path for the node (real ``background-image``); an unresolved image fill
+# keeps the marked solid fallback.
 _HTML_CSS_PARTIAL = frozenset({
     Feature.CONSTRAINTS,  # mapped to CSS positioning but not 1:1
     Feature.MARGIN,  # absolute offsets captured via position/anchors
     Feature.RELATIVE_POSITIONING,  # representable in CSS, no plan source
-    Feature.FILLS_IMAGE,  # solid fallback + inline marker
     Feature.IMAGE_ASSETS,  # asset plumbing (spec non-goal)
     Feature.SVG_ASSETS,  # asset plumbing (spec non-goal)
     Feature.DESIGN_TOKENS,  # token plumbing (spec non-goal)
@@ -140,6 +141,7 @@ _HTML_CSS_SUPPORTED = (WEB_COMMON_FEATURES - _HTML_CSS_PARTIAL) | frozenset({
     Feature.GRID,
     Feature.ALIGN_SELF,
     Feature.FILLS_GRADIENT,
+    Feature.FILLS_IMAGE,  # real background-image when the asset is resolved
     Feature.SHADOWS,
     Feature.BLUR,
     Feature.PER_CORNER_RADIUS,
@@ -203,6 +205,13 @@ class HtmlCssBackend(BackendAdapter):
             if n.style is not None
             and any(f.visible and f.kind == "image" for f in n.style.fills)
         )
+        assets: Dict[str, Dict[str, Any]] = opts.get("assets") or {}
+        # Only image fills WITHOUT a resolved asset keep the marked fallback;
+        # a resolved one emits a real background (extend_ir_style).
+        unresolved_image_fill_ids = frozenset(
+            nid for nid in image_fill_ids
+            if not (assets.get(nid) or {}).get("path")
+        )
 
         output = GeneratedOutput()
         all_css: List[str] = []
@@ -214,10 +223,12 @@ class HtmlCssBackend(BackendAdapter):
             root_vnode = node_builder.build(screen)
 
             # Apply styles from layout plan
-            self._apply_styles(root_vnode, screen, style_gen, ir_by_id)
+            self._apply_styles(root_vnode, screen, style_gen, ir_by_id, assets=assets)
 
             # Emit HTML + CSS
-            html, css = emitter.emit(root_vnode, image_fill_ids=image_fill_ids)
+            html, css = emitter.emit(
+                root_vnode, image_fill_ids=unresolved_image_fill_ids,
+            )
             all_html.append(html)
             if css:
                 all_css.append(css)
@@ -261,12 +272,13 @@ class HtmlCssBackend(BackendAdapter):
         plan: LayoutNodePlan,
         style_gen: CssStyleGenerator,
         ir_by_id: Dict[str, IRNode],
+        assets: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> None:
         """Recursively apply CSS styles from the layout plan to VNodes."""
         vnode.style = style_gen.generate_style(plan)
-        extend_ir_style(vnode.style, plan, ir_by_id.get(vnode.node_id))
+        extend_ir_style(vnode.style, plan, ir_by_id.get(vnode.node_id), assets=assets)
         for child_vnode, child_plan in zip(vnode.children, plan.children):
-            self._apply_styles(child_vnode, child_plan, style_gen, ir_by_id)
+            self._apply_styles(child_vnode, child_plan, style_gen, ir_by_id, assets=assets)
 
     def _wrap_html_document(
         self,

@@ -533,6 +533,35 @@ class TestHtmlCssBackend(unittest.TestCase):
             content,
         )
 
+    def test_image_fill_resolved_emits_real_url(self):
+        """A resolved image-fill asset lowers to a real CSS background, no marker."""
+        doc, plan = self._fidelity_fixture()
+        output = self.backend.generate(
+            document=doc, layout_plan=plan,
+            options={"assets": {
+                "img:1": {"path": "assets/photo.png", "kind": "image"},
+            }},
+        )
+        content = "\n".join(f.content for f in output.files)
+        self.assertIn("background-image: url(assets/photo.png)", content)
+        self.assertIn("background-size: cover", content)
+        self.assertIn("background-position: center", content)
+        self.assertNotIn("fills_image approximated", content)
+
+    def test_image_fill_unresolved_keeps_fallback_and_marker(self):
+        """Without a resolved asset the honest fallback + marker stays."""
+        doc, plan = self._fidelity_fixture()
+        output = self.backend.generate(
+            document=doc, layout_plan=plan,
+            options={"assets": {"other:1": {"path": "x.png", "kind": "image"}}},
+        )
+        content = "\n".join(f.content for f in output.files)
+        self.assertIn("background: #f0f0f0", content)
+        self.assertIn(
+            "<!-- fidelity: fills_image approximated (solid fallback) -->",
+            content,
+        )
+
     def test_absolute_positioning_is_valid_css(self):
         """Positioning lowers to position + anchors, never ``display: absolute``."""
         doc, plan = self._fidelity_fixture()
@@ -567,7 +596,6 @@ class TestHtmlCssBackend(unittest.TestCase):
         supported = caps.supported_features
         for partial in (
             Feature.MARGIN,
-            Feature.FILLS_IMAGE,
             Feature.RELATIVE_POSITIONING,
             Feature.IMAGE_ASSETS,
             Feature.SVG_ASSETS,
@@ -578,6 +606,8 @@ class TestHtmlCssBackend(unittest.TestCase):
         ):
             self.assertIn(partial, caps.partial_features)
             self.assertNotIn(partial, supported)
+        # FILLS_IMAGE lifted to supported in Part 18 (resolved-asset path).
+        self.assertIn(Feature.FILLS_IMAGE, supported)
         # Features the shared machinery genuinely emits.
         for emitted in (
             Feature.FILLS_SOLID,

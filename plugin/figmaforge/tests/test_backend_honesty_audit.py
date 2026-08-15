@@ -133,6 +133,7 @@ def canonical_fixture() -> Tuple[IRDocument, LayoutPlan, ResolutionReport]:
     - layer:1       nested container holding the absolute / component nodes
       - abs:1       absolute positioning
       - grad:1      gradient fill
+      - img:1       image fill (resolved via options["assets"])
       - comp:1      component (resolved via resolution)
       - inst:1      component instance (resolved via resolution)
     """
@@ -163,7 +164,9 @@ def canonical_fixture() -> Tuple[IRDocument, LayoutPlan, ResolutionReport]:
     ])]))
     comp = _ir("comp:1", "ButtonCard")
     inst = _ir("inst:1", "Inst")
-    layer = _ir("layer:1", "Layer", children=[absnode, grad, comp, inst])
+    img = _ir("img:1", "Photo", style=IRStyle(fills=[IRFill(
+        kind="image", image_ref="asset://photo")]))
+    layer = _ir("layer:1", "Layer", children=[absnode, grad, img, comp, inst])
     root = _ir(
         "0:1", "Root", opacity=0.5, children=[grid, filler, title, pct, minmax,
                                               radius, selfnode, clip, scroll, layer],
@@ -251,6 +254,8 @@ def canonical_fixture() -> Tuple[IRDocument, LayoutPlan, ResolutionReport]:
               anchors=Anchoring(left=8.0, top=8.0)),
         _plan("grad:1", "Grad", display=DISPLAY_NONE,
               box=Box(x=0, y=0, width=100, height=40)),
+        _plan("img:1", "Photo", display=DISPLAY_NONE,
+              box=Box(x=0, y=0, width=100, height=40)),
         _plan("comp:1", "ButtonCard", display=DISPLAY_NONE,
               box=Box(x=0, y=0, width=120, height=36)),
         _plan("inst:1", "Inst", display=DISPLAY_NONE,
@@ -288,7 +293,8 @@ EXERCISED: FrozenSet[str] = frozenset({
     Feature.MIN_MAX_CONSTRAINTS,
     Feature.PADDING, Feature.GAP,
     Feature.JUSTIFY, Feature.ALIGN_ITEMS, Feature.ALIGN_SELF,
-    Feature.FILLS_SOLID, Feature.FILLS_GRADIENT, Feature.BORDERS, Feature.SHADOWS,
+    Feature.FILLS_SOLID, Feature.FILLS_GRADIENT, Feature.FILLS_IMAGE,
+    Feature.BORDERS, Feature.SHADOWS,
     Feature.BLUR, Feature.CORNER_RADIUS, Feature.PER_CORNER_RADIUS, Feature.OPACITY,
     Feature.FONT_FAMILY, Feature.FONT_WEIGHT, Feature.FONT_SIZE, Feature.LINE_HEIGHT,
     Feature.LETTER_SPACING, Feature.TEXT_ALIGN, Feature.TEXT_DECORATION,
@@ -327,6 +333,7 @@ _CSS_SIGNALS: Dict[str, Tuple[str, ...]] = {
     Feature.FILLS_GRADIENT: (
         "linear-gradient(to bottom, #ff0000 0%, #0000ff 100%)",
     ),
+    Feature.FILLS_IMAGE: ("url(assets/photo.png)",),
     Feature.BORDERS: ("border: 2px solid #111111",),
     Feature.SHADOWS: ("box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.25)",),
     Feature.BLUR: ("filter: blur(4px)",),
@@ -371,6 +378,7 @@ _REACT_TW_SIGNALS: Dict[str, Tuple[str, ...]] = {
     Feature.ALIGN_ITEMS: ("items-end",),
     Feature.FILLS_SOLID: ("bg-[#3366cc]",),
     Feature.FILLS_GRADIENT: ("bg-gradient-to-b from-[#ff0000] to-[#0000ff]",),
+    Feature.FILLS_IMAGE: ("bg-[url(assets/photo.png)]",),
     Feature.BORDERS: ("border-[2px]",),
     Feature.SHADOWS: ("shadow-[0px_4px_8px_rgba(0,0,0,0.25)]",),
     Feature.CORNER_RADIUS: ("rounded-[8px]",),
@@ -490,7 +498,14 @@ def audit_backends(backends=ALL_BACKENDS) -> List[str]:
                 f"feature to partial)."
             )
 
-        output = backend.generate(document=doc, layout_plan=plan, resolution=resolution)
+        output = backend.generate(
+            document=doc, layout_plan=plan, resolution=resolution,
+            # Resolve the image-fill node so web backends emit the real
+            # reference (FILLS_IMAGE is supported-with-resolved-assets).
+            options={"assets": {
+                "img:1": {"path": "assets/photo.png", "kind": "image"},
+            }},
+        )
         content = "\n".join(f.content for f in output.files)
         signals = SIGNALS.get(name, {})
 
@@ -551,10 +566,10 @@ class TestBackendHonestyAudit(unittest.TestCase):
         try:
             # (1) Declaring an unexercised, partial feature as supported must
             # be flagged by the coverage guard.
-            html_css_mod._HTML_CSS_SUPPORTED = real_supported | {Feature.FILLS_IMAGE}
+            html_css_mod._HTML_CSS_SUPPORTED = real_supported | {Feature.SVG_ASSETS}
             violations = audit_backends((HtmlCssBackend(),))
             self.assertTrue(
-                any("fills_image" in v and "does not exercise" in v
+                any("svg_assets" in v and "does not exercise" in v
                     for v in violations),
                 f"expected a coverage violation, got: {violations}",
             )

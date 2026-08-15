@@ -87,6 +87,8 @@ export interface BackendGenerateResult {
 
 export interface BackendInvokeOptions {
   viewport?: number;
+  /** Part-17 asset manifest; downloaded entries thread into generated code. */
+  assetsManifest?: unknown;
 }
 
 // ---------------------------------------------------------------------------
@@ -184,6 +186,11 @@ export async function invokeBackendGenerator(
     ];
     if (options?.viewport !== undefined) {
       args.push("--viewport", String(options.viewport));
+    }
+    if (options?.assetsManifest !== undefined) {
+      const assetsPath = path.join(tmp, "assets.json");
+      fs.writeFileSync(assetsPath, JSON.stringify(options.assetsManifest), "utf-8");
+      args.push("--assets", assetsPath);
     }
 
     const result = await spawnPython(
@@ -389,7 +396,12 @@ export function createAssetsStageHandler(): StageHandler {
 export async function invokeBackendGeneratorFromStages(
   cfg: { pythonBin: string; pluginDir: string },
   target: CodegenTarget | string,
-  stages: { irJson: unknown; layoutJson: unknown; resolutionJson?: unknown },
+  stages: {
+    irJson: unknown;
+    layoutJson: unknown;
+    resolutionJson?: unknown;
+    assetsManifest?: unknown;
+  },
   outDir: string,
   options?: BackendInvokeOptions,
 ): Promise<BackendGenerateResult> {
@@ -413,6 +425,11 @@ export async function invokeBackendGeneratorFromStages(
       const resolutionPath = path.join(tmp, "resolution.json");
       fs.writeFileSync(resolutionPath, JSON.stringify(stages.resolutionJson), "utf-8");
       args.push("--resolution", resolutionPath);
+    }
+    if (stages.assetsManifest !== undefined) {
+      const assetsPath = path.join(tmp, "assets.json");
+      fs.writeFileSync(assetsPath, JSON.stringify(stages.assetsManifest), "utf-8");
+      args.push("--assets", assetsPath);
     }
     if (options?.viewport !== undefined) {
       args.push("--viewport", String(options.viewport));
@@ -518,18 +535,23 @@ export function createGenerateStageHandler(): StageHandler {
 
     const irJson = ctx.shared.get("irJson") ?? input.irJson;
     const layoutJson = ctx.shared.get("layoutJson") ?? input.layoutJson;
+    const assetsManifest = ctx.shared.get("assetManifest") ?? input.assetManifest;
     let result: BackendGenerateResult;
     if (irJson && layoutJson) {
       const resolutionJson = ctx.shared.get("resolutionJson") ?? input.resolutionJson;
       result = await invokeBackendGeneratorFromStages(
-        cfg, ctx.config.target, { irJson, layoutJson, resolutionJson }, outDir, options,
+        cfg, ctx.config.target,
+        { irJson, layoutJson, resolutionJson, assetsManifest }, outDir, options,
       );
     } else {
       const fileJson = ctx.shared.get("fileJson") ?? input.fileJson;
       if (!fileJson) {
         throw new Error("generate stage requires ingest or front-half stage output");
       }
-      result = await invokeBackendGenerator(cfg, ctx.config.target, fileJson, outDir, options);
+      result = await invokeBackendGenerator(
+        cfg, ctx.config.target, fileJson, outDir,
+        { ...options, assetsManifest },
+      );
     }
 
     ctx.shared.set("generatedManifest", result.manifest);
