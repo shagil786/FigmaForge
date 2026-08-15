@@ -116,6 +116,8 @@ class VueBackend(BackendAdapter):
         options: Optional[Dict[str, Any]] = None,
     ) -> GeneratedOutput:
         output = GeneratedOutput()
+        opts = options or {}
+        assets: Dict[str, Dict[str, Any]] = opts.get("assets") or {}
         ir_by_id: Dict[str, IRNode] = {n.id: n for n in document.all_nodes()}
         style_gen = CssStyleGenerator()
         node_builder = VNodeBuilder(resolution)
@@ -125,6 +127,7 @@ class VueBackend(BackendAdapter):
             root_vnode = node_builder.build(screen)
             vue_content = self._generate_sfc(
                 root_vnode, screen, component_name, style_gen, ir_by_id,
+                assets=assets,
             )
             node_ids = [n.node_id for n in screen.walk() if n.node_id]
 
@@ -152,10 +155,11 @@ class VueBackend(BackendAdapter):
         name: str,
         style_gen: CssStyleGenerator,
         ir_by_id: Dict[str, IRNode],
+        assets: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> str:
         template_lines = ["<template>"]
         template_lines.append(self._render_template(
-            root_vnode, screen, style_gen, ir_by_id, indent=1,
+            root_vnode, screen, style_gen, ir_by_id, indent=1, assets=assets,
         ))
         template_lines.append("</template>")
         template_lines.append("")
@@ -167,7 +171,9 @@ class VueBackend(BackendAdapter):
         template_lines.append("</script>")
         template_lines.append("")
         template_lines.append("<style scoped>")
-        rules, media = ScopedCssGenerator(ir_by_id).collect(root_vnode, screen)
+        rules, media = ScopedCssGenerator(ir_by_id, assets=assets).collect(
+            root_vnode, screen,
+        )
         template_lines.extend(rules)
         for bp_width in sorted(media):
             template_lines.append(f"@media (max-width: {bp_width}) {{")
@@ -185,6 +191,7 @@ class VueBackend(BackendAdapter):
         style_gen: CssStyleGenerator,
         ir_by_id: Dict[str, IRNode],
         indent: int,
+        assets: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> str:
         pad = "  " * indent
         attrs: List[str] = []
@@ -203,6 +210,7 @@ class VueBackend(BackendAdapter):
             children_html = "\n".join(
                 self._render_template(
                     child_vn, child_plan, style_gen, ir_by_id, indent + 1,
+                    assets=assets,
                 )
                 for child_vn, child_plan in zip(vnode.children, plan_node.children)
             )
@@ -210,10 +218,12 @@ class VueBackend(BackendAdapter):
         else:
             element = f"{pad}<{vnode.tag}{attr_str}></{vnode.tag}>"
 
-        # Image fills are approximated with a solid fallback — always marked.
+        # An image fill is only marked when it has no resolved asset; a
+        # resolved one emits a real scoped-CSS background (extend_ir_style).
         markers: List[str] = []
         ir = ir_by_id.get(vnode.node_id)
-        if ir is not None and ir.style is not None:
+        resolved = (assets or {}).get(vnode.node_id, {}).get("path")
+        if ir is not None and ir.style is not None and not resolved:
             for fill in ir.style.fills:
                 if fill.visible and fill.kind == "image":
                     markers.append(

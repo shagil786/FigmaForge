@@ -348,6 +348,31 @@ class TestVueBackend(unittest.TestCase):
         # Image fills (declared partial) are marked, never silent.
         self.assertIn("<!-- fidelity: fills_image", sfc.content)
 
+    def test_image_fill_resolved_emits_scoped_css(self):
+        """A resolved image-fill asset lowers to real scoped-CSS background."""
+        doc, plan = _unsupported_fixture()
+        output = self.backend.generate(
+            document=doc, layout_plan=plan,
+            options={"assets": {
+                "img:1": {"path": "assets/photo.png", "kind": "image"},
+            }},
+        )
+        sfc = [f for f in output.files if f.path.endswith(".vue")][0]
+        self.assertIn("background-image: url(assets/photo.png)", sfc.content)
+        self.assertIn("background-size: cover", sfc.content)
+        self.assertIn("background-position: center", sfc.content)
+        self.assertNotIn("fills_image approximated", sfc.content)
+
+    def test_image_fill_unresolved_keeps_marker(self):
+        """Without a resolved asset the honest marker stays."""
+        doc, plan = _unsupported_fixture()
+        output = self.backend.generate(
+            document=doc, layout_plan=plan,
+            options={"assets": {"other:1": {"path": "x.png", "kind": "image"}}},
+        )
+        sfc = [f for f in output.files if f.path.endswith(".vue")][0]
+        self.assertIn("<!-- fidelity: fills_image", sfc.content)
+
     def test_deterministic(self):
         a = self._sfc().content
         b = self._sfc().content

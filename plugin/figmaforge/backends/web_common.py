@@ -502,8 +502,13 @@ class ScopedCssGenerator:
     LayoutPlan breakpoint changes into ``@media (max-width: …)`` rules.
     """
 
-    def __init__(self, ir_by_id: Dict[str, IRNode]):
+    def __init__(
+        self,
+        ir_by_id: Dict[str, IRNode],
+        assets: Optional[Dict[str, Dict[str, Any]]] = None,
+    ):
         self._ir_by_id = ir_by_id
+        self._assets = assets
         self._style_gen = CssStyleGenerator()
 
     def collect(
@@ -561,7 +566,7 @@ class ScopedCssGenerator:
         ir: Optional[IRNode],
     ) -> None:
         """Add IR-sourced style (fills/radius/opacity/typography) + breakpoints."""
-        extend_ir_style(style, plan_node, ir)
+        extend_ir_style(style, plan_node, ir, assets=self._assets)
 
 
 # Breakpoint props whose ``after`` value is a length in px (not a keyword
