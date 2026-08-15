@@ -584,3 +584,67 @@ percent becomes `FractionallySizedBox(widthFactor/heightFactor:)` — with the c
 suppressed on those axes. `FILL_SIZE`/`HUG_SIZE`/`PERCENT_SIZE` are lifted back from partial to
 supported; the repo-wide honesty audit gained the corresponding signals. Full gate: **466** tests
 OK (was 461), zero skips.
+
+## Part 15 — Real-Figma End-to-End Demo (six backends through the TS runtime)
+
+The TypeScript runtime's 10-stage pipeline previously had **no stage handlers**
+(`run` completed with empty results; `generateSimpleHtml` was only a render
+fallback). Part 15 gives the pipeline its first real stages — `ingest` and
+`generate` — by shelling out to a new Python CLI, so `figmaforge run` and the new
+`figmaforge demo` command produce real backend code for the first time.
+
+### What Changed
+
+1. **`scripts/pipeline.py`** — stdlib-only bridge CLI with `ingest` and `generate`
+   subcommands. `ingest` fetches a live file (`--file-key`, requires `FIGMA_TOKEN`)
+   or reads a local JSON (`--file`) and prints one deterministic JSON line (raw
+   payload + injected `file_key`/`pages`). `generate` runs the fixture pipeline
+   (`FigmaFile.from_dict → IRBuilder → LayoutAnalyzer → backend.generate`), writes
+   files under `<out-dir>/<backend>/`, and prints a deterministic manifest
+   (`backend`, files sorted by path, `fidelity_losses`, `metadata`). Exit codes:
+   2 unknown backend/invocation, 3 missing token, 4 unreadable/invalid file,
+   1 unexpected. No tracebacks.
+2. **Registry discovery fix** — `discover_builtins()` imported
+   `figmaforge.backends.*`, which cannot resolve in this repo's layout, so
+   `get_registry().names()` returned `[]` and the CLI could not validate backends.
+   It now imports `backends.*` (with an installed-package fallback).
+3. **`runtime/src/core/backend_codegen.ts`** — `TARGET_BACKENDS` maps the six
+   backend-bearing presets to Python backend names; `backendForTarget` rejects
+   backend-less targets (react+css, react+styled_components) with a typed
+   `UnsupportedTargetError`; `invokeBackendGenerator` spawns
+   `scripts/pipeline.py generate` (mirroring `createPythonTool`) and returns
+   `{ manifest, filesDir }`; `invokeIngest` shares the ingest spawn between the
+   stage handler and the demo.
+4. **Stage wiring** — `PipelineCoordinator.setShared` seeds shared data (e.g. a
+   local file path); `cmdRun` now accepts `--file=<path>` (offline) alongside
+   `--file-key` (live) and registers real `ingest` + `generate` handlers, so
+   `figmaforge run --file=<fixture> --target=flutter+flutter_widgets` completes
+   with a `generated_code` artifact.
+5. **`figmaforge demo` command** — ingests once (local file, live key, or the
+   checked-in offline fixture with an explicit message) and generates all six
+   backends into `--out/<backend>/`, printing a deterministic per-backend table
+   (files / fidelity losses / node coverage). `--render` best-effort renders the
+   html_css reference output via the Part-11 Playwright harness; failures degrade
+   to a note, never a hard error.
+6. **`docs/real-figma-demo.md`** — walkthrough: token setup, live + offline paths,
+   expected table + per-backend outputs, single-backend `run`, troubleshooting,
+   exit codes.
+
+### Testing
+
+- Python: **481** tests OK, zero skips (40 test files) — +10 pipeline CLI tests
+  (ingest determinism, missing token, all six backends, manifest determinism,
+  unknown backend, missing/invalid file, node coverage, `--out`).
+- TS: **124** runtime tests passing, `npx tsc` clean — +7 backend-codegen tests
+  (target map coverage, typed rejection, real generate-stage artifacts from the
+  fixture, demo offline-fixture + default paths, no-backend stage failure).
+- Demo smoke (offline): all six backends generate, zero placeholders, loss counts
+  match declarations (html_css 0, web trio 3, swiftui 0, flutter 8); `--render`
+  produced a real screenshot via Playwright.
+- `claude plugin validate --strict` clean (verified at the Part 15 final gate).
+
+### Non-goals (deferred)
+
+Wiring the remaining pipeline stages (normalize/resolve/layout/assets/render/
+compare/repair/verify) into the TS runtime; compiling or executing generated
+SwiftUI/Flutter/TSX code; Figma OAuth (token-only); CI for the demo.

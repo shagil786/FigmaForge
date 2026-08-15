@@ -362,6 +362,19 @@ concrete adapter exists for a given combination.
   with main/cross axis alignment + SizedBox gap separators, Container+BoxDecoration,
   EdgeInsets, Text+TextStyle, Stack+Positioned; unsupported features declared
   explicitly.
+- `scripts/pipeline.py` — **Pipeline CLI (Part 15):** the bridge between the TS
+  runtime and the Python backends. `ingest` (live `--file-key` or local `--file`)
+  prints one deterministic JSON line (raw payload + `file_key`/`pages`); `generate`
+  runs `FigmaFile.from_dict → IRBuilder → LayoutAnalyzer → backend.generate`, writes
+  files under `<out-dir>/<backend>/`, and prints a deterministic manifest
+  (`backend`, files, `fidelity_losses`, `metadata`). Exit codes 2/3/4 mirror the
+  documented contract; stdout carries exactly one JSON line per success.
+- `runtime/src/core/backend_codegen.ts` — **Runtime bridge (Part 15):**
+  `TARGET_BACKENDS` maps the six backend-bearing presets to Python backend names;
+  `backendForTarget` rejects backend-less targets with a typed error;
+  `invokeBackendGenerator`/`invokeIngest` spawn `scripts/pipeline.py`;
+  `createIngestStageHandler`/`createGenerateStageHandler` are the pipeline's first
+  real stage handlers, registered by `figmaforge run` and reused by `figmaforge demo`.
 
 **Core modules remain framework-neutral:**
 - `ir_types.py` (784 lines) — framework-neutral semantic vocabulary.
@@ -656,7 +669,7 @@ FigmaForge is a planned, not-implemented, technology-agnostic, adaptive platform
 - **Evidence-driven transitions** (not prose claims)
 - **Strict safety invariants** and backup/rollback strategy
 
-**Implementation status:** Core modules (detector, router, catalog, state machine) are implemented and tested. The Figma-to-Code pipeline (Parts 1-8) is fully implemented. The backend adapter architecture (Parts 10 + 14) is implemented with all six backends real — HTML+CSS (reference), React+Tailwind, Vue, Svelte, SwiftUI, and Flutter — sharing one web style-mapping implementation (`web_common.py`) and enforcing the capability-vs-output honesty rule via a repo-wide audit. The TypeScript orchestration runtime (Part 9) is implemented with composable code-generation targets. Integration between the Adaptive Platform and the Figma pipeline is in progress.
+**Implementation status:** Core modules (detector, router, catalog, state machine) are implemented and tested. The Figma-to-Code pipeline (Parts 1-8) is fully implemented. The backend adapter architecture (Parts 10 + 14) is implemented with all six backends real — HTML+CSS (reference), React+Tailwind, Vue, Svelte, SwiftUI, and Flutter — sharing one web style-mapping implementation (`web_common.py`) and enforcing the capability-vs-output honesty rule via a repo-wide audit. The TypeScript orchestration runtime (Part 9) is implemented with composable code-generation targets, and since Part 15 it actually drives the Python backends: the `ingest` and `generate` pipeline stages are real handlers (`backend_codegen.ts`) shelling out to the `scripts/pipeline.py` CLI, `figmaforge run --file=<fixture>` produces generated-code artifacts, and the `figmaforge demo` command generates all six backends from one ingest with a comparison table (live `--file-key` or offline fixture). Integration between the Adaptive Platform and the Figma pipeline is in progress.
 
 ---
 
