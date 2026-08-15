@@ -56,7 +56,10 @@ from core.layout_types import (
     LayoutPlan,
     OVERFLOW_CLIP,
     OverflowSpec,
+    SIZING_FILL,
     SIZING_FIXED,
+    SIZING_HUG,
+    SIZING_PERCENT,
     SpacingSpec,
     SizingSpec,
     TextModel,
@@ -194,6 +197,125 @@ def _rich_fixture():
     return doc, plan
 
 
+def _sizing_fixture():
+    """Fill (main + cross axis), hug, and percent sizing nodes."""
+    fillmain = IRNode(
+        id="fm:1", name="FillMain", kind=KIND_FRAME, node_type="FRAME",
+        source=IRSource(file_key="dart", node_id="fm:1"),
+        style=IRStyle(fills=[IRFill(
+            kind="solid", color=IRColor(r=0.1, g=0.2, b=0.3, a=1.0),
+        )]),
+    )
+    fillcross = IRNode(
+        id="fc:1", name="FillCross", kind=KIND_FRAME, node_type="FRAME",
+        source=IRSource(file_key="dart", node_id="fc:1"),
+        style=IRStyle(fills=[IRFill(
+            kind="solid", color=IRColor(r=0.3, g=0.2, b=0.1, a=1.0),
+        )]),
+    )
+    label = IRNode(
+        id="t:9", name="Label", kind=KIND_TEXT, node_type="TEXT",
+        source=IRSource(file_key="dart", node_id="t:9"),
+        typography=IRTypography(font_size=14.0, font_weight=600.0),
+        text=IRTextContent(characters="Pill"),
+    )
+    hugbox = IRNode(
+        id="hg:1", name="Hug", kind=KIND_FRAME, node_type="FRAME",
+        source=IRSource(file_key="dart", node_id="hg:1"),
+        style=IRStyle(fills=[IRFill(
+            kind="solid", color=IRColor(r=0.9, g=0.9, b=0.9, a=1.0),
+        )]),
+        children=[label],
+    )
+    pct = IRNode(
+        id="pct:1", name="Pct", kind=KIND_FRAME, node_type="FRAME",
+        source=IRSource(file_key="dart", node_id="pct:1"),
+        style=IRStyle(fills=[IRFill(
+            kind="solid", color=IRColor(r=0.5, g=0.5, b=0.5, a=1.0),
+        )]),
+    )
+    row = IRNode(
+        id="row:1", name="Row", kind=KIND_FRAME, node_type="FRAME",
+        source=IRSource(file_key="dart", node_id="row:1"),
+        children=[fillmain],
+    )
+    root = IRNode(
+        id="0:2", name="Sizing", kind=KIND_FRAME, node_type="FRAME",
+        source=IRSource(file_key="dart", node_id="0:2"),
+        children=[row, fillcross, hugbox, pct],
+    )
+    page = IRNode(
+        id="page-1", name="Page", kind=KIND_PAGE, node_type="CANVAS",
+        source=IRSource(file_key="dart", node_id="page-1"),
+        children=[root],
+    )
+    doc = IRDocument(file_key="dart", name="Sizing", pages=[page])
+    doc.root = root
+
+    screen = LayoutNodePlan(
+        node_id="0:2", name="Sizing", kind="frame",
+        display=DISPLAY_FLEX, direction="column",
+        box=Box(x=0, y=0, width=400, height=600),
+        sizing=SizingSpec(
+            horizontal=AxisSizing(mode=SIZING_FIXED),
+            vertical=AxisSizing(mode=SIZING_FIXED),
+        ),
+        spacing=SpacingSpec(gap=12.0),
+    )
+    row_plan = LayoutNodePlan(
+        node_id="row:1", name="Row", kind="frame",
+        display=DISPLAY_FLEX, direction="row",
+        box=Box(x=0, y=0, width=400, height=60),
+        sizing=SizingSpec(
+            horizontal=AxisSizing(mode=SIZING_FIXED),
+            vertical=AxisSizing(mode=SIZING_FIXED),
+        ),
+    )
+    row_plan.children.append(LayoutNodePlan(
+        node_id="fm:1", name="FillMain", kind="frame",
+        display=DISPLAY_FLEX, direction="row",
+        box=Box(x=0, y=0, width=200, height=40),
+        sizing=SizingSpec(
+            horizontal=AxisSizing(mode=SIZING_FILL),
+            vertical=AxisSizing(mode=SIZING_FIXED),
+        ),
+    ))
+    screen.children.append(row_plan)
+    screen.children.append(LayoutNodePlan(
+        node_id="fc:1", name="FillCross", kind="frame",
+        display=DISPLAY_FLEX, direction="row",
+        box=Box(x=0, y=0, width=200, height=40),
+        sizing=SizingSpec(
+            horizontal=AxisSizing(mode=SIZING_FILL),
+            vertical=AxisSizing(mode=SIZING_FIXED),
+        ),
+    ))
+    hug_plan = LayoutNodePlan(
+        node_id="hg:1", name="Hug", kind="frame",
+        display=DISPLAY_FLEX, direction="row",
+        box=Box(x=0, y=0, width=160, height=32),
+        sizing=SizingSpec(
+            horizontal=AxisSizing(mode=SIZING_HUG),
+            vertical=AxisSizing(mode=SIZING_HUG),
+        ),
+    )
+    hug_plan.children.append(LayoutNodePlan(
+        node_id="t:9", name="Label", kind="text", display=DISPLAY_NONE,
+        text=TextModel(characters="Pill"),
+    ))
+    screen.children.append(hug_plan)
+    screen.children.append(LayoutNodePlan(
+        node_id="pct:1", name="Pct", kind="frame",
+        display=DISPLAY_NONE, box=Box(x=0, y=0, width=200, height=30),
+        sizing=SizingSpec(
+            horizontal=AxisSizing(mode=SIZING_PERCENT, value=0.5),
+            vertical=AxisSizing(mode=SIZING_FIXED),
+        ),
+    ))
+    plan = LayoutPlan(file_key="dart", viewport=390.0, screens=[screen])
+    return doc, plan
+
+
 def _unsupported_fixture():
     """Gradient + absolute + responsive nodes (media queries is the dart loss)."""
     grad_node = IRNode(
@@ -328,6 +450,54 @@ class TestFlutterBackend(unittest.TestCase):
         # Alignment -> Align wrapper.
         self.assertIn("Align(", content)
         self.assertIn("alignment: Alignment.center", content)
+
+    # -- real sizing idioms: Expanded / IntrinsicWidth+Height / FractionallySizedBox --
+    def test_fill_size_main_axis_expanded(self):
+        """Main-axis fill in a Row -> Expanded(child: ...)."""
+        doc, plan = _sizing_fixture()
+        content = [f for f in self.backend.generate(
+            document=doc, layout_plan=plan,
+        ).files if f.path.endswith(".dart")][0].content
+        self.assertIn("Expanded(", content)
+        # The computed box width must not leak into the Expanded child.
+        self.assertNotIn("width: 200,", content)
+
+    def test_fill_size_cross_axis_stretch(self):
+        """Cross-axis fill in a Column -> SizedBox(width: double.infinity)."""
+        doc, plan = _sizing_fixture()
+        content = [f for f in self.backend.generate(
+            document=doc, layout_plan=plan,
+        ).files if f.path.endswith(".dart")][0].content
+        self.assertIn("width: double.infinity", content)
+        self.assertNotIn("width: 200,", content)
+
+    def test_hug_size_intrinsic_widgets(self):
+        """Hug sizing -> IntrinsicWidth/IntrinsicHeight, box size suppressed."""
+        doc, plan = _sizing_fixture()
+        content = [f for f in self.backend.generate(
+            document=doc, layout_plan=plan,
+        ).files if f.path.endswith(".dart")][0].content
+        self.assertIn("IntrinsicWidth(", content)
+        self.assertIn("IntrinsicHeight(", content)
+        # The measured hug box (160x32) must not leak into the widgets.
+        self.assertNotIn("width: 160,", content)
+        self.assertNotIn("height: 32,", content)
+
+    def test_percent_size_fractionally_sized_box(self):
+        """Percent sizing -> FractionallySizedBox(widthFactor: ...)."""
+        doc, plan = _sizing_fixture()
+        content = [f for f in self.backend.generate(
+            document=doc, layout_plan=plan,
+        ).files if f.path.endswith(".dart")][0].content
+        self.assertIn("FractionallySizedBox(", content)
+        self.assertIn("widthFactor: 0.5,", content)
+
+    def test_sizing_features_lifted_to_supported(self):
+        """Fill/hug/percent are genuinely emitted now, so they are supported."""
+        caps = self.backend.capabilities
+        for feature in ("fill_size", "hug_size", "percent_size"):
+            self.assertIn(feature, caps.supported_features)
+            self.assertNotIn(feature, caps.partial_features)
 
     # -- declared-supported features must be emitted, never silently dropped --
     def test_supported_features_not_silently_dropped(self):

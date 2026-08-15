@@ -19,7 +19,7 @@ silently.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..protocol import (
     BackendAdapter,
@@ -36,6 +36,9 @@ from core.layout_types import (
     LayoutNodePlan,
     LayoutPlan,
     OVERFLOW_CLIP,
+    SIZING_FILL,
+    SIZING_HUG,
+    SIZING_PERCENT,
 )
 from core.resolver import ResolutionReport
 
@@ -45,6 +48,9 @@ _FLUTTER_SUPPORTED = frozenset({
     Feature.ABSOLUTE_POSITIONING,  # Stack + Positioned
     Feature.AUTO_LAYOUT,  # Row/Column/Wrap
     Feature.FIXED_SIZE,
+    Feature.FILL_SIZE,  # Expanded (main axis) / SizedBox.infinity (cross axis)
+    Feature.HUG_SIZE,  # IntrinsicWidth/IntrinsicHeight
+    Feature.PERCENT_SIZE,  # FractionallySizedBox
     Feature.PADDING,
     Feature.GAP,  # SizedBox between children
     Feature.JUSTIFY,  # MainAxisAlignment
@@ -68,9 +74,6 @@ _FLUTTER_SUPPORTED = frozenset({
 })
 
 _FLUTTER_PARTIAL = frozenset({
-    Feature.FILL_SIZE,  # lowered as computed box size, not Expanded
-    Feature.HUG_SIZE,  # intrinsic by default for text; no IntrinsicWidth emitted
-    Feature.PERCENT_SIZE,  # lowered as computed box size, not FractionallySizedBox
     Feature.GRID,  # GridView exists but different semantics
     Feature.FILLS_GRADIENT,  # LinearGradient exists
     Feature.FILLS_IMAGE,  # DecorationImage
@@ -164,6 +167,42 @@ def _primary_fill(ir: Optional[IRNode]) -> Optional[Any]:
         if fill.visible and fill.kind != "none":
             return fill
     return None
+
+
+def _axis_modes(plan_node: LayoutNodePlan) -> Tuple[Optional[Any], Optional[Any]]:
+    """Return the (horizontal, vertical) AxisSizing of a plan node."""
+    if plan_node.sizing is None:
+        return None, None
+    return plan_node.sizing.horizontal, plan_node.sizing.vertical
+
+
+def _is_flex_parent(parent: Optional[LayoutNodePlan]) -> bool:
+    """True when ``parent`` lowers to a Row/Column (flex, not a Stack)."""
+    return (
+        parent is not None
+        and parent.display == DISPLAY_FLEX
+        and not any(c.display == DISPLAY_ABSOLUTE for c in parent.children)
+    )
+
+
+def _main_axis_fill(child: LayoutNodePlan, direction: Optional[str]) -> bool:
+    """True when ``child`` fills the main axis of a ``direction`` flex parent."""
+    h, v = _axis_modes(child)
+    return (
+        (h is not None and h.mode == SIZING_FILL and direction == "row")
+        or (v is not None and v.mode == SIZING_FILL and direction == "column")
+    )
+
+
+def _suppress_box_size(axis: Optional[Any], parent_flex: bool) -> bool:
+    """True when the computed box size for one axis must be suppressed because a
+    real sizing idiom (Expanded / SizedBox.infinity / IntrinsicWidth /
+    IntrinsicHeight / FractionallySizedBox) drives that axis instead."""
+    if axis is None:
+        return False
+    if axis.mode in (SIZING_HUG, SIZING_PERCENT):
+        return True
+    return axis.mode == SIZING_FILL and parent_flex
 
 
 class FlutterBackend(BackendAdapter):
@@ -283,6 +322,7 @@ class {name}Screen extends StatelessWidget {{
         ir: Optional[IRNode],
         ir_by_id: Dict[str, IRNode],
         indent: int,
+        parent: Optional[LayoutNodePlan] = None,
     ) -> str:
         pad = "  " * indent
         lines: List[str] = []
@@ -293,12 +333,39 @@ class {name}Screen extends StatelessWidget {{
         is_text = plan_node.kind == "text" and bool(
             plan_node.text and plan_node.text.characters
         )
+        parent_flex = _is_flex_parent(parent)
         if is_text:
             widget_lines = self._text_widget(plan_node, ir)
         elif plan_node.children:
-            widget_lines = self._container_widget(plan_node, ir, ir_by_id)
+            widget_lines = self._container_widget(plan_node, ir, ir_by_id, parent_flex)
         else:
-            widget_lines = self._leaf_widget(plan_node, ir)
+            widget_lines = self._leaf_widget(plan_node, ir, parent_flex)
+
+        # Real sizing idioms (declared supported): percent -> FractionallySizedBox,
+        # hug -> IntrinsicWidth/IntrinsicHeight, cross-axis fill -> SizedBox.infinity.
+        h, v = _axis_modes(plan_node)
+        h_pct = h is not None and h.mode == SIZING_PERCENT and h.value is not None
+        v_pct = v is not None and v.mode == SIZING_PERCENT and v.value is not None
+        if h_pct or v_pct:
+            args: List[str] = []
+            if h_pct:
+                args.append(f"widthFactor: {_fmt_num(h.value)},")
+            if v_pct:
+                args.append(f"heightFactor: {_fmt_num(v.value)},")
+            widget_lines = _wrap("FractionallySizedBox(", args, widget_lines)
+        if h is not None and h.mode == SIZING_HUG:
+            widget_lines = _wrap("IntrinsicWidth(", [], widget_lines)
+        if v is not None and v.mode == SIZING_HUG:
+            widget_lines = _wrap("IntrinsicHeight(", [], widget_lines)
+        if parent_flex and parent is not None:
+            if h is not None and h.mode == SIZING_FILL and parent.direction == "column":
+                widget_lines = _wrap(
+                    "SizedBox(", ["width: double.infinity,"], widget_lines,
+                )
+            elif v is not None and v.mode == SIZING_FILL and parent.direction == "row":
+                widget_lines = _wrap(
+                    "SizedBox(", ["height: double.infinity,"], widget_lines,
+                )
 
         # Single-child alignment -> Align wrapper (non-flex nodes).
         if plan_node.alignment is not None and plan_node.alignment.align:
@@ -392,6 +459,7 @@ class {name}Screen extends StatelessWidget {{
         plan_node: LayoutNodePlan,
         ir: Optional[IRNode],
         ir_by_id: Dict[str, IRNode],
+        parent_flex: bool,
     ) -> List[str]:
         has_absolute = any(
             child.display == DISPLAY_ABSOLUTE for child in plan_node.children
@@ -423,10 +491,15 @@ class {name}Screen extends StatelessWidget {{
         for child in plan_node.children:
             child_lines = self._render(
                 child, ir_by_id.get(child.node_id), ir_by_id, indent=0,
+                parent=plan_node,
             ).split("\n")
             if child.display == DISPLAY_ABSOLUTE:
                 blocks.append(child_lines)
                 continue
+            # Main-axis fill in a flex parent -> Expanded (the child's own
+            # rendering already suppresses the computed box size on that axis).
+            if not has_absolute and _main_axis_fill(child, plan_node.direction):
+                child_lines = _wrap("Expanded(", [], child_lines)
             if gap is not None and placed:
                 if plan_node.direction == "column":
                     blocks.append([f"SizedBox(height: {_fmt_num(gap)}),"])
@@ -449,7 +522,7 @@ class {name}Screen extends StatelessWidget {{
         flex_lines.append("),")
 
         # Container wrapper for sizing/padding/decoration.
-        container_args = self._container_args(plan_node, ir)
+        container_args = self._container_args(plan_node, ir, parent_flex)
         if not container_args:
             return flex_lines
         lines = ["Container("]
@@ -459,26 +532,47 @@ class {name}Screen extends StatelessWidget {{
         lines.append("),")
         return lines
 
-    def _leaf_widget(self, plan_node: LayoutNodePlan, ir: Optional[IRNode]) -> List[str]:
-        container_args = self._container_args(plan_node, ir)
+    def _leaf_widget(
+        self,
+        plan_node: LayoutNodePlan,
+        ir: Optional[IRNode],
+        parent_flex: bool,
+    ) -> List[str]:
+        container_args = self._container_args(plan_node, ir, parent_flex)
         if container_args:
             lines = ["Container("]
             lines.extend(f"  {arg}" for arg in container_args)
             lines.append("),")
             return lines
-        if plan_node.box is not None:
-            return [f"SizedBox(width: {_fmt_num(plan_node.box.width)}, "
-                    f"height: {_fmt_num(plan_node.box.height)})"]
+        # No decoration: bare SizedBox with the remaining (unsuppressed) axes.
+        h, v = _axis_modes(plan_node)
+        suppress_w = _suppress_box_size(h, parent_flex)
+        suppress_h = _suppress_box_size(v, parent_flex)
+        parts: List[str] = []
+        if plan_node.box is not None and not suppress_w:
+            parts.append(f"width: {_fmt_num(plan_node.box.width)}")
+        if plan_node.box is not None and not suppress_h:
+            parts.append(f"height: {_fmt_num(plan_node.box.height)}")
+        if parts:
+            return [f"SizedBox({', '.join(parts)})"]
         return ["SizedBox.shrink()"]
 
     def _container_args(
         self,
         plan_node: LayoutNodePlan,
         ir: Optional[IRNode],
+        parent_flex: bool,
     ) -> List[str]:
         args: List[str] = []
-        if plan_node.box is not None:
+        # Real sizing idioms drive fill/hug/percent axes; suppress the computed
+        # box size so it does not fight Expanded / SizedBox.infinity /
+        # IntrinsicWidth+Height / FractionallySizedBox.
+        h, v = _axis_modes(plan_node)
+        suppress_w = _suppress_box_size(h, parent_flex)
+        suppress_h = _suppress_box_size(v, parent_flex)
+        if plan_node.box is not None and not suppress_w:
             args.append(f"width: {_fmt_num(plan_node.box.width)},")
+        if plan_node.box is not None and not suppress_h:
             args.append(f"height: {_fmt_num(plan_node.box.height)},")
         if (plan_node.overflow is not None
                 and (plan_node.overflow.x == OVERFLOW_CLIP
