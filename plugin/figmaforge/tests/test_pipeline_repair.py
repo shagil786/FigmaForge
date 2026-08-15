@@ -23,6 +23,9 @@ from types import SimpleNamespace
 plugin_root = Path(__file__).resolve().parent.parent
 if str(plugin_root) not in sys.path:
     sys.path.insert(0, str(plugin_root))
+tests_dir = Path(__file__).resolve().parent
+if str(tests_dir) not in sys.path:
+    sys.path.insert(0, str(tests_dir))
 
 from core.ir_types import (  # noqa: E402
     IRColor,
@@ -41,6 +44,8 @@ from core.layout_types import (  # noqa: E402
     LayoutPlan,
 )
 from core.png_codec import PngImage, encode_png  # noqa: E402
+from core.resolver import report_to_json  # noqa: E402
+from test_backend_honesty_audit import canonical_fixture  # noqa: E402
 
 
 def _solid_png(width, height, rgb, rect=None):
@@ -55,6 +60,50 @@ def _solid_png(width, height, rgb, rect=None):
                 pixels.extend(rgb)
     return encode_png(PngImage(width=width, height=height, channels=3,
                                pixels=bytes(pixels)))
+
+
+def _solid_and_image_fixture():
+    """Two children: ``n1`` (solid fill, inside the harness's diff region)
+    and ``img:1`` (image fill, OUTSIDE it) — so repair patches only the
+    solid node and the image node keeps its resolved asset."""
+    n1 = IRNode(
+        id="n1", name="Box", kind=KIND_FRAME, node_type="FRAME",
+        source=IRSource(file_key="repaira", node_id="n1"),
+        style=IRStyle(fills=[IRFill(
+            kind="solid", color=IRColor(r=0.1, g=0.1, b=0.1, a=1.0),
+        )]),
+    )
+    img = IRNode(
+        id="img:1", name="Photo", kind=KIND_FRAME, node_type="FRAME",
+        source=IRSource(file_key="repaira", node_id="img:1"),
+        style=IRStyle(fills=[IRFill(kind="image", image_ref="img/photo")]),
+    )
+    root = IRNode(
+        id="frame-root", name="Root", kind=KIND_FRAME, node_type="FRAME",
+        source=IRSource(file_key="repaira", node_id="frame-root"),
+        children=[n1, img],
+    )
+    page = IRNode(
+        id="page-1", name="Page", kind=KIND_PAGE, node_type="CANVAS",
+        source=IRSource(file_key="repaira", node_id="page-1"),
+        children=[root],
+    )
+    doc = IRDocument(file_key="repaira", name="RepairAssets", pages=[page])
+    doc.root = root
+    screen = LayoutNodePlan(
+        node_id="frame-root", name="Root", kind="frame",
+        display=DISPLAY_FLEX, box=Box(x=0, y=0, width=800, height=600),
+    )
+    screen.children.append(LayoutNodePlan(
+        node_id="n1", name="Box", kind="frame", display=DISPLAY_FLEX,
+        box=Box(x=0, y=0, width=200, height=100),
+    ))
+    screen.children.append(LayoutNodePlan(
+        node_id="img:1", name="Photo", kind="frame", display=DISPLAY_FLEX,
+        box=Box(x=0, y=300, width=100, height=40),
+    ))
+    plan = LayoutPlan(file_key="repaira", viewport=800.0, screens=[screen])
+    return doc, plan
 
 
 def _make_fixture():
@@ -94,6 +143,9 @@ META = {
     "frame-root": {"x": 0, "y": 0, "width": 800, "height": 600},
     "n1": {"x": 0, "y": 0, "width": 200, "height": 100},
 }
+
+ASSET_META = dict(META)
+ASSET_META["img:1"] = {"x": 0, "y": 300, "width": 100, "height": 40}
 
 
 class _FakeHarness:
@@ -269,6 +321,151 @@ class TestRepairCli(unittest.TestCase):
         self.assertEqual(code1, 0)
         self.assertEqual(code2, 0)
         self.assertEqual(out1, out2)
+
+    def test_repair_regenerates_react_tailwind(self):
+        """repair --backend react_tailwind regenerates TSX with the override."""
+        code, out, _ = self._run([
+            "--backend", "react_tailwind", "--threshold", "1.0",
+            "--max-iterations", "5",
+        ])
+        self.assertEqual(code, 0)
+        payload = json.loads(out.strip())
+        self.assertTrue(payload["ok"])
+        self.assertGreaterEqual(payload["iterations_run"], 1)
+        self.assertEqual(payload["generated"]["backend"], "react_tailwind")
+        tsx = (self.dir / "out" / "generated" / "react_tailwind" / "Root.tsx").read_text()
+        # The repaired background (baseline white) wins over the IR fill.
+        self.assertIn("bg-[#ffffff]", tsx)
+        self.assertNotIn("bg-[#1a1a1a]", tsx)
+
+    def test_repair_regenerates_vue(self):
+        code, out, _ = self._run([
+            "--backend", "vue", "--threshold", "1.0", "--max-iterations", "5",
+        ])
+        self.assertEqual(code, 0)
+        payload = json.loads(out.strip())
+        self.assertEqual(payload["generated"]["backend"], "vue")
+        vue = (self.dir / "out" / "generated" / "vue" / "Root.vue").read_text()
+        self.assertIn("background: #ffffff", vue)
+        self.assertNotIn("background: #1a1a1a", vue)
+
+    def test_repair_regenerates_svelte(self):
+        code, out, _ = self._run([
+            "--backend", "svelte", "--threshold", "1.0", "--max-iterations", "5",
+        ])
+        self.assertEqual(code, 0)
+        payload = json.loads(out.strip())
+        self.assertEqual(payload["generated"]["backend"], "svelte")
+        svelte = (self.dir / "out" / "generated" / "svelte" / "Root.svelte").read_text()
+        self.assertIn("background: #ffffff", svelte)
+        self.assertNotIn("background: #1a1a1a", svelte)
+
+    def test_repair_rejects_native_and_unknown_backends(self):
+        for backend in ("flutter", "swiftui", "no-such-backend"):
+            code, out, err = self._run(["--backend", backend])
+            self.assertEqual(code, 2, backend)
+            self.assertEqual(out, "", backend)
+            self.assertIn("html_css", err, backend)
+
+    def test_repair_unreadable_resolution_or_assets_exits_4(self):
+        missing = self.dir / "missing.json"
+        code, out, err = self._run(["--resolution", str(missing)])
+        self.assertEqual(code, 4)
+        self.assertIn("resolution", err.lower())
+        code, out, err = self._run(["--assets", str(missing)])
+        self.assertEqual(code, 4)
+        self.assertIn("asset", err.lower())
+
+    def test_repair_resolution_keeps_component_refs(self):
+        """--resolution keeps component/instance resolution in regenerated web
+        output (design review F1 — without it the Part-21 fallback machinery
+        would vanish)."""
+        doc, plan, resolution = canonical_fixture()
+        ir_file = self.dir / "canon-ir.json"
+        ir_file.write_text(json.dumps(doc.to_dict(), sort_keys=True), encoding="utf-8")
+        layout_file = self.dir / "canon-layout.json"
+        layout_file.write_text(json.dumps(plan.to_dict(), sort_keys=True), encoding="utf-8")
+        res_file = self.dir / "canon-resolution.json"
+        res_file.write_text(report_to_json(resolution), encoding="utf-8")
+
+        default_harness = lambda d: _FakeHarness(d, self.shot, self.baseline)  # noqa: E731
+        from scripts.pipeline import repair_main
+        argv = [
+            "--ir", str(ir_file), "--layout", str(layout_file),
+            "--baseline", str(self.baseline), "--resolution", str(res_file),
+            "--backend", "react_tailwind", "--threshold", "1.0",
+            "--max-iterations", "5", "--out", str(self.dir / "out-res"),
+        ]
+        buf = io.StringIO()
+        with redirect_stdout(buf), redirect_stderr(io.StringIO()):
+            code = repair_main(argv, harness_cls=default_harness)
+        self.assertEqual(code, 0)
+        payload = json.loads(buf.getvalue().strip())
+        self.assertEqual(payload["generated"]["backend"], "react_tailwind")
+        tsx = (self.dir / "out-res" / "generated" / "react_tailwind" / "Root.tsx").read_text()
+        # Component ref + self-contained fallback survive regeneration (F1).
+        self.assertIn("<ButtonCard", tsx)
+        self.assertIn("function ButtonCard(", tsx)
+
+    def test_repair_assets_threaded_into_regeneration(self):
+        """--assets keeps real image references in the regenerated output
+        (Part 18 contract): the patched solid node gets the override, while
+        the image node (outside the diff region) keeps its resolved url."""
+        doc, plan = _solid_and_image_fixture()
+        ir_file = self.dir / "img-ir.json"
+        ir_file.write_text(json.dumps(doc.to_dict(), sort_keys=True), encoding="utf-8")
+        layout_file = self.dir / "img-layout.json"
+        layout_file.write_text(json.dumps(plan.to_dict(), sort_keys=True), encoding="utf-8")
+        assets_file = self.dir / "assets.json"
+        assets_file.write_text(json.dumps({"assets": [
+            {"node_id": "img:1", "local_path": "/store/photo.png",
+             "kind": "image", "status": "downloaded"},
+        ]}), encoding="utf-8")
+
+        def harness(d):
+            return _FakeHarness(d, self.shot, self.baseline, meta=ASSET_META)
+
+        from scripts.pipeline import repair_main
+        argv = [
+            "--ir", str(ir_file), "--layout", str(layout_file),
+            "--baseline", str(self.baseline), "--assets", str(assets_file),
+            "--backend", "react_tailwind", "--threshold", "1.0",
+            "--max-iterations", "5", "--out", str(self.dir / "out-assets"),
+        ]
+        buf = io.StringIO()
+        with redirect_stdout(buf), redirect_stderr(io.StringIO()):
+            code = repair_main(argv, harness_cls=harness)
+        self.assertEqual(code, 0)
+        payload = json.loads(buf.getvalue().strip())
+        self.assertEqual(payload["generated"]["backend"], "react_tailwind")
+        tsx = (self.dir / "out-assets" / "generated" / "react_tailwind" / "Root.tsx").read_text()
+        # The image node was NOT patched — its resolved url survives.
+        self.assertIn("bg-[url(/store/photo.png)]", tsx)
+        self.assertNotIn("fills_image approximated", tsx)
+        # The patched solid node carries the repaired background.
+        self.assertIn("bg-[#ffffff]", tsx)
+        self.assertIn("fills_solid approximated (overridden)", tsx)
+
+        # The scoped backends must keep the image too: without assets in the
+        # style layer, the serialized override carried the unresolved-fill
+        # fallback ``background: #f0f0f0`` which — emitted after
+        # ``background-image`` — would have reset the image to a flat color.
+        for backend, suffix in (("vue", ".vue"), ("svelte", ".svelte")):
+            buf = io.StringIO()
+            with redirect_stdout(buf), redirect_stderr(io.StringIO()):
+                code = repair_main([
+                    "--ir", str(ir_file), "--layout", str(layout_file),
+                    "--baseline", str(self.baseline), "--assets", str(assets_file),
+                    "--backend", backend, "--threshold", "1.0",
+                    "--max-iterations", "5",
+                    "--out", str(self.dir / f"out-assets-{backend}"),
+                ], harness_cls=harness)
+            self.assertEqual(code, 0, backend)
+            out = (self.dir / f"out-assets-{backend}" / "generated" / backend
+                   / f"Root{suffix}").read_text()
+            self.assertIn("background-image: url(/store/photo.png)", out, backend)
+            self.assertNotIn("background: #f0f0f0", out, backend)
+            self.assertIn("background: #ffffff", out, backend)
 
     def test_require_approval_denies_non_interactively(self):
         code, out, _ = self._run(

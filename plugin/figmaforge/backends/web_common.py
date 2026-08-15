@@ -551,6 +551,7 @@ def extend_ir_style(
 def reference_styles_from_plan(
     document: Any,
     layout_plan: Any,
+    assets: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Dict[str, VStyle]:
     """Compute the intended per-node VStyles from a LayoutPlan (Part 20).
 
@@ -561,6 +562,12 @@ def reference_styles_from_plan(
     produce the *reference render* — and, in the repair stage, is the style
     layer the loop mutates.  Reusing the shared lowering keeps the reference
     and the generated code on one style rule.
+
+    ``assets`` (Part 22) threads the run's resolved asset paths into the
+    image-fill lowering so the style layer matches what the backends compute
+    WITH assets — the repair-loop ``styles_override`` serialization of an
+    un-repaired image node then carries the real ``backgroundImage`` (an
+    idempotent union) instead of the unresolved-fill fallback color.
     """
     ir_by_id = {n.id: n for n in document.all_nodes()}
     style_gen = CssStyleGenerator()
@@ -569,7 +576,9 @@ def reference_styles_from_plan(
     def _walk(node_plan: LayoutNodePlan) -> None:
         if node_plan.node_id:
             style = style_gen.generate_style(node_plan)
-            extend_ir_style(style, node_plan, ir_by_id.get(node_plan.node_id))
+            extend_ir_style(
+                style, node_plan, ir_by_id.get(node_plan.node_id), assets=assets,
+            )
             styles[node_plan.node_id] = style
         for child in node_plan.children:
             _walk(child)

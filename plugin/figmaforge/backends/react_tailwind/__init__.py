@@ -238,7 +238,12 @@ def _css_class(prop: str, value: str) -> Optional[str]:
     if prop == "color":
         return f"text-[{value}]"
     if prop == "fontSize":
-        return f"text-[{_fmt_num(value)}px]"
+        # The style layer serializes sizes as "32px" strings (Part 22, F5)
+        # — normalize so a raw number never double-appends the unit.
+        size = str(value)
+        if not size.endswith("px"):
+            size = f"{_fmt_num(value)}px"
+        return f"text-[{size}]"
     return None  # unmapped (e.g. absolute positioning) -> handled via markers
 
 
@@ -519,19 +524,25 @@ class ReactTailwindBackend(BackendAdapter):
                     or plan_node.overflow.y == OVERFLOW_SCROLL):
                 classes.append("overflow-auto")
 
-        for bp in plan_node.breakpoints:
-            cls = _breakpoint_class(bp)
-            if cls is not None:
-                classes.append(cls)
-
-        # Override breakpoints (Part 22, F2): the styles layer carries
-        # ``{width: {prop: value}}`` — synthesize the same ``max-[..]``
-        # variants the plan-breakpoint loop produces.
-        for bp_width, props in ((override.get("breakpoints") or {}).items()):
-            for prop, value in (props or {}).items():
-                cls = _css_class(prop, value)
+        # Breakpoint variants come from ONE source: the plan loop, or — when
+        # the repair override carries breakpoints (the serialized style layer,
+        # keys like "768px") — the override, which is authoritative (it
+        # already reflects any plan mutations) and must not double-emit.
+        override_bps = override.get("breakpoints") or {}
+        if override_bps:
+            for bp_width, props in override_bps.items():
+                width = str(bp_width)
+                if width.endswith("px"):
+                    width = width[:-2]
+                for prop, value in (props or {}).items():
+                    cls = _css_class(prop, value)
+                    if cls is not None:
+                        classes.append(f"max-[{width}px]:{cls}")
+        else:
+            for bp in plan_node.breakpoints:
+                cls = _breakpoint_class(bp)
                 if cls is not None:
-                    classes.append(f"max-[{_fmt_num(bp_width)}px]:{cls}")
+                    classes.append(cls)
 
         return classes, markers
 

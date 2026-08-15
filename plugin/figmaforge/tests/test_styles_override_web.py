@@ -254,12 +254,15 @@ class TestReactOverride(unittest.TestCase):
         # The control emits the IR typography size (14px) for t:1.
         control = self._generate(doc, plan)
         self.assertIn("text-[14px]", control)
+        # The style layer serializes sizes as "20px" strings (F5 format) —
+        # no double unit.
         tsx = self._generate(doc, plan, options={
             "styles_override": {
-                "t:1": {"base": {"fontSize": 20}, "breakpoints": {}},
+                "t:1": {"base": {"fontSize": "20px"}, "breakpoints": {}},
             },
         })
         self.assertIn("text-[20px]", tsx)
+        self.assertNotIn("text-[20pxpx]", tsx)
         self.assertNotIn("text-[14px]", tsx)
 
     def test_override_color_maps(self):
@@ -273,15 +276,20 @@ class TestReactOverride(unittest.TestCase):
 
     def test_override_breakpoint_variant(self):
         doc, plan = _plain_fixture()
+        # Real serialized keys are "768px" strings (F5) — no double unit, and
+        # the plan's own breakpoints are NOT double-emitted (the override
+        # layer is authoritative).
         tsx = self._generate(doc, plan, options={
             "styles_override": {
                 "card:1": {
                     "base": {},
-                    "breakpoints": {768: {"width": "350px"}},
+                    "breakpoints": {"768px": {"width": "350px"}},
                 },
             },
         })
         self.assertIn("max-[768px]:w-[350px]", tsx)
+        self.assertNotIn("max-[768pxpx]", tsx)
+        self.assertEqual(tsx.count("max-[768px]:"), 1)
 
     def test_empty_override_byte_identical(self):
         doc, plan = _plain_fixture()
