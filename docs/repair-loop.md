@@ -90,11 +90,61 @@ Config knobs (`RepairConfig`, all optional):
 | `noise_floor` | `0.01` | diffRatio at or below this counts as a clean render |
 | `min_region_area` | `8` | Contiguous diff regions below 8px are ignored (AA noise) |
 | `pixel_weight` | `0.15` | Capped raster weight: `(1 − w)·structural + w·pixels` |
+| `ssim_enabled` | `True` | Perceptual SSIM gating on/off (`False` restores Part 12 behavior) |
+| `ssim_threshold` | `0.95` | Min per-region SSIM for a clean perceptual verdict |
+| `refresh_baseline` | `False` | Opt-in adoption of clean renders as the new baseline |
+| `max_baseline_refreshes_per_run` | `3` | Bounded baseline adoptions per run |
 
 `pixel_mismatch` candidates are classified into the `color` category; the diff report
-carries `raster_stats` (`mae`, `diff_percentage`, `region_count`) whenever a raster diff
-ran. Baselines are downloaded via `core.figma_assets.download_baselines` into the
+carries `raster_stats` (`mae`, `diff_percentage`, `region_count`, plus `ssim`,
+`min_region_ssim`, `ssim_clean` when SSIM is enabled) whenever a raster diff ran.
+Baselines are downloaded via `core.figma_assets.download_baselines` into the
 content-addressed asset store.
+
+## Perceptual Diffing (SSIM) — Part 13
+
+Raw pixel-count diffing cannot distinguish "antialiasing/font noise" from "real localized
+change": a perceptually-invisible render still produces diff regions. Part 13 adds SSIM
+(structural similarity, pure-stdlib in `core/ssim.py`) as the perceptual verdict.
+
+- **Always computed, gated only above the floor.** When `ssim_enabled` and both images
+decompose, global SSIM is recorded in `raster_stats["ssim"]` on every diff (even
+sub-floor — it doubles as a drift diagnostic); it *gates* only when `diffRatio >
+noise_floor`.
+- **Regional, not global.** A global mean SSIM would miss a small localized change (a
+button recolor keeps global SSIM ~0.99). Instead, each detected diff region's bbox is
+grown to exactly `window × window` (clamped to image bounds) and scored at full
+resolution; `min_region_ssim` is the worst region. A region too small to host the window
+(any image axis < 8px) gets **no verdict and is treated as real** — the gate only
+suppresses changes it could measure. Scattered sub-region noise (zero regions) falls back
+to the global verdict.
+- **Clean verdict.** `raster_stats["ssim_clean"]` is `True` when every region scored `≥
+ssim_threshold` (or diffRatio is at/below `noise_floor`); a clean verdict suppresses
+`pixel_mismatch` emission entirely — no noise-driven repair work — and keeps `pixels` at
+1.0.
+- **CLI parity.** `python3 -m core.pixel_diff` reports the same signal (`ssim`,
+`min_region_ssim`, `ssim_clean`, `--ssim-threshold` flag) via one shared rule in
+`core/pixel_diff.regional_verdict`, and `cmdCompare` prints the verdict (e.g.
+"Perceptually identical: 5,234 diff pixels are within visual noise (SSIM 0.982)").
+
+## Baseline Auto-Refresh — Part 13
+
+Part 12 baselines are static: once the Figma design (or the local font stack) changes,
+every render diffs against a stale baseline and reports false mismatches until a human
+re-downloads. With `refresh_baseline=True`, the loop adopts a **clean** render (SSIM
+verdict clean, sizes matched) as the new baseline:
+
+- Adoption writes a **versioned sibling file** `<stem>.refreshed.<n>.png` and repoints
+  `baseline_png` at it — the **original Figma baseline is never modified** (provenance is
+  preserved and the refresh history is retained).
+- Adoption is **bounded** at `max_baseline_refreshes_per_run` and **self-stabilizing**:
+  deterministic capture means a later clean render is byte-identical to the adopted
+  baseline, so the hash fast-path short-circuits and no churn is possible.
+- Guards: never refreshes on a real regression (low region SSIM), a size mismatch, a
+  byte-identical render, or when `refresh_baseline=False` (default — Part 12's manual
+  behavior). `refresh_baseline=True` requires `ssim_enabled=True` (config-time error).
+  The refresh event is recorded per iteration (`baseline_refreshed`,
+  `baseline_new_path` in `raster_stats`).
 
 ## Repair Candidate Categories
 

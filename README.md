@@ -1,7 +1,7 @@
 # FigmaForge Universal Adaptive Platform
 
 **Version:** 0.0.2-dev  
-**Status:** Parts 1–12 complete — full pixel-diff pipeline delivered in Part 12; validation gate green (370 Python / 113 TS tests)
+**Status:** Parts 1–13 complete — full pixel-diff pipeline (Part 12) plus perceptual SSIM gating and baseline auto-refresh (Part 13); validation gate green (395 Python / 117 TS tests)
 
 A technology-agnostic, adaptive, full-lifecycle Claude Code engineering platform that enables any software project type by detecting stack-specific signals and routing to appropriate capabilities. FigmaForge also converts normalized Figma design IR into framework-neutral layout plans and generates production-quality React/CSS output.
 
@@ -302,8 +302,9 @@ Md Shagil Nizami
 - ✅ **Part 10** Backend adapter architecture (HTML+CSS real; react_tailwind/vue/svelte/swiftui/flutter stubs)
 - ✅ **Part 11** Real browser render harness (Playwright + headless chromium, layout metadata)
 - ✅ **Part 12** Pixel diffing + Figma baseline download (stdlib PNG codec, pixel diff CLI, capped pixel weight)
-- ✅ Full validation suite green (370 Python + 113 TS tests, zero skips)
-- ✅ CLAUDE.md + docs updated through Part 12
+- ✅ **Part 13** Perceptual diffing (SSIM) + baseline auto-refresh (regional gating, opt-in clean-render adoption, CLI verdict)
+- ✅ Full validation suite green (395 Python + 117 TS tests, zero skips)
+- ✅ CLAUDE.md + docs updated through Part 13
 
 ---
 
@@ -313,4 +314,4 @@ Md Shagil Nizami
 2. Test with real repositories
 3. Document the rollback procedure
 4. Implement the five stub backend adapters (react+tailwind, vue, svelte, swiftui, flutter)
-5. Baseline auto-refresh + perceptual metrics (pixel diffing delivered in Part 12)
+5. Diff heatmap output + extended PNG formats (deferred non-goals from Parts 12–13)

@@ -80,6 +80,12 @@ class RepairConfig:
     min_region_area: int = 8               # contiguous diff regions >= 8px
     pixel_weight: float = 0.15             # capped weight in overall score
 
+    # Perceptual diffing (Part 13).
+    ssim_enabled: bool = True              # SSIM regional gating on/off
+    ssim_threshold: float = 0.95           # min region SSIM for a clean verdict
+    refresh_baseline: bool = False         # adopt clean renders as new baseline
+    max_baseline_refreshes_per_run: int = 3  # bounded adoption per run
+
     def __post_init__(self) -> None:
         # Fail fast on invalid raster knobs at config time, before the loop
         # starts (Part 12): RasterOptions performs the actual validation.
@@ -89,9 +95,22 @@ class RepairConfig:
                 noise_floor=self.noise_floor,
                 min_region_area=self.min_region_area,
                 pixel_weight=self.pixel_weight,
+                ssim_enabled=self.ssim_enabled,
+                ssim_threshold=self.ssim_threshold,
             )
         except ValueError as exc:
             raise ValueError(f"invalid raster knob: {exc}") from exc
+        if self.refresh_baseline and not self.ssim_enabled:
+            # Refresh keys off the SSIM clean verdict; without SSIM it would
+            # silently never fire (review fix F4).
+            raise ValueError(
+                "refresh_baseline requires ssim_enabled=True"
+            )
+        if self.max_baseline_refreshes_per_run < 0:
+            raise ValueError(
+                "max_baseline_refreshes_per_run must be >= 0, got "
+                f"{self.max_baseline_refreshes_per_run}"
+            )
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -107,6 +126,10 @@ class RepairConfig:
             "noise_floor": self.noise_floor,
             "min_region_area": self.min_region_area,
             "pixel_weight": self.pixel_weight,
+            "ssim_enabled": self.ssim_enabled,
+            "ssim_threshold": self.ssim_threshold,
+            "refresh_baseline": self.refresh_baseline,
+            "max_baseline_refreshes_per_run": self.max_baseline_refreshes_per_run,
         }
 
 
@@ -237,6 +260,14 @@ class RepairLoop:
         self._config = config or RepairConfig()
         self._render_fn = render_fn or _default_render
         self._approval_fn = approval_fn
+        self._refreshes = 0  # baseline refreshes consumed this run (Part 13)
+        # Anchor for versioned refresh filenames: the ORIGINAL baseline path
+        # (never the repointed current one), so refreshes stay siblings of
+        # the Figma export instead of chaining onto each other.
+        self._baseline_root = (
+            Path(self._config.baseline_png)
+            if self._config.baseline_png else None
+        )
 
     def _raster_options(self) -> RasterOptions:
         """Build raster diff knobs from the config (Part 12)."""
@@ -245,7 +276,51 @@ class RepairLoop:
             noise_floor=self._config.noise_floor,
             min_region_area=self._config.min_region_area,
             pixel_weight=self._config.pixel_weight,
+            ssim_enabled=self._config.ssim_enabled,
+            ssim_threshold=self._config.ssim_threshold,
         )
+
+    def _maybe_refresh_baseline(
+        self, diff_report: Any, screenshot_path: Optional[str],
+    ) -> None:
+        """Adopt a clean render as the new baseline (Part 13, opt-in).
+
+        Guards (all must hold): ``refresh_baseline`` enabled; the per-run
+        budget not exhausted; a screenshot and baseline path exist; and the
+        diff carried a CLEAN SSIM verdict (``raster_stats["ssim_clean"] is
+        True`` — only present on the clean path, so a size-mismatch or
+        undecodable report can never refresh).
+
+        Adoption writes ``<stem>.refreshed.<n>.png`` next to the baseline
+        (never overwriting the original — provenance, review fix F2) and
+        repoints ``baseline_png`` at it, so subsequent iterations diff
+        against the adopted render. Deterministic capture + the hash
+        fast-path make adoption self-stabilizing: a later clean render is
+        byte-identical to the adopted baseline and short-circuits.
+        """
+        cfg = self._config
+        if not cfg.refresh_baseline:
+            return
+        if self._refreshes >= cfg.max_baseline_refreshes_per_run:
+            return
+        if not screenshot_path or not cfg.baseline_png:
+            return
+        if self._baseline_root is None:
+            return
+        stats = diff_report.raster_stats
+        if stats is None or stats.get("ssim_clean") is not True:
+            return
+        baseline = self._baseline_root
+        if Path(screenshot_path).read_bytes() == Path(cfg.baseline_png).read_bytes():
+            return  # byte-identical → nothing to adopt (no churn)
+        new_path = baseline.with_name(
+            f"{baseline.stem}.refreshed.{self._refreshes}{baseline.suffix}"
+        )
+        new_path.write_bytes(Path(screenshot_path).read_bytes())
+        cfg.baseline_png = str(new_path)
+        self._refreshes += 1
+        stats["baseline_refreshed"] = True
+        stats["baseline_new_path"] = str(new_path)
 
     def run(
         self,
@@ -294,6 +369,11 @@ class RepairLoop:
                 raster_options=self._raster_options(),
             )
             score = diff_report.similarity_score
+
+            # Step 2b: Baseline auto-refresh (Part 13) — adopt a clean
+            # render as the new baseline via a versioned sibling file;
+            # the original Figma baseline is never modified.
+            self._maybe_refresh_baseline(diff_report, screenshot_path)
 
             # Step 3: Classify
             classifier = RepairClassifier(

@@ -31,7 +31,7 @@ This is a complete platform implementation (version 0.0.1-dev), containing a 100
     - **Generators:** `react_generator.py` (wired to ResolutionReport), `css_generator.py` (all sizing modes), `generator_types.py`
     - **Backend Adapters (Part 10):** `backends/protocol.py` (BackendAdapter ABC, Feature vocabulary, FidelityLoss), `backends/registry.py` (discover/register/lookup), `backends/html_css/` (fully implemented), `backends/react_tailwind/`, `backends/vue/`, `backends/svelte/`, `backends/swiftui/`, `backends/flutter/` (stubs)
     - **Platform:** `detector.py`, `router.py` (trigger→phase + language→domain scoring), `catalog.py`, `state.py` (adjacent-only transitions)
-    - **Assets & Diff:** `asset_handler.py`, `asset_manager.py` (content-addressed, SVG security), `figma_assets.py` (baseline download), `png_codec.py` + `pixel_diff.py` (stdlib pixel diffing + CLI), `render_harness.py`, `diff_engine.py` (per-category scoring + capped pixel weight)
+    - **Assets & Diff:** `asset_handler.py`, `asset_manager.py` (content-addressed, SVG security), `figma_assets.py` (baseline download), `png_codec.py` + `pixel_diff.py` (stdlib pixel diffing + CLI + shared SSIM verdict), `ssim.py` (pure-stdlib perceptual SSIM, Part 13), `render_harness.py`, `diff_engine.py` (per-category scoring + capped pixel weight + regional SSIM gating)
     - **Repair Loop (Part 8):** `repair_classifier.py` (9 categories), `patch_planner.py` (strategy-ordered), `patch_executor.py` (with rollback), `repair_loop.py` (iteration controller), `repair_history.py` (manifest)
     - **Hooks:** `hooks/session_detector.py`, `hooks/external_mutation_gate.py` (regex matching), `hooks/post_edit_validator.py` (executes validators)
   - `catalog/`: `roles.json` (100 roles across 10 domains), `roles.json`.
@@ -41,11 +41,11 @@ This is a complete platform implementation (version 0.0.1-dev), containing a 100
   - `schemas/`: `design-ir.schema.json`, `layout-plan.schema.json`, `resolution-report.schema.json`, `detection.schema.json`, `router.schema.json`, `task-state.schema.json`.
   - `templates/`: Inert examples for MCP and LSP configurations.
   - `library/`: `components.json` (5 project components), `tokens.json` (12 design tokens).
-  - `tests/` (30 test files, 370 tests): Unit, integration, snapshot, property-based, repair-loop, backend adapter, render-harness, and pixel-diff tests.
+  - `tests/` (33 test files, 395 tests): Unit, integration, snapshot, property-based, repair-loop, backend adapter, render-harness, pixel-diff, SSIM-gating, and baseline-refresh tests.
 - `runtime/` (Part 9 — TypeScript Orchestration Runtime):
   - `src/core/` (15 modules): `types.ts` (composable `CodegenTarget = { framework, styling }`), `events.ts`, `checkpoint.ts`, `artifacts.ts`, `tools.ts`, `state.ts`, `budget.ts`, `retry.ts`, `security.ts`, `pipeline.ts`, `evaluation.ts`, `providers.ts`, `screenshot_compare.ts`, `render_handler.ts`, `index.ts`
   - `src/cli/main.ts`: CLI with 6 commands (run, inspect, render, compare, repair, replay) + `--target=<framework+styling>` flag
-  - `tests/` (3 files, 113 tests): Comprehensive test suite with custom test framework
+  - `tests/` (3 files, 117 tests): Comprehensive test suite with custom test framework
   - `evaluation/fixtures/golden/`: 3 golden fixtures (simple-button, login-screen, card-layout)
 - `docs/architecture.md` — In-depth architectural blueprint.
 - `docs/DEVELOPMENT_LOG.md` — Part-by-part development log with decisions and verification.
@@ -76,9 +76,9 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 > `buildConfig`), e.g. `PYTHON_BIN=/opt/homebrew/bin/python3.14 node dist/runtime/tests/run_all.js`
 > or `PYTHON_BIN=/opt/homebrew/bin/python3.14 node dist/runtime/src/cli/main.js compare ...`.
 
-* **Run all tests (370 tests):**
+* **Run all tests (395 tests):**
   `cd plugin/figmaforge && python3 -m unittest discover -s tests -v`
-* **Run runtime tests (113 tests):**
+* **Run runtime tests (117 tests):**
   `npx tsc && node dist/runtime/tests/run_all.js`
 * **Install browser rendering dependencies (required for the render stage):**
   `pip install playwright && playwright install chromium`
@@ -104,9 +104,9 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 
 ## 7. Testing Requirements
 
-- All 370 Python tests across 30 test files must pass (`python3 -m unittest discover -s tests`); browser-render tests skip cleanly without chromium.
-- All 113 TypeScript runtime tests must pass (`npx tsc && node dist/runtime/tests/run_all.js`).
-- Test categories: unit tests, integration tests, golden-file snapshot tests, property-based tests.
+- All 395 Python tests across 33 test files must pass (`python3 -m unittest discover -s tests`); browser-render tests skip cleanly without chromium.
+- All 117 TypeScript runtime tests must pass (`npx tsc && node dist/runtime/tests/run_all.js`).
+- Test categories: unit tests, integration tests, golden-file snapshot tests, property-based tests, perceptual (SSIM) gating tests.
 - Snapshot tests use `REWRITE_SNAPSHOTS=1` to regenerate golden files after intentional output changes.
 - Adding a new module requires corresponding test coverage.
 - Adding a new role requires verifying the schema matches (`claude plugin validate --strict`).
@@ -123,7 +123,7 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 1. Discuss architecture impact (review `docs/architecture.md`).
 2. Run full test suite (`python3 -m unittest discover -s tests` from `plugin/figmaforge/`).
 3. Make atomic, minimal coherent changes explicitly matching schemas.
-4. Verify all 370 tests pass and regenerate snapshots if output changed intentionally.
+4. Verify all 395 tests pass and regenerate snapshots if output changed intentionally.
 5. Update `docs/DEVELOPMENT_LOG.md` with the change entry.
 6. Only document verified, executable routines.
 
@@ -131,7 +131,7 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 
 - Scope is strictly adhered to (no speculative integrations).
 - All changes maintain schema constraints (run `claude plugin validate --strict`).
-- Full test suite passes: `python3 -m unittest discover -s tests` (370 tests, 30 files).
+- Full test suite passes: `python3 -m unittest discover -s tests` (395 tests, 33 files).
 - Changes align exactly with architectural constraints in `docs/architecture.md`.
 - `docs/DEVELOPMENT_LOG.md` updated with the change entry.
 - No exposed credentials, secrets, or unintentional active `.lsp.json`/`.mcp.json` templates exist.

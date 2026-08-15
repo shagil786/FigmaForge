@@ -219,9 +219,11 @@ class TestDiffEngineRaster(unittest.TestCase):
                 render_screenshot=str(shot), baseline_png=str(base),
             )
         self.assertEqual(report.categories["pixels"], 1.0)
-        # Region (area 100 >= 8) still emits a mismatch, but score is intact
-        self.assertEqual(len(report.mismatches), 1)
-        self.assertEqual(report.mismatches[0]["type"], "pixel_mismatch")
+        # Part 13: at-or-below the noise floor is a CLEAN verdict — pixel
+        # mismatches are suppressed entirely (no noise-driven repair work);
+        # the region data remains visible in raster_stats for diagnostics.
+        self.assertEqual(len(report.mismatches), 0)
+        self.assertEqual(report.raster_stats["region_count"], 1)
 
     def test_region_attributed_to_overlapping_node(self):
         plan = _MockPlan([_MockNode("n1", 0, 0, 200, 100)])

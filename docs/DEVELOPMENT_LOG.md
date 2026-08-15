@@ -459,3 +459,55 @@ immutable source of truth — the baseline is a supplementary signal.
 SSIM/perceptual metrics, image resampling, diff heatmap output, baseline auto-refresh,
 native TS pixel diffing, grayscale/palette/16-bit PNG support.
 
+## Part 13 — Perceptual Diffing (SSIM) + Baseline Auto-Refresh
+
+Raw pixel-count diffing (Part 12) cannot tell "antialiasing/font noise" from "real
+localized change". Part 13 adds a perceptual verdict via pure-stdlib SSIM — computed per
+diff-region so a small localized change is never masked by a high global mean — and lets
+the loop safely adopt byte-different-but-clean renders as the new baseline. The IR remains
+the immutable source of truth; the baseline remains a supplementary signal.
+
+### What Changed
+1. **`core/ssim.py`** — new: stdlib-only windowed SSIM (luminance plane, 2×2 downsample to
+a 256px cost bound, integral-image sums, pinned C1/C2 constants). `ssim()` for whole
+images; `ssim_region()` for bboxes (O(bbox) cost). Identical inputs → exactly 1.0;
+`ValueError` on size mismatch or sub-window images (callers treat unmeasurable regions as
+real, never clean).
+2. **`core/diff_engine.py`** — `_diff_raster` returns an explicit `(mismatches, stats,
+diff_ratio, clean)` verdict; regional SSIM gating (bbox grown to `window×window`,
+clamped; unmeasurable → conservative real; zero regions → global fallback); SSIM is
+**always** computed and recorded when enabled (drift diagnostic) but gates only above
+`noise_floor`; a clean verdict suppresses `pixel_mismatch` emission. `RasterOptions`/
+`RepairConfig` gain `ssim_enabled=True`, `ssim_threshold=0.95`.
+3. **`core/pixel_diff.py`** — `regional_verdict()` moved here as the ONE shared gating rule
+(both the engine and the CLI use it — no drift); the CLI/`compare_png_files` output now
+carries `ssim`, `min_region_ssim`, `ssim_clean` (null when unmeasurable) and a
+`--ssim-threshold` flag; one-JSON-line contract and hash fast-path untouched.
+4. **`core/repair_loop.py`** — opt-in baseline auto-refresh (`refresh_baseline=False`
+default, `max_baseline_refreshes_per_run=3`): a clean render is adopted as a **versioned
+sibling file** `<stem>.refreshed.<n>.png` (the original Figma baseline is NEVER
+modified — provenance), `baseline_png` is repointed, adoption is bounded and
+self-stabilizing (deterministic capture + hash fast-path → no churn). Guards: no refresh
+on regressions, size mismatches, or byte-identical renders; `refresh_baseline=True`
+requires `ssim_enabled=True` (config-time error). The event is recorded per iteration
+(`baseline_refreshed`, `baseline_new_path`).
+5. **`runtime/src/core/screenshot_compare.ts`** + `cmdCompare` — `ScreenshotComparison`
+gains optional `ssim`/`minRegionSsim`/`ssimClean` (missing keys → null, old output still
+parses); the hash fast-path reports the clean verdict; `cmdCompare` prints the perceptual
+verdict ("Perceptually identical: N diff pixels within visual noise (SSIM …)" or
+"Perceptual change: SSIM …, min-region SSIM …").
+6. **Docs** — this entry; `docs/repair-loop.md` SSIM + auto-refresh sections; README/
+CLAUDE.md updated through Part 13.
+
+### Testing
+- Python: 25 new tests (ssim 9, diff-engine SSIM gating 10, repair-loop refresh 6). Full
+gate: **395** tests OK, zero skips (33 test files).
+- TS: 4 new tests (localized-verdict comparator, Part 13 parse, two `cmdCompare` CLI
+integration tests). Full gate: **117** runtime tests passing.
+- `claude plugin validate --strict` clean.
+
+### Non-goals (deferred)
+Diff heatmap image output, native TS pixel diffing, image resampling beyond the fixed SSIM
+downsample, grayscale/palette/16-bit PNG support, scheduled/cron baseline refresh
+(auto-refresh is loop-scoped), stub backend implementations.
+

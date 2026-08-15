@@ -13,13 +13,16 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from .pixel_diff import (
     DEFAULT_COLOR_THRESHOLD,
     DEFAULT_MIN_REGION_AREA,
+    DEFAULT_NOISE_FLOOR,
+    DEFAULT_SSIM_THRESHOLD,
     attribute_regions,
     compare_images,
     detect_regions,
+    regional_verdict,
 )
 from .png_codec import PngError, decode_png
+from .ssim import ssim
 
-DEFAULT_NOISE_FLOOR = 0.01
 DEFAULT_PIXEL_WEIGHT = 0.15
 
 
@@ -31,6 +34,8 @@ class RasterOptions:
     noise_floor: float = DEFAULT_NOISE_FLOOR
     min_region_area: int = DEFAULT_MIN_REGION_AREA
     pixel_weight: float = DEFAULT_PIXEL_WEIGHT
+    ssim_enabled: bool = True
+    ssim_threshold: float = DEFAULT_SSIM_THRESHOLD
 
     def __post_init__(self) -> None:
         if self.color_threshold < 0:
@@ -48,6 +53,10 @@ class RasterOptions:
         if not 0.0 <= self.pixel_weight <= 1.0:
             raise ValueError(
                 f"pixel_weight must be within [0, 1], got {self.pixel_weight}"
+            )
+        if not 0.0 <= self.ssim_threshold <= 1.0:
+            raise ValueError(
+                f"ssim_threshold must be within [0, 1], got {self.ssim_threshold}"
             )
 
 
@@ -101,16 +110,16 @@ class DiffEngine:
         pixel_score = 1.0
 
         if render_screenshot and baseline_png:
-            raster_mismatches, raster_stats, diff_ratio = self._diff_raster(
+            raster_mismatches, raster_stats, diff_ratio, raster_clean = self._diff_raster(
                 plan, render_meta,
                 render_screenshot, baseline_png, options,
             )
             if raster_stats is not None:
                 raster_ran = True
-                if diff_ratio <= options.noise_floor:
-                    pixel_score = 1.0
-                else:
-                    pixel_score = 1.0 - diff_ratio
+                # _diff_raster folds the noise floor AND the SSIM verdict
+                # into ``clean`` (Part 13): a perceptually-clean render scores
+                # pixels 1.0 even when raw diffRatio is above the floor.
+                pixel_score = 1.0 if raster_clean else 1.0 - diff_ratio
 
         mismatches = []
         mismatches.extend(geometry_mismatches)
@@ -159,9 +168,11 @@ class DiffEngine:
     ) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]], float]:
         """Compare the rendered screenshot against the Figma baseline PNG.
 
-        Returns ``(mismatches, raster_stats, diff_ratio)``. NEVER raises:
-        unreadable/undecodable inputs return ``([], None, 0.0)`` so the loop
-        degrades to structural-only diffing. A size mismatch returns a single
+        Returns        ``(mismatches, raster_stats, diff_ratio, clean)`` — the explicit
+        verdict (review fix F3) drives ``diff()``'s pixel score; it is never
+        sniffed out of the stats dict. NEVER raises: unreadable/undecodable
+        inputs return ``([], None, 0.0, False)`` so the loop degrades to
+        structural-only diffing. A size mismatch returns a single
         ``pixel_mismatch`` with ``reason: size_mismatch`` and
         ``diff_ratio = 1.0``.
         """
@@ -169,7 +180,7 @@ class DiffEngine:
             shot = decode_png(Path(str(render_screenshot)).read_bytes())
             base = decode_png(Path(str(baseline_png)).read_bytes())
         except (OSError, PngError):
-            return [], None, 0.0
+            return [], None, 0.0, False
 
         root_id = self._root_node_id(plan)
 
@@ -186,12 +197,57 @@ class DiffEngine:
                 "diff_percentage": 1.0,
                 "region_count": 0,
             }
-            return [mismatch], stats, 1.0
+            return [mismatch], stats, 1.0, False
 
         stats_obj, mask = compare_images(shot, base, options.color_threshold)
         regions = detect_regions(
             mask, shot.width, shot.height, options.min_region_area
         )
+        diff_ratio = stats_obj.diff_ratio
+
+        raster_stats = {
+            "mae": stats_obj.mae,
+            "diff_percentage": diff_ratio,
+            "region_count": len(regions),
+        }
+
+        # Perceptual verdict (Part 13). clean=True means "no repair work
+        # should be generated for this raster diff": either the diff is at
+        # or below the noise floor, or SSIM judges every region perceptually
+        # identical. SSIM is ALWAYS computed when enabled and sizes match
+        # (even sub-floor) so raster_stats doubles as a drift diagnostic.
+        clean = diff_ratio <= options.noise_floor
+        if options.ssim_enabled:
+            try:
+                raster_stats["ssim"] = ssim(shot, base)
+            except ValueError:
+                # Sub-window image: no meaningful global verdict. Gating
+                # falls back to the conservative per-region path below.
+                raster_stats["ssim"] = None
+            if clean:
+                raster_stats["min_region_ssim"] = None
+                raster_stats["ssim_clean"] = True
+            else:
+                min_region_ssim, clean = regional_verdict(
+                    shot, base, regions, options.ssim_threshold,
+                )
+                if not regions:
+                    # Scattered sub-min-area noise with no measurable region:
+                    # fall back to the global (downsampled) verdict; if the
+                    # global is unmeasurable too, stay conservative.
+                    clean = (
+                        raster_stats["ssim"] is not None
+                        and raster_stats["ssim"] >= options.ssim_threshold
+                    )
+                raster_stats["min_region_ssim"] = min_region_ssim
+                raster_stats["ssim_clean"] = clean
+
+        if clean:
+            # Perceptually identical (noise floor or SSIM verdict): suppress
+            # pixel-mismatch emission entirely — the pixel category stays
+            # 1.0 and the loop generates no noise-driven repair work. The
+            # region data remains in raster_stats for diagnostics.
+            return [], raster_stats, diff_ratio, True
 
         mismatches = []
         for region, node_id in attribute_regions(regions, render_meta, root_id):
@@ -202,15 +258,10 @@ class DiffEngine:
                     "region": region,
                     "baseline_mae": stats_obj.mae,
                 },
-                "actual": {"diff_percentage": stats_obj.diff_ratio},
+                "actual": {"diff_percentage": diff_ratio},
             })
 
-        raster_stats = {
-            "mae": stats_obj.mae,
-            "diff_percentage": stats_obj.diff_ratio,
-            "region_count": len(regions),
-        }
-        return mismatches, raster_stats, stats_obj.diff_ratio
+        return mismatches, raster_stats, diff_ratio, False
 
     @staticmethod
     def _root_node_id(plan: Any) -> str:

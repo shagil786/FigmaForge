@@ -8,6 +8,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import * as zlib from "node:zlib";
 
@@ -1061,6 +1062,30 @@ export async function runAllTests(): Promise<SuiteResult[]> {
         assertEqual(result.totalPixels, 64);
         assertEqual(result.width, 8);
         assertEqual(result.height, 8);
+        // Part 13: the hash fast-path reports the clean perceptual verdict.
+        assertEqual(result.ssim, 1.0);
+        assertEqual(result.minRegionSsim, null);
+        assertEqual(result.ssimClean, true);
+      });
+
+      await it("real localized change reports the perceptual verdict", async () => {
+        // 11x11 red block on 100x100 white: diffRatio 1.21% > floor, one
+        // region >= min_region_area → regional SSIM verdict (not global).
+        const comparator = new ScreenshotComparator();
+        const bufA = makePng(100, 100, [255, 255, 255]);
+        const bufB = makePng(100, 100, [255, 255, 255], { x: 10, y: 10, w: 11, h: 11, rgb: [255, 0, 0] });
+        const result = comparator.compareBuffers(bufA, bufB);
+        assertEqual(result.identical, false);
+        assertEqual(result.ssimClean, false);
+        assert(
+          typeof result.ssim === "number" && result.ssim >= 0.9,
+          `expected global ssim >= 0.9, got ${result.ssim}`,
+        );
+        assert(
+          typeof result.minRegionSsim === "number"
+            && result.minRegionSsim < 0.95,
+          `expected minRegionSsim < 0.95, got ${result.minRegionSsim}`,
+        );
       });
 
       await it("different real PNGs shell out and report the diff block", async () => {
@@ -1144,6 +1169,24 @@ export async function runAllTests(): Promise<SuiteResult[]> {
         assertEqual(parsed!.similarity, 0.9);
         assertEqual(parsed!.diffPixelCount, 10);
         assertEqual(parsed!.meanAbsoluteError.b, 3);
+        // Part 13 keys absent in old output → null (backward compatible).
+        assertEqual(parsed!.ssim, null);
+        assertEqual(parsed!.minRegionSsim, null);
+        assertEqual(parsed!.ssimClean, null);
+      });
+
+      await it("parsePixelDiffOutput parses Part 13 SSIM keys", async () => {
+        const stdout = JSON.stringify({
+          similarity: 0.9, diffPixelCount: 10, diffPercentage: 0.1,
+          totalPixels: 100, width: 10, height: 10, identical: false,
+          meanAbsoluteError: { r: 1, g: 2, b: 3 },
+          ssim: 0.9876, min_region_ssim: 0.9123, ssim_clean: false,
+        });
+        const parsed = parsePixelDiffOutput(stdout);
+        assert(parsed !== null, "expected parsed result");
+        assertEqual(parsed!.ssim, 0.9876);
+        assertEqual(parsed!.minRegionSsim, 0.9123);
+        assertEqual(parsed!.ssimClean, false);
       });
 
       await it("parsePixelDiffOutput returns null for garbage and error payloads", async () => {
@@ -1175,6 +1218,50 @@ export async function runAllTests(): Promise<SuiteResult[]> {
         const result = comparator.compareBuffers(bufA, bufB);
         assertEqual(result.similarity, 0.0);
         assertEqual(result.diffPixelCount, -1);
+        assertEqual(result.ssim, null);
+        assertEqual(result.ssimClean, null);
+      });
+
+      await it("cmdCompare prints the perceptual verdict for a real change", async () => {
+        const outDir = path.join(dir, "out", "cmp-real");
+        const runId = "cmp-real";
+        const renders = path.join(outDir, runId, "renders");
+        fs.mkdirSync(renders, { recursive: true });
+        fs.writeFileSync(
+          path.join(renders, "screenshot.png"),
+          makePng(100, 100, [255, 255, 255], { x: 10, y: 10, w: 11, h: 11, rgb: [255, 0, 0] }),
+        );
+        const base = path.join(outDir, "base.png");
+        fs.writeFileSync(base, makePng(100, 100, [255, 255, 255]));
+        const cli = path.join(process.cwd(), "dist", "runtime", "src", "cli", "main.js");
+        const result = spawnSync(
+          process.execPath,
+          [cli, "compare", "--run-id", runId, "--output-dir", outDir, "--baseline", base],
+          { cwd: process.cwd(), encoding: "utf-8" },
+        );
+        assertEqual(result.status, 0);
+        const stdout = result.stdout ?? "";
+        assert(stdout.includes("Perceptual change"), `expected verdict, got: ${stdout}`);
+        assert(stdout.includes("SSIM"), `expected SSIM, got: ${stdout}`);
+      });
+
+      await it("cmdCompare reports identical screenshots via the hash fast-path", async () => {
+        const outDir = path.join(dir, "out", "cmp-same");
+        const runId = "cmp-same";
+        const renders = path.join(outDir, runId, "renders");
+        fs.mkdirSync(renders, { recursive: true });
+        const buf = makePng(4, 4, [9, 9, 9]);
+        fs.writeFileSync(path.join(renders, "screenshot.png"), buf);
+        const base = path.join(outDir, "base2.png");
+        fs.writeFileSync(base, buf);
+        const cli = path.join(process.cwd(), "dist", "runtime", "src", "cli", "main.js");
+        const result = spawnSync(
+          process.execPath,
+          [cli, "compare", "--run-id", runId, "--output-dir", outDir, "--baseline", base],
+          { cwd: process.cwd(), encoding: "utf-8" },
+        );
+        assertEqual(result.status, 0);
+        assert((result.stdout ?? "").includes("Screenshots are identical."));
       });
     } finally {
       cleanDir(dir);
