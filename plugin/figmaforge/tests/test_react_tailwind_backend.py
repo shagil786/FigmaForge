@@ -25,12 +25,14 @@ if str(plugin_root) not in sys.path:
 from backends.protocol import GeneratedOutput
 from backends.react_tailwind import ReactTailwindBackend
 from core.ir_types import (
+    IRBlur,
     IRColor,
     IRDocument,
     IRFill,
     IRGradientStop,
     IRNode,
     IRPosition,
+    IRShadow,
     IRSource,
     IRStyle,
     IRTextContent,
@@ -50,6 +52,8 @@ from core.layout_types import (
     EdgeOffsets,
     LayoutNodePlan,
     LayoutPlan,
+    OVERFLOW_CLIP,
+    OverflowSpec,
     SIZING_FIXED,
     SpacingSpec,
     SizingSpec,
@@ -143,8 +147,53 @@ def _web_plan() -> LayoutPlan:
     return LayoutPlan(file_key="rt", viewport=1440.0, screens=[screen])
 
 
+def _rich_fixture():
+    """A screen exercising shadows, blur, text decoration/case, and overflow."""
+    label = IRNode(
+        id="t:3", name="Label", kind=KIND_TEXT, node_type="TEXT",
+        source=IRSource(file_key="rt", node_id="t:3"),
+        typography=IRTypography(
+            font_size=14.0, font_weight=600.0, letter_spacing=0.5,
+            text_decoration="UNDERLINE", text_case="UPPER",
+        ),
+        text=IRTextContent(characters="Save changes"),
+    )
+    card = IRNode(
+        id="card:1", name="Card", kind=KIND_FRAME, node_type="FRAME",
+        source=IRSource(file_key="rt", node_id="card:1"),
+        style=IRStyle(
+            fills=[IRFill(kind="solid", color=IRColor(r=0.1, g=0.1, b=0.1, a=1.0))],
+            shadows=[IRShadow(
+                color=IRColor(r=0.0, g=0.0, b=0.0, a=0.25), x=0.0, y=4.0, blur=8.0,
+            )],
+            blurs=[IRBlur(kind="layer", radius=4.0)],
+        ),
+        children=[label],
+    )
+    page = IRNode(
+        id="page-1", name="Page", kind=KIND_PAGE, node_type="CANVAS",
+        source=IRSource(file_key="rt", node_id="page-1"),
+        children=[card],
+    )
+    doc = IRDocument(file_key="rt", name="Rich", pages=[page])
+    doc.root = card
+
+    card_plan = LayoutNodePlan(
+        node_id="card:1", name="Card", kind="frame", display=DISPLAY_FLEX,
+        box=Box(x=0, y=0, width=200, height=80),
+        overflow=OverflowSpec(x=OVERFLOW_CLIP, y=OVERFLOW_CLIP),
+    )
+    label_plan = LayoutNodePlan(
+        node_id="t:3", name="Label", kind="text", display=DISPLAY_NONE,
+        text=TextModel(characters="Save changes"),
+    )
+    card_plan.children.append(label_plan)
+    plan = LayoutPlan(file_key="rt", viewport=1440.0, screens=[card_plan])
+    return doc, plan
+
+
 def _unsupported_fixture():
-    """A screen with an absolute-positioned node and a gradient-fill node."""
+    """Gradient, absolute-positioned, and image-fill nodes."""
     grad_node = IRNode(
         id="grad:1", name="Gradient", kind=KIND_FRAME, node_type="FRAME",
         source=IRSource(file_key="rt", node_id="grad:1"),
@@ -161,10 +210,15 @@ def _unsupported_fixture():
         source=IRSource(file_key="rt", node_id="abs:1"),
         position=IRPosition(mode="absolute", left=8.0, top=8.0),
     )
+    img_node = IRNode(
+        id="img:1", name="Photo", kind=KIND_FRAME, node_type="FRAME",
+        source=IRSource(file_key="rt", node_id="img:1"),
+        style=IRStyle(fills=[IRFill(kind="image", image_ref="asset://photo")]),
+    )
     root = IRNode(
         id="0:9", name="Overlay", kind=KIND_FRAME, node_type="FRAME",
         source=IRSource(file_key="rt", node_id="0:9"),
-        children=[grad_node, abs_node],
+        children=[grad_node, abs_node, img_node],
     )
     page = IRNode(
         id="page-1", name="Page", kind=KIND_PAGE, node_type="CANVAS",
@@ -186,6 +240,10 @@ def _unsupported_fixture():
     screen.children.append(LayoutNodePlan(
         node_id="abs:1", name="Badge", kind="frame", display=DISPLAY_ABSOLUTE,
         box=Box(x=8, y=8, width=64, height=24),
+    ))
+    screen.children.append(LayoutNodePlan(
+        node_id="img:1", name="Photo", kind="frame", display=DISPLAY_NONE,
+        box=Box(x=0, y=0, width=100, height=50),
     ))
     plan = LayoutPlan(file_key="rt", viewport=1440.0, screens=[screen])
     return doc, plan
@@ -293,6 +351,24 @@ class TestReactTailwindBackend(unittest.TestCase):
         tsx = [f for f in self._generate().files if f.path.endswith(".tsx")][0]
         self.assertIn('max-[768px]:flex-row', tsx.content)
 
+    # -- declared-supported features must be emitted, never silently dropped --
+    def test_supported_features_not_silently_dropped(self):
+        doc, plan = _rich_fixture()
+        tsx = [f for f in self.backend.generate(
+            document=doc, layout_plan=plan,
+        ).files if f.path.endswith(".tsx")][0]
+        content = tsx.content
+        # Shadows -> arbitrary shadow class.
+        self.assertIn("shadow-[0px_4px_8px_rgba(0,0,0,0.25)]", content)
+        # Blur -> blur class.
+        self.assertIn("blur-[4px]", content)
+        # Text decoration, case, letter spacing.
+        self.assertIn("underline", content)
+        self.assertIn("uppercase", content)
+        self.assertIn("tracking-[0.5px]", content)
+        # Overflow clip.
+        self.assertIn("overflow-hidden", content)
+
     # -- fidelity -----------------------------------------------------------
     def test_unsupported_features_losses_and_degrade(self):
         doc, plan = _unsupported_fixture()
@@ -304,8 +380,12 @@ class TestReactTailwindBackend(unittest.TestCase):
         # Generation does not crash and degrades with an inline marker.
         tsx = [f for f in output.files if f.path.endswith(".tsx")][0]
         self.assertIn("fidelity: absolute_positioning", tsx.content)
-        # Gradient fill is approximated with a marker, never silently.
-        self.assertIn("fidelity: fills_gradient", tsx.content)
+        # Gradient fills are genuinely representable via arbitrary classes.
+        self.assertIn("bg-gradient-to-b", tsx.content)
+        self.assertIn("from-[#ff0000]", tsx.content)
+        self.assertIn("to-[#0000ff]", tsx.content)
+        # Image fills (declared partial) degrade with a marker, never silently.
+        self.assertIn("fidelity: fills_image", tsx.content)
 
     # -- tokens -------------------------------------------------------------
     def test_tokens_extracted(self):
@@ -357,6 +437,11 @@ class TestReactTailwindBackend(unittest.TestCase):
         self.assertEqual(caps.file_extensions, (".tsx",))
         self.assertIn("flex", caps.supported_features)
         self.assertIn("absolute_positioning", caps.unsupported_features)
+        # Declared partial, never supported: image fills, assets, prototype
+        # links — each has a named fallback or inline marker.
+        for feature in ("fills_image", "prototype_links", "svg_assets"):
+            self.assertIn(feature, caps.partial_features)
+            self.assertNotIn(feature, caps.supported_features)
 
 
 if __name__ == "__main__":

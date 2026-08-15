@@ -8,11 +8,11 @@ struct LandingView: View {
     VStack(alignment: .trailing, spacing: 24) {
       Text("Welcome")
         .foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.24))
-        .font(.system(size: 32, weight: .bold))
+        .font(.custom("Inter", size: 32, weight: .bold))
         .multilineTextAlignment(.center)
       HStack {
         Text("Click me")
-          .font(.system(size: 16, weight: .semibold))
+          .font(.custom("Inter", size: 16, weight: .semibold))
           .lineSpacing(24)
           .kerning(0.5)
       }

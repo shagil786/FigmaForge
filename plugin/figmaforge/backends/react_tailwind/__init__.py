@@ -37,7 +37,13 @@ from ..web_common import (
     escape_attr,
 )
 from core.ir_types import IRDocument, IRNode
-from core.layout_types import DISPLAY_ABSOLUTE, LayoutNodePlan, LayoutPlan
+from core.layout_types import (
+    DISPLAY_ABSOLUTE,
+    LayoutNodePlan,
+    LayoutPlan,
+    OVERFLOW_CLIP,
+    OVERFLOW_SCROLL,
+)
 from core.resolver import ResolutionReport
 from core.token_resolver import SemanticToken
 
@@ -52,7 +58,6 @@ _REACT_TW_UNSUPPORTED = frozenset({
 _REACT_TW_SUPPORTED = (WEB_COMMON_FEATURES - _REACT_TW_UNSUPPORTED) | frozenset({
     Feature.GRID,
     Feature.FILLS_GRADIENT,
-    Feature.FILLS_IMAGE,
     Feature.SHADOWS,
     Feature.CORNER_RADIUS,
     Feature.OPACITY,
@@ -60,15 +65,12 @@ _REACT_TW_SUPPORTED = (WEB_COMMON_FEATURES - _REACT_TW_UNSUPPORTED) | frozenset(
     Feature.TEXT_WRAP,
     Feature.OVERFLOW_CLIP,
     Feature.OVERFLOW_SCROLL,
-    Feature.IMAGE_ASSETS,
-    Feature.SVG_ASSETS,
     Feature.DESIGN_TOKENS,
     Feature.TOKEN_REFERENCES,
     Feature.COMPONENTS,
     Feature.COMPONENT_INSTANCES,
     Feature.BREAKPOINTS,
     Feature.RESPONSIVE_CONSTRAINTS,
-    Feature.PROTOTYPE_LINKS,
 })
 
 # Tailwind doesn't support some CSS features natively
@@ -83,6 +85,10 @@ _REACT_TW_PARTIAL = frozenset({
     Feature.MEDIA_QUERIES,  # Tailwind responsive prefixes, not arbitrary
     Feature.COMPONENT_VARIANTS,  # Requires pattern implementation
     Feature.CONSTRAINTS,  # Mapped to Tailwind positioning
+    Feature.FILLS_IMAGE,  # Requires asset/config plumbing (solid fallback + marker)
+    Feature.IMAGE_ASSETS,  # Outside the common IR surface (spec non-goal)
+    Feature.SVG_ASSETS,  # Outside the common IR surface (spec non-goal)
+    Feature.PROTOTYPE_LINKS,  # Requires router wiring (spec non-goal)
 })
 
 
@@ -163,6 +169,19 @@ def _size_class(prefix: str, value: str) -> Optional[str]:
             pass
         return f"{prefix}-[{num}%]"
     return _px_class(prefix, value)
+
+
+def _shadow_class(shadow: Any) -> str:
+    """IRShadow -> a Tailwind arbitrary shadow class (underscores for spaces)."""
+    c = shadow.color
+    r = max(0, min(255, int(round((c.r if c.r is not None else 0.0) * 255))))
+    g = max(0, min(255, int(round((c.g if c.g is not None else 0.0) * 255))))
+    b = max(0, min(255, int(round((c.b if c.b is not None else 0.0) * 255))))
+    a = 1.0 if c.a is None else c.a
+    return (
+        f"shadow-[{_fmt_num(shadow.x)}px_{_fmt_num(shadow.y)}px_"
+        f"{_fmt_num(shadow.blur)}px_rgba({r},{g},{b},{_fmt_num(a)})]"
+    )
 
 
 def _css_class(prop: str, value: str) -> Optional[str]:
@@ -382,6 +401,14 @@ class ReactTailwindBackend(BackendAdapter):
             self._ir_style_classes(ir, classes, markers)
             self._ir_typography_classes(ir, classes)
 
+        if plan_node.overflow is not None:
+            if (plan_node.overflow.x == OVERFLOW_CLIP
+                    or plan_node.overflow.y == OVERFLOW_CLIP):
+                classes.append("overflow-hidden")
+            elif (plan_node.overflow.x == OVERFLOW_SCROLL
+                    or plan_node.overflow.y == OVERFLOW_SCROLL):
+                classes.append("overflow-auto")
+
         for bp in plan_node.breakpoints:
             cls = _breakpoint_class(bp)
             if cls is not None:
@@ -395,7 +422,7 @@ class ReactTailwindBackend(BackendAdapter):
         classes: List[str],
         markers: List[str],
     ) -> None:
-        """Solid fills, borders, radius, and opacity from the IR node."""
+        """Solid/gradient fills, shadows, blur, borders, radius, opacity."""
         if ir.style is None:
             return
         style = ir.style
@@ -406,14 +433,27 @@ class ReactTailwindBackend(BackendAdapter):
             if fill.kind == "solid" and fill.color is not None:
                 classes.append(f"bg-[{_hex6(fill.color)}]")
                 break
-            if fill.kind == "gradient" and fill.gradient_stops:
-                first = fill.gradient_stops[0].color
-                if first is not None:
-                    classes.append(f"bg-[{_hex6(first)}]")
-                markers.append("fidelity: fills_gradient approximated (solid fallback)")
+            if fill.kind == "gradient":
+                stops = [st for st in fill.gradient_stops if st.color is not None]
+                if stops:
+                    classes.append("bg-gradient-to-b")
+                    classes.append(f"from-[{_hex6(stops[0].color)}]")
+                    classes.append(f"to-[{_hex6(stops[-1].color)}]")
+                    break
+                markers.append("fidelity: fills_gradient approximated (omitted)")
                 break
-            markers.append(f"fidelity: {fill.kind}_fill approximated (omitted)")
+            markers.append(f"fidelity: fills_{fill.kind} approximated (omitted)")
             break
+
+        for shadow in style.shadows:
+            if shadow.visible and shadow.color is not None:
+                classes.append(_shadow_class(shadow))
+                break
+
+        for blur in style.blurs:
+            if blur.visible and blur.radius:
+                classes.append(f"blur-[{_fmt_num(blur.radius)}px]")
+                break
 
         if style.radius is not None:
             classes.append(f"rounded-[{_fmt_num(style.radius)}px]")
@@ -457,6 +497,21 @@ class ReactTailwindBackend(BackendAdapter):
             classes.append(f"tracking-[{_fmt_num(t.letter_spacing)}px]")
         if t.text_align:
             classes.append(_ALIGN_CLASSES.get(t.text_align, "text-left"))
+        if t.text_decoration:
+            decoration = {
+                "UNDERLINE": "underline",
+                "STRIKETHROUGH": "line-through",
+            }.get(t.text_decoration.upper())
+            if decoration:
+                classes.append(decoration)
+        if t.text_case:
+            text_case = {
+                "UPPER": "uppercase",
+                "LOWER": "lowercase",
+                "TITLE": "capitalize",
+            }.get(t.text_case.upper())
+            if text_case:
+                classes.append(text_case)
 
     # ---------------------------------------------------------------- tokens
 

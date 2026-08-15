@@ -25,12 +25,14 @@ if str(plugin_root) not in sys.path:
 from backends.protocol import GeneratedOutput
 from backends.vue import VueBackend
 from core.ir_types import (
+    IRBlur,
     IRColor,
     IRDocument,
     IRFill,
     IRGradientStop,
     IRNode,
     IRPosition,
+    IRShadow,
     IRSource,
     IRStyle,
     IRTextContent,
@@ -50,6 +52,8 @@ from core.layout_types import (
     EdgeOffsets,
     LayoutNodePlan,
     LayoutPlan,
+    OVERFLOW_CLIP,
+    OverflowSpec,
     SIZING_FIXED,
     SpacingSpec,
     SizingSpec,
@@ -139,6 +143,51 @@ def _web_plan() -> LayoutPlan:
     return LayoutPlan(file_key="vue", viewport=1440.0, screens=[screen])
 
 
+def _rich_fixture():
+    """A screen exercising shadows, blur, decoration/case, and overflow."""
+    label = IRNode(
+        id="t:3", name="Label", kind=KIND_TEXT, node_type="TEXT",
+        source=IRSource(file_key="vue", node_id="t:3"),
+        typography=IRTypography(
+            font_size=14.0, font_weight=600.0, letter_spacing=0.5,
+            text_decoration="UNDERLINE", text_case="UPPER",
+        ),
+        text=IRTextContent(characters="Save changes"),
+    )
+    card = IRNode(
+        id="card:1", name="Card", kind=KIND_FRAME, node_type="FRAME",
+        source=IRSource(file_key="vue", node_id="card:1"),
+        style=IRStyle(
+            fills=[IRFill(kind="solid", color=IRColor(r=0.1, g=0.1, b=0.1, a=1.0))],
+            shadows=[IRShadow(
+                color=IRColor(r=0.0, g=0.0, b=0.0, a=0.25), x=0.0, y=4.0, blur=8.0,
+            )],
+            blurs=[IRBlur(kind="layer", radius=4.0)],
+        ),
+        children=[label],
+    )
+    page = IRNode(
+        id="page-1", name="Page", kind=KIND_PAGE, node_type="CANVAS",
+        source=IRSource(file_key="vue", node_id="page-1"),
+        children=[card],
+    )
+    doc = IRDocument(file_key="vue", name="Rich", pages=[page])
+    doc.root = card
+
+    card_plan = LayoutNodePlan(
+        node_id="card:1", name="Card", kind="frame", display=DISPLAY_FLEX,
+        box=Box(x=0, y=0, width=200, height=80),
+        overflow=OverflowSpec(x=OVERFLOW_CLIP, y=OVERFLOW_CLIP),
+    )
+    label_plan = LayoutNodePlan(
+        node_id="t:3", name="Label", kind="text", display=DISPLAY_NONE,
+        text=TextModel(characters="Save changes"),
+    )
+    card_plan.children.append(label_plan)
+    plan = LayoutPlan(file_key="vue", viewport=1440.0, screens=[card_plan])
+    return doc, plan
+
+
 def _unsupported_fixture():
     """Gradient fill + absolute-positioned node (absolute is a vue loss)."""
     grad_node = IRNode(
@@ -157,10 +206,15 @@ def _unsupported_fixture():
         source=IRSource(file_key="vue", node_id="abs:1"),
         position=IRPosition(mode="absolute", left=8.0, top=8.0),
     )
+    img_node = IRNode(
+        id="img:1", name="Photo", kind=KIND_FRAME, node_type="FRAME",
+        source=IRSource(file_key="vue", node_id="img:1"),
+        style=IRStyle(fills=[IRFill(kind="image", image_ref="asset://photo")]),
+    )
     root = IRNode(
         id="0:9", name="Overlay", kind=KIND_FRAME, node_type="FRAME",
         source=IRSource(file_key="vue", node_id="0:9"),
-        children=[grad_node, abs_node],
+        children=[grad_node, abs_node, img_node],
     )
     page = IRNode(
         id="page-1", name="Page", kind=KIND_PAGE, node_type="CANVAS",
@@ -182,6 +236,10 @@ def _unsupported_fixture():
     screen.children.append(LayoutNodePlan(
         node_id="abs:1", name="Badge", kind="frame", display=DISPLAY_ABSOLUTE,
         box=Box(x=8, y=8, width=64, height=24),
+    ))
+    screen.children.append(LayoutNodePlan(
+        node_id="img:1", name="Photo", kind="frame", display=DISPLAY_NONE,
+        box=Box(x=0, y=0, width=100, height=50),
     ))
     plan = LayoutPlan(file_key="vue", viewport=1440.0, screens=[screen])
     return doc, plan
@@ -257,6 +315,24 @@ class TestVueBackend(unittest.TestCase):
         self.assertIn("@media (max-width: 768px)", content)
         self.assertIn("flex-direction: row", content)
 
+    # -- declared-supported features must be emitted, never silently dropped --
+    def test_supported_features_not_silently_dropped(self):
+        doc, plan = _rich_fixture()
+        sfc = [f for f in self.backend.generate(
+            document=doc, layout_plan=plan,
+        ).files if f.path.endswith(".vue")][0]
+        content = sfc.content
+        # Shadows -> box-shadow.
+        self.assertIn("box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.25)", content)
+        # Blur -> filter.
+        self.assertIn("filter: blur(4px)", content)
+        # Text decoration / case / letter spacing.
+        self.assertIn("text-decoration: underline", content)
+        self.assertIn("text-transform: uppercase", content)
+        self.assertIn("letter-spacing: 0.5px", content)
+        # Overflow clip.
+        self.assertIn("overflow: hidden", content)
+
     def test_unsupported_features_losses(self):
         doc, plan = _unsupported_fixture()
         output = self.backend.generate(document=doc, layout_plan=plan)
@@ -269,6 +345,8 @@ class TestVueBackend(unittest.TestCase):
         self.assertIn("<!-- fidelity: absolute_positioning", sfc.content)
         # Gradient fills are genuinely representable in scoped CSS.
         self.assertIn("linear-gradient", sfc.content)
+        # Image fills (declared partial) are marked, never silent.
+        self.assertIn("<!-- fidelity: fills_image", sfc.content)
 
     def test_deterministic(self):
         a = self._sfc().content
@@ -303,6 +381,12 @@ class TestVueBackend(unittest.TestCase):
         self.assertEqual(caps.file_extensions, (".vue",))
         self.assertIn("flex", caps.supported_features)
         self.assertIn("absolute_positioning", caps.unsupported_features)
+        # Declared partial, never supported: image fills, assets, prototype
+        # links, interactions — each has a named fallback or inline marker.
+        for feature in ("fills_image", "prototype_links", "interactions",
+                        "design_tokens"):
+            self.assertIn(feature, caps.partial_features)
+            self.assertNotIn(feature, caps.supported_features)
 
 
 if __name__ == "__main__":

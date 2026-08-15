@@ -35,6 +35,7 @@ from core.ir_types import (
     IRGradientStop,
     IRNode,
     IRPosition,
+    IRShadow,
     IRSource,
     IRStyle,
     IRTextContent,
@@ -53,6 +54,8 @@ from core.layout_types import (
     EdgeOffsets,
     LayoutNodePlan,
     LayoutPlan,
+    OVERFLOW_CLIP,
+    OverflowSpec,
     SIZING_FIXED,
     SpacingSpec,
     SizingSpec,
@@ -145,6 +148,50 @@ def _dart_plan() -> LayoutPlan:
     button.children.append(btn_label)
     screen.children.extend([title, button])
     return LayoutPlan(file_key="dart", viewport=390.0, screens=[screen])
+
+
+def _rich_fixture():
+    """Shadows, decoration, letter spacing, text case, and overflow clip."""
+    label = IRNode(
+        id="t:3", name="Label", kind=KIND_TEXT, node_type="TEXT",
+        source=IRSource(file_key="dart", node_id="t:3"),
+        typography=IRTypography(
+            font_size=14.0, font_weight=600.0, letter_spacing=0.5,
+            text_decoration="UNDERLINE", text_case="UPPER",
+        ),
+        text=IRTextContent(characters="Save changes"),
+    )
+    card = IRNode(
+        id="card:1", name="Card", kind=KIND_FRAME, node_type="FRAME",
+        source=IRSource(file_key="dart", node_id="card:1"),
+        style=IRStyle(
+            fills=[IRFill(kind="solid", color=IRColor(r=0.1, g=0.1, b=0.1, a=1.0))],
+            shadows=[IRShadow(
+                color=IRColor(r=0.0, g=0.0, b=0.0, a=0.25), x=0.0, y=4.0, blur=8.0,
+            )],
+        ),
+        children=[label],
+    )
+    page = IRNode(
+        id="page-1", name="Page", kind=KIND_PAGE, node_type="CANVAS",
+        source=IRSource(file_key="dart", node_id="page-1"),
+        children=[card],
+    )
+    doc = IRDocument(file_key="dart", name="Rich", pages=[page])
+    doc.root = card
+
+    card_plan = LayoutNodePlan(
+        node_id="card:1", name="Card", kind="frame", display=DISPLAY_FLEX,
+        box=Box(x=0, y=0, width=200, height=80),
+        overflow=OverflowSpec(x=OVERFLOW_CLIP, y=OVERFLOW_CLIP),
+    )
+    label_plan = LayoutNodePlan(
+        node_id="t:3", name="Label", kind="text", display=DISPLAY_NONE,
+        text=TextModel(characters="Save changes"),
+    )
+    card_plan.children.append(label_plan)
+    plan = LayoutPlan(file_key="dart", viewport=390.0, screens=[card_plan])
+    return doc, plan
 
 
 def _unsupported_fixture():
@@ -282,6 +329,26 @@ class TestFlutterBackend(unittest.TestCase):
         self.assertIn("Align(", content)
         self.assertIn("alignment: Alignment.center", content)
 
+    # -- declared-supported features must be emitted, never silently dropped --
+    def test_supported_features_not_silently_dropped(self):
+        doc, plan = _rich_fixture()
+        widget = [f for f in self.backend.generate(
+            document=doc, layout_plan=plan,
+        ).files if f.path.endswith(".dart")][0]
+        content = widget.content
+        # Shadows -> BoxShadow with alpha hex.
+        self.assertIn("boxShadow: [BoxShadow(", content)
+        self.assertIn("color: Color(0x40000000)", content)
+        self.assertIn("blurRadius: 8,", content)
+        self.assertIn("offset: Offset(0, 4),", content)
+        # Text decoration + letter spacing.
+        self.assertIn("decoration: TextDecoration.underline", content)
+        self.assertIn("letterSpacing: 0.5,", content)
+        # Text case -> literal transform.
+        self.assertIn("'SAVE CHANGES'", content)
+        # Overflow clip -> clipBehavior.
+        self.assertIn("clipBehavior: Clip.hardEdge,", content)
+
     def test_unsupported_features_losses(self):
         doc, plan = _unsupported_fixture()
         output = self.backend.generate(document=doc, layout_plan=plan)
@@ -334,6 +401,11 @@ class TestFlutterBackend(unittest.TestCase):
         self.assertIn("flex", caps.supported_features)
         self.assertIn("media_queries", caps.unsupported_features)
         self.assertIn("fills_image", caps.partial_features)
+        # Declared partial, never supported: scroll, assets, instances, tokens.
+        for feature in ("overflow_scroll", "image_assets",
+                        "component_instances", "design_tokens"):
+            self.assertIn(feature, caps.partial_features)
+            self.assertNotIn(feature, caps.supported_features)
 
 
 if __name__ == "__main__":

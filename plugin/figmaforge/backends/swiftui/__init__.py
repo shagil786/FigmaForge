@@ -34,6 +34,9 @@ from core.layout_types import (
     DISPLAY_FLEX,
     LayoutNodePlan,
     LayoutPlan,
+    OVERFLOW_CLIP,
+    SIZING_FILL,
+    SIZING_HUG,
 )
 from core.resolver import ResolutionReport
 
@@ -61,10 +64,7 @@ _SWIFTUI_SUPPORTED = frozenset({
     Feature.TEXT_ALIGN,
     Feature.TEXT_WRAP,
     Feature.TEXT_DECORATION,
-    Feature.IMAGE_ASSETS,
-    Feature.COMPONENTS,  # SwiftUI views
-    Feature.COMPONENT_INSTANCES,
-    Feature.DESIGN_TOKENS,  # Asset catalog / Color extensions
+    Feature.COMPONENTS,  # SwiftUI views (per-screen structs)
     Feature.OVERFLOW_CLIP,  # .clipped()
 })
 
@@ -81,6 +81,9 @@ _SWIFTUI_PARTIAL = frozenset({
     Feature.COMPONENT_VARIANTS,  # Requires pattern implementation
     Feature.PROTOTYPE_LINKS,  # NavigationLink, different model
     Feature.INTERACTIONS,  # Gestures, different model
+    Feature.IMAGE_ASSETS,  # Asset catalog emission (spec non-goal)
+    Feature.COMPONENT_INSTANCES,  # Nested subviews (spec non-goal)
+    Feature.DESIGN_TOKENS,  # Asset catalog / Color extensions (spec non-goal)
 })
 
 _SWIFTUI_UNSUPPORTED = frozenset({
@@ -298,11 +301,26 @@ struct {name}View: View {{
         else:
             head = "Rectangle()"
 
-        if not is_text and plan_node.box is not None:
+        # Sizing modes -> SwiftUI frames (fixed wins unless fill/hug declared).
+        h_fill = v_fill = h_hug = v_hug = False
+        if plan_node.sizing is not None:
+            h = plan_node.sizing.horizontal
+            v = plan_node.sizing.vertical
+            h_fill = h is not None and h.mode == SIZING_FILL
+            v_fill = v is not None and v.mode == SIZING_FILL
+            h_hug = h is not None and h.mode == SIZING_HUG
+            v_hug = v is not None and v.mode == SIZING_HUG
+        if not is_text and plan_node.box is not None and not (h_fill or v_fill):
             modifiers.append(
                 f".frame(width: {_fmt_num(plan_node.box.width)}, "
                 f"height: {_fmt_num(plan_node.box.height)})"
             )
+        if h_fill:
+            modifiers.append(".frame(maxWidth: .infinity)")
+        if v_fill:
+            modifiers.append(".frame(maxHeight: .infinity)")
+        if h_hug or v_hug:
+            modifiers.append(".fixedSize()")
 
         if plan_node.display == DISPLAY_ABSOLUTE and plan_node.box is not None:
             modifiers.append(
@@ -341,6 +359,17 @@ struct {name}View: View {{
                     )
                     break
 
+            for shadow in s.shadows:
+                if shadow.visible and shadow.color is not None:
+                    color = f"Color({_swift_color(shadow.color)})"
+                    if shadow.color.a is not None and shadow.color.a < 0.999:
+                        color += f".opacity({_fmt_num(shadow.color.a)})"
+                    modifiers.append(
+                        f".shadow(color: {color}, radius: {_fmt_num(shadow.blur)}, "
+                        f"x: {_fmt_num(shadow.x)}, y: {_fmt_num(shadow.y)})"
+                    )
+                    break
+
         if ir is not None and ir.opacity < 1.0:
             modifiers.append(f".opacity({_fmt_num(ir.opacity)})")
 
@@ -351,10 +380,14 @@ struct {name}View: View {{
                 weight = _WEIGHT_SWIFT.get(
                     int(round(float(t.font_weight))) if t.font_weight is not None else None
                 )
-                if weight:
-                    modifiers.append(f".font(.system({size_arg}, weight: {weight}))")
+                weight_arg = f", weight: {weight}" if weight else ""
+                if t.font_family:
+                    modifiers.append(
+                        f".font(.custom(\"{_escape_swift(t.font_family)}\", "
+                        f"{size_arg}{weight_arg}))"
+                    )
                 else:
-                    modifiers.append(f".font(.system({size_arg}))")
+                    modifiers.append(f".font(.system({size_arg}{weight_arg}))")
             if t.line_height is not None:
                 modifiers.append(f".lineSpacing({_fmt_num(t.line_height)})")
             if t.letter_spacing is not None:
@@ -363,6 +396,18 @@ struct {name}View: View {{
                 modifiers.append(
                     f".multilineTextAlignment({_ALIGN_SWIFT.get(t.text_align, '.center')})"
                 )
+            if t.text_decoration:
+                decoration = {
+                    "UNDERLINE": ".underline()",
+                    "STRIKETHROUGH": ".strikethrough()",
+                }.get(t.text_decoration.upper())
+                if decoration:
+                    modifiers.append(decoration)
+
+        if plan_node.overflow is not None:
+            if (plan_node.overflow.x == OVERFLOW_CLIP
+                    or plan_node.overflow.y == OVERFLOW_CLIP):
+                modifiers.append(".clipped()")
 
         return head, is_container, modifiers, markers
 

@@ -32,6 +32,8 @@ from core.layout_types import (
     DISPLAY_FLEX,
     DISPLAY_GRID,
     LayoutNodePlan,
+    OVERFLOW_CLIP,
+    OVERFLOW_SCROLL,
     SIZING_FIXED,
     SIZING_FILL,
     SIZING_HUG,
@@ -338,6 +340,15 @@ def _hex6(color: Any) -> str:
     return h
 
 
+def _rgba(color: Any) -> str:
+    """``rgba(r, g, b, a)`` string for an IRColor."""
+    def _byte(v: Any) -> int:
+        return max(0, min(255, int(round((v if v is not None else 0.0) * 255))))
+    alpha = getattr(color, "a", None)
+    a = 1.0 if alpha is None else alpha
+    return f"rgba({_byte(color.r)}, {_byte(color.g)}, {_byte(color.b)}, {_fmt_num(a)})"
+
+
 class ScopedCssGenerator:
     """Collect per-node scoped CSS rules + ``@media`` breakpoint rules.
 
@@ -454,6 +465,26 @@ class ScopedCssGenerator:
             if ir.opacity < 1.0:
                 style.base["opacity"] = _fmt_num(ir.opacity)
 
+            for shadow in s.shadows:
+                if not shadow.visible or shadow.color is None:
+                    continue
+                spread = (
+                    f" {_fmt_num(shadow.spread)}px"
+                    if shadow.spread
+                    else ""
+                )
+                style.base["boxShadow"] = (
+                    f"{_fmt_num(shadow.x)}px {_fmt_num(shadow.y)}px "
+                    f"{_fmt_num(shadow.blur)}px{spread} "
+                    f"{_rgba(shadow.color)}"
+                )
+                break
+
+            for blur in s.blurs:
+                if blur.visible and blur.radius:
+                    style.base["filter"] = f"blur({_fmt_num(blur.radius)}px)"
+                    break
+
         if ir is not None and ir.typography is not None:
             t = ir.typography
             if t.font_size is not None:
@@ -470,6 +501,24 @@ class ScopedCssGenerator:
                 style.base["textAlign"] = {
                     "LEFT": "left", "CENTER": "center", "RIGHT": "right",
                 }.get(t.text_align, "left")
+            if t.text_decoration:
+                style.base["textDecoration"] = {
+                    "UNDERLINE": "underline",
+                    "STRIKETHROUGH": "line-through",
+                }.get(t.text_decoration.upper())
+            if t.text_case:
+                style.base["textTransform"] = {
+                    "UPPER": "uppercase",
+                    "LOWER": "lowercase",
+                    "TITLE": "capitalize",
+                }.get(t.text_case.upper())
+
+        # Overflow behavior (clip / scroll) is representable in scoped CSS.
+        if plan_node.overflow is not None:
+            if plan_node.overflow.x == OVERFLOW_CLIP or plan_node.overflow.y == OVERFLOW_CLIP:
+                style.base["overflow"] = "hidden"
+            elif plan_node.overflow.x == OVERFLOW_SCROLL or plan_node.overflow.y == OVERFLOW_SCROLL:
+                style.base["overflow"] = "auto"
 
         # Breakpoints -> scoped @media rules.
         for bp in plan_node.breakpoints:

@@ -44,10 +44,25 @@ _VUE_UNSUPPORTED = frozenset({
     Feature.AUTO_LAYOUT,  # Vue components, not a Figma layout concept
 })
 
-_VUE_SUPPORTED = (WEB_COMMON_FEATURES - _VUE_UNSUPPORTED) | frozenset({
+# Features Vue can only approximate: image fills (solid fallback + inline
+# marker), asset/token/reference plumbing, component variants, and prototype
+# links are all outside the common IR surface (spec non-goals).
+_VUE_PARTIAL = frozenset({
+    Feature.CONSTRAINTS,
+    Feature.MARGIN,
+    Feature.FILLS_IMAGE,
+    Feature.IMAGE_ASSETS,
+    Feature.SVG_ASSETS,
+    Feature.DESIGN_TOKENS,
+    Feature.TOKEN_REFERENCES,
+    Feature.COMPONENT_VARIANTS,
+    Feature.PROTOTYPE_LINKS,
+    Feature.INTERACTIONS,
+})
+
+_VUE_SUPPORTED = (WEB_COMMON_FEATURES - _VUE_UNSUPPORTED - _VUE_PARTIAL) | frozenset({
     Feature.GRID,
     Feature.FILLS_GRADIENT,
-    Feature.FILLS_IMAGE,
     Feature.SHADOWS,
     Feature.BLUR,
     Feature.CORNER_RADIUS,
@@ -57,23 +72,11 @@ _VUE_SUPPORTED = (WEB_COMMON_FEATURES - _VUE_UNSUPPORTED) | frozenset({
     Feature.LETTER_SPACING,
     Feature.OVERFLOW_CLIP,
     Feature.OVERFLOW_SCROLL,
-    Feature.IMAGE_ASSETS,
-    Feature.SVG_ASSETS,
-    Feature.DESIGN_TOKENS,
-    Feature.TOKEN_REFERENCES,
     Feature.COMPONENTS,
     Feature.COMPONENT_INSTANCES,
-    Feature.COMPONENT_VARIANTS,
     Feature.BREAKPOINTS,
     Feature.MEDIA_QUERIES,
     Feature.RESPONSIVE_CONSTRAINTS,
-    Feature.PROTOTYPE_LINKS,
-    Feature.INTERACTIONS,
-})
-
-_VUE_PARTIAL = frozenset({
-    Feature.CONSTRAINTS,
-    Feature.MARGIN,
 })
 
 
@@ -207,9 +210,23 @@ class VueBackend(BackendAdapter):
         else:
             element = f"{pad}<{vnode.tag}{attr_str}></{vnode.tag}>"
 
+        # Image fills are approximated with a solid fallback — always marked.
+        markers: List[str] = []
+        ir = ir_by_id.get(vnode.node_id)
+        if ir is not None and ir.style is not None:
+            for fill in ir.style.fills:
+                if fill.visible and fill.kind == "image":
+                    markers.append(
+                        "<!-- fidelity: fills_image approximated (solid fallback) -->"
+                    )
+                    break
         if plan_node.display == DISPLAY_ABSOLUTE:
-            marker = f"{pad}<!-- fidelity: absolute_positioning approximated (in-flow) -->"
-            return f"{marker}\n{element}"
+            markers.append(
+                "<!-- fidelity: absolute_positioning approximated (in-flow) -->"
+            )
+        if markers:
+            marker_lines = "\n".join(f"{pad}{m}" for m in markers)
+            return f"{marker_lines}\n{element}"
         return element
 
 def _class_name(node_id: str) -> str:

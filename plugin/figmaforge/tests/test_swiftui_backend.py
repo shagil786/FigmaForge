@@ -33,6 +33,7 @@ from core.ir_types import (
     IRGradientStop,
     IRNode,
     IRPosition,
+    IRShadow,
     IRSource,
     IRStyle,
     IRTextContent,
@@ -51,6 +52,9 @@ from core.layout_types import (
     EdgeOffsets,
     LayoutNodePlan,
     LayoutPlan,
+    OVERFLOW_CLIP,
+    OverflowSpec,
+    SIZING_FILL,
     SIZING_FIXED,
     SpacingSpec,
     SizingSpec,
@@ -143,6 +147,54 @@ def _swift_plan() -> LayoutPlan:
     button.children.append(btn_label)
     screen.children.extend([title, button])
     return LayoutPlan(file_key="swift", viewport=390.0, screens=[screen])
+
+
+def _rich_fixture():
+    """Shadows, text decoration, overflow clip, and fill sizing."""
+    label = IRNode(
+        id="t:3", name="Label", kind=KIND_TEXT, node_type="TEXT",
+        source=IRSource(file_key="swift", node_id="t:3"),
+        typography=IRTypography(
+            font_family="Inter", font_size=14.0, font_weight=600.0,
+            text_decoration="UNDERLINE",
+        ),
+        text=IRTextContent(characters="Save changes"),
+    )
+    card = IRNode(
+        id="card:1", name="Card", kind=KIND_FRAME, node_type="FRAME",
+        source=IRSource(file_key="swift", node_id="card:1"),
+        style=IRStyle(
+            fills=[IRFill(kind="solid", color=IRColor(r=0.1, g=0.1, b=0.1, a=1.0))],
+            shadows=[IRShadow(
+                color=IRColor(r=0.0, g=0.0, b=0.0, a=0.25), x=0.0, y=4.0, blur=8.0,
+            )],
+        ),
+        children=[label],
+    )
+    page = IRNode(
+        id="page-1", name="Page", kind=KIND_PAGE, node_type="CANVAS",
+        source=IRSource(file_key="swift", node_id="page-1"),
+        children=[card],
+    )
+    doc = IRDocument(file_key="swift", name="Rich", pages=[page])
+    doc.root = card
+
+    card_plan = LayoutNodePlan(
+        node_id="card:1", name="Card", kind="frame", display=DISPLAY_FLEX,
+        box=Box(x=0, y=0, width=200, height=80),
+        sizing=SizingSpec(
+            horizontal=AxisSizing(mode=SIZING_FILL),
+            vertical=AxisSizing(mode=SIZING_FIXED),
+        ),
+        overflow=OverflowSpec(x=OVERFLOW_CLIP, y=OVERFLOW_CLIP),
+    )
+    label_plan = LayoutNodePlan(
+        node_id="t:3", name="Label", kind="text", display=DISPLAY_NONE,
+        text=TextModel(characters="Save changes"),
+    )
+    card_plan.children.append(label_plan)
+    plan = LayoutPlan(file_key="swift", viewport=390.0, screens=[card_plan])
+    return doc, plan
 
 
 def _unsupported_fixture():
@@ -263,11 +315,33 @@ class TestSwiftUIBackend(unittest.TestCase):
 
     def test_typography_modifiers(self):
         content = self._view().content
-        self.assertIn(".font(.system(size: 32, weight: .bold))", content)
+        self.assertIn('.font(.custom("Inter", size: 32, weight: .bold))', content)
         self.assertIn(".multilineTextAlignment(.center)", content)
-        self.assertIn(".font(.system(size: 16, weight: .semibold))", content)
+        self.assertIn('.font(.custom("Inter", size: 16, weight: .semibold))', content)
         self.assertIn(".kerning(0.5)", content)
         self.assertIn(".lineSpacing(24)", content)
+
+    # -- declared-supported features must be emitted, never silently dropped --
+    def test_supported_features_not_silently_dropped(self):
+        doc, plan = _rich_fixture()
+        view = [f for f in self.backend.generate(
+            document=doc, layout_plan=plan,
+        ).files if f.path.endswith(".swift")][0]
+        content = view.content
+        # Shadows -> .shadow with color opacity.
+        self.assertIn(
+            ".shadow(color: Color(red: 0.00, green: 0.00, blue: 0.00)"
+            ".opacity(0.25), radius: 8, x: 0, y: 4)",
+            content,
+        )
+        # Text decoration -> .underline().
+        self.assertIn(".underline()", content)
+        # Overflow clip -> .clipped().
+        self.assertIn(".clipped()", content)
+        # Fill sizing -> .frame(maxWidth: .infinity).
+        self.assertIn(".frame(maxWidth: .infinity)", content)
+        # Font family -> .custom.
+        self.assertIn('.font(.custom("Inter", size: 14, weight: .semibold))', content)
 
     def test_unsupported_features_losses(self):
         doc, plan = _unsupported_fixture()
@@ -321,6 +395,10 @@ class TestSwiftUIBackend(unittest.TestCase):
         self.assertIn("fills_image", caps.unsupported_features)
         # FILL_SIZE is genuinely supported — never in both buckets.
         self.assertNotIn("fills_image", caps.supported_features)
+        # Declared partial, never supported: assets, instances, tokens.
+        for feature in ("image_assets", "component_instances", "design_tokens"):
+            self.assertIn(feature, caps.partial_features)
+            self.assertNotIn(feature, caps.supported_features)
 
 
 if __name__ == "__main__":

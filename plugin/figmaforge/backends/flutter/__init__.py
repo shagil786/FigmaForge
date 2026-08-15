@@ -35,6 +35,7 @@ from core.layout_types import (
     DISPLAY_FLEX,
     LayoutNodePlan,
     LayoutPlan,
+    OVERFLOW_CLIP,
 )
 from core.resolver import ResolutionReport
 
@@ -63,12 +64,8 @@ _FLUTTER_SUPPORTED = frozenset({
     Feature.TEXT_ALIGN,
     Feature.TEXT_WRAP,
     Feature.TEXT_DECORATION,
-    Feature.IMAGE_ASSETS,
-    Feature.COMPONENTS,  # Flutter widgets
-    Feature.COMPONENT_INSTANCES,
-    Feature.DESIGN_TOKENS,  # ThemeData
+    Feature.COMPONENTS,  # Flutter widgets (per-screen classes)
     Feature.OVERFLOW_CLIP,  # ClipRect
-    Feature.OVERFLOW_SCROLL,  # SingleChildScrollView
     Feature.TEXT_CASE,
     Feature.LETTER_SPACING,
 })
@@ -89,6 +86,10 @@ _FLUTTER_PARTIAL = frozenset({
     Feature.TOKEN_REFERENCES,
     Feature.MIN_MAX_CONSTRAINTS,  # BoxConstraints
     Feature.ALIGN_SELF,  # Align widget
+    Feature.IMAGE_ASSETS,  # Asset plumbing (spec non-goal)
+    Feature.COMPONENT_INSTANCES,  # Nested widgets (spec non-goal)
+    Feature.DESIGN_TOKENS,  # ThemeData (spec non-goal)
+    Feature.OVERFLOW_SCROLL,  # SingleChildScrollView layout model
 })
 
 _FLUTTER_UNSUPPORTED = frozenset({
@@ -129,6 +130,16 @@ def _dart_hex(color: Any) -> str:
         return max(0, min(255, int(round((v if v is not None else 0.0) * 255))))
     return "0xFF{:02X}{:02X}{:02X}".format(
         _byte(color.r), _byte(color.g), _byte(color.b),
+    )
+
+
+def _dart_hex8(color: Any) -> str:
+    """``0xAARRGGBB`` with alpha in the leading byte."""
+    def _byte(v: Any) -> int:
+        return max(0, min(255, int(round((v if v is not None else 0.0) * 255))))
+    alpha = color.a if color.a is not None else 1.0
+    return "0x{:02X}{:02X}{:02X}{:02X}".format(
+        _byte(alpha), _byte(color.r), _byte(color.g), _byte(color.b),
     )
 
 
@@ -327,10 +338,19 @@ class {name}Screen extends StatelessWidget {{
         return "\n".join(lines)
 
     def _text_widget(self, plan_node: LayoutNodePlan, ir: Optional[IRNode]) -> List[str]:
-        lines = ["Text("]
-        lines.append(f"  '{_escape_dart(plan_node.text.characters)}',")
-        style_args: List[str] = []
+        text = plan_node.text.characters
         typo = ir.typography if ir is not None else None
+        if typo is not None and typo.text_case:
+            text_case = typo.text_case.upper()
+            if text_case == "UPPER":
+                text = text.upper()
+            elif text_case == "LOWER":
+                text = text.lower()
+            elif text_case == "TITLE":
+                text = text.title()
+        lines = ["Text("]
+        lines.append(f"  '{_escape_dart(text)}',")
+        style_args: List[str] = []
         if typo is not None:
             if typo.font_size is not None:
                 style_args.append(f"fontSize: {_fmt_num(typo.font_size)},")
@@ -341,6 +361,15 @@ class {name}Screen extends StatelessWidget {{
             if typo.line_height is not None and typo.font_size:
                 ratio = round(typo.line_height / typo.font_size, 2)
                 style_args.append(f"height: {_fmt_num(ratio)},")
+            if typo.letter_spacing is not None:
+                style_args.append(f"letterSpacing: {_fmt_num(typo.letter_spacing)},")
+            if typo.text_decoration:
+                decoration = {
+                    "UNDERLINE": "TextDecoration.underline",
+                    "STRIKETHROUGH": "TextDecoration.lineThrough",
+                }.get(typo.text_decoration.upper())
+                if decoration:
+                    style_args.append(f"decoration: {decoration},")
         fill = _primary_fill(ir)
         if fill is not None and fill.kind == "solid" and fill.color is not None:
             style_args.append(f"color: Color({_dart_hex(fill.color)}),")
@@ -449,6 +478,10 @@ class {name}Screen extends StatelessWidget {{
         if plan_node.box is not None:
             args.append(f"width: {_fmt_num(plan_node.box.width)},")
             args.append(f"height: {_fmt_num(plan_node.box.height)},")
+        if (plan_node.overflow is not None
+                and (plan_node.overflow.x == OVERFLOW_CLIP
+                     or plan_node.overflow.y == OVERFLOW_CLIP)):
+            args.append("clipBehavior: Clip.hardEdge,")
         if plan_node.spacing is not None and plan_node.spacing.padding is not None:
             p = plan_node.spacing.padding
             edges = [p.top, p.right, p.bottom, p.left]
@@ -515,6 +548,16 @@ class {name}Screen extends StatelessWidget {{
                     f"border: Border.all(color: Color({_dart_hex(border.color)}), "
                     f"width: {_fmt_num(border.weight)}),"
                 )
+                break
+        for shadow in style.shadows:
+            if shadow.visible and shadow.color is not None:
+                args.append("boxShadow: [BoxShadow(")
+                args.append(f"  color: Color({_dart_hex8(shadow.color)}),")
+                args.append(f"  blurRadius: {_fmt_num(shadow.blur)},")
+                if shadow.spread:
+                    args.append(f"  spreadRadius: {_fmt_num(shadow.spread)},")
+                args.append(f"  offset: Offset({_fmt_num(shadow.x)}, {_fmt_num(shadow.y)}),")
+                args.append("],")
                 break
         return args
 
