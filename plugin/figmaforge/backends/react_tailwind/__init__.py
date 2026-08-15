@@ -37,6 +37,7 @@ from ..web_common import (
     VNode,
     VNodeBuilder,
     bp_to_css_prop,
+    collect_component_refs,
     escape_attr,
 )
 from core.ir_types import IRDocument, IRNode
@@ -283,6 +284,10 @@ class ReactTailwindBackend(BackendAdapter):
         ir_by_id: Dict[str, IRNode] = {n.id: n for n in document.all_nodes()}
         style_gen = CssStyleGenerator()
         node_builder = VNodeBuilder(resolution)
+        instance_names = frozenset(
+            inst.get("resolved_name") for inst in (resolution.instances if resolution else [])
+            if inst.get("status") == "resolved" and inst.get("resolved_name")
+        )
 
         # Generate one React component per screen.
         for screen_idx, screen in enumerate(layout_plan.screens):
@@ -290,7 +295,7 @@ class ReactTailwindBackend(BackendAdapter):
             root_vnode = node_builder.build(screen)
             tsx_content = self._render_component(
                 root_vnode, screen, component_name, style_gen, ir_by_id,
-                assets=assets,
+                assets=assets, instance_names=instance_names,
             )
             node_ids = [n.node_id for n in screen.walk() if n.node_id]
 
@@ -329,6 +334,7 @@ class ReactTailwindBackend(BackendAdapter):
         style_gen: CssStyleGenerator,
         ir_by_id: Dict[str, IRNode],
         assets: Optional[Dict[str, Dict[str, Any]]] = None,
+        instance_names: Optional[frozenset] = None,
     ) -> str:
         lines = ["import React from 'react';", ""]
         lines.append(
@@ -341,6 +347,28 @@ class ReactTailwindBackend(BackendAdapter):
         ))
         lines.append("  );")
         lines.append("}")
+
+        # Self-contained fallbacks (Part 21, S2): every referenced component
+        # name gets a local definition rendering that node's own subtree, so
+        # the file compiles AND renders without the user's component library.
+        instance_names = instance_names or frozenset()
+        for ref_name, ref_vnode, ref_plan in collect_component_refs(root_vnode, screen):
+            lines.append("")
+            if ref_name in instance_names:
+                lines.append(
+                    "  {/* fidelity: component_instance approximated (fallback) */}"
+                )
+            lines.append(
+                f"function {ref_name}({{ className = '' }}: {{ className?: string }}) {{"
+            )
+            lines.append("  return (")
+            lines.append(self._render_node(
+                ref_vnode, ref_plan, style_gen, ir_by_id, indent=3,
+                assets=assets, tag_override="div",
+            ))
+            lines.append("  );")
+            lines.append("}")
+
         lines.append("")
         lines.append(f"export default {name};")
         return "\n".join(lines) + "\n"
@@ -353,10 +381,15 @@ class ReactTailwindBackend(BackendAdapter):
         ir_by_id: Dict[str, IRNode],
         indent: int,
         assets: Optional[Dict[str, Dict[str, Any]]] = None,
+        tag_override: Optional[str] = None,
     ) -> str:
         pad = "  " * indent
         ir = ir_by_id.get(vnode.node_id)
         classes, markers = self._classes_for(vnode, plan_node, style_gen, ir, assets=assets)
+        tag = tag_override if tag_override is not None else vnode.tag
+        # A component reference at the call site is a self-closing tag with
+        # identifying attrs only — the styling + subtree live in its fallback.
+        is_component_ref = vnode.is_component and tag_override is None
 
         attrs: List[str] = []
         if vnode.node_id:
@@ -365,12 +398,14 @@ class ReactTailwindBackend(BackendAdapter):
             if key == "data-figma-id":
                 continue
             attrs.append(f'{key}="{escape_attr(str(value))}"')
-        if classes:
+        if classes and not is_component_ref:
             attrs.append(f'className="{escape_attr(" ".join(classes))}"')
         attr_str = (" " + " ".join(attrs)) if attrs else ""
 
-        if vnode.text_content is not None and not vnode.children:
-            element = f"{pad}<{vnode.tag}{attr_str}>{_escape_jsx(vnode.text_content)}</{vnode.tag}>"
+        if is_component_ref:
+            element = f"{pad}<{tag}{attr_str}></{tag}>"
+        elif vnode.text_content is not None and not vnode.children:
+            element = f"{pad}<{tag}{attr_str}>{_escape_jsx(vnode.text_content)}</{tag}>"
         elif vnode.children:
             children_html = "\n".join(
                 self._render_node(
@@ -379,9 +414,9 @@ class ReactTailwindBackend(BackendAdapter):
                 )
                 for child_vn, child_plan in zip(vnode.children, plan_node.children)
             )
-            element = f"{pad}<{vnode.tag}{attr_str}>\n{children_html}\n{pad}</{vnode.tag}>"
+            element = f"{pad}<{tag}{attr_str}>\n{children_html}\n{pad}</{tag}>"
         else:
-            element = f"{pad}<{vnode.tag}{attr_str}></{vnode.tag}>"
+            element = f"{pad}<{tag}{attr_str}></{tag}>"
 
         if markers:
             marker_lines = "\n".join(f"{pad}{{/* {m} */}}" for m in markers)
@@ -571,7 +606,10 @@ class ReactTailwindBackend(BackendAdapter):
                 return "      // no tokens resolved"
             lines = []
             for key in sorted(mapping):
-                lines.append(f"        {key}: {quote}{mapping[key]}{quote},")
+                # Quote keys: hyphenated token names (``brand-blue``) are
+                # invalid JS as bare identifiers (Part 21, S3).
+                escaped = str(key).replace(chr(34), chr(92) + chr(34))
+                lines.append(f'        "{escaped}": {quote}{mapping[key]}{quote},')
             return "\n".join(lines)
 
         return f"""\

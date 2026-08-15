@@ -311,6 +311,30 @@ class VNodeBuilder:
         return "div"
 
 
+def collect_component_refs(
+    root: VNode,
+    plan: LayoutNodePlan,
+) -> List[Tuple[str, VNode, LayoutNodePlan]]:
+    """Collect unique component references in the tree (Part 21).
+
+    Returns ``[(name, vnode, plan_node), ...]`` for every ``is_component``
+    vnode, deduplicated by tag name (first occurrence wins, tree order —
+    deterministic).  Web backends use this to emit a self-contained local
+    fallback definition for each referenced name, so generated output
+    compiles and renders even when the user's component library is absent.
+    """
+    seen: Dict[str, Tuple[VNode, LayoutNodePlan]] = {}
+
+    def _walk(v: VNode, p: LayoutNodePlan) -> None:
+        if v.is_component and v.tag not in seen:
+            seen[v.tag] = (v, p)
+        for cv, cp in zip(v.children, p.children):
+            _walk(cv, cp)
+
+    _walk(root, plan)
+    return [(name, v, p) for name, (v, p) in seen.items()]
+
+
 # ---------------------------------------------------------------------------
 # Small deterministic helpers
 # ---------------------------------------------------------------------------
