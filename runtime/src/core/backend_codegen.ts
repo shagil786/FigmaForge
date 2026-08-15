@@ -981,6 +981,16 @@ export interface RepairOptions {
   viewport: { width: number; height: number };
   maxIterations?: number;
   threshold?: number;
+  /**
+   * The backend to regenerate (Part 22): the run's generated backend, so
+   * the fixes reach the SAME code the run rendered (html_css default when
+   * absent).  Python rejects native backends honestly (exit 2).
+   */
+  backend?: string;
+  /** Resolution report (F1) — component refs survive regeneration. */
+  resolutionJson?: unknown;
+  /** Shared asset manifest — image fills survive regeneration (Part 18). */
+  assetsManifest?: unknown;
 }
 
 /**
@@ -1018,6 +1028,19 @@ export async function invokeRepair(
     }
     if (opts.threshold !== undefined) {
       args.push("--threshold", String(opts.threshold));
+    }
+    if (opts.backend !== undefined) {
+      args.push("--backend", opts.backend);
+    }
+    if (opts.resolutionJson !== undefined) {
+      const resolutionPath = path.join(tmp, "resolution.json");
+      fs.writeFileSync(resolutionPath, JSON.stringify(opts.resolutionJson), "utf-8");
+      args.push("--resolution", resolutionPath);
+    }
+    if (opts.assetsManifest !== undefined) {
+      const assetsPath = path.join(tmp, "assets.json");
+      fs.writeFileSync(assetsPath, JSON.stringify(opts.assetsManifest), "utf-8");
+      args.push("--assets", assetsPath);
     }
     const result = await spawnPython(
       cfg.pythonBin,
@@ -1103,6 +1126,17 @@ export function createRepairStageHandler(): StageHandler {
         "repair stage requires normalize/layout output (no irJson/layoutJson available)",
       );
     }
+    // The run's generated backend is the one repair regenerates (Part 22)
+    // — so the fixes reach the SAME code the run rendered (bundler-backed
+    // react/vue/svelte through the Vite harness, not html_css).  Missing
+    // generatedManifest (defensive, F7) → html_css default with a note.
+    const generatedManifest = ctx.shared.get("generatedManifest") as
+      | { backend: string }
+      | undefined;
+    const resolutionJson = ctx.shared.get("resolutionJson");
+    const assetManifest = ctx.shared.get("assetManifest") as
+      | AssetManifest
+      | undefined;
     const cfg = { pythonBin: ctx.toolCtx.pythonBin, pluginDir: ctx.config.pluginDir };
     const payload = await invokeRepair(
       cfg,
@@ -1114,6 +1148,9 @@ export function createRepairStageHandler(): StageHandler {
         viewport: ctx.config.viewport,
         maxIterations: ctx.config.budgets.maxRepairIterations,
         threshold,
+        backend: generatedManifest?.backend ?? "html_css",
+        resolutionJson,
+        assetsManifest: assetManifest,
       },
     );
     const iterationsRun = Number(payload.iterations_run ?? 0);
@@ -1138,7 +1175,9 @@ export function createRepairStageHandler(): StageHandler {
         | { backend: string; files: Array<{ path: string }> }
         | null) ?? null,
       out_dir: repairDir,
-      note: null,
+      note: generatedManifest
+        ? null
+        : "no generatedManifest — regenerated html_css (default)",
     };
     ctx.shared.set("repairOut", repairDir);
     ctx.shared.set("repairStylesPath", result.repaired_styles_path);
@@ -1164,8 +1203,17 @@ export function createRepairStageHandler(): StageHandler {
  * cannot verify"}`` — never a fabricated pass/fail.  Writes the score into
  * run metrics via ``ctx.updateMetrics`` so the run's final Score + a
  * ``Verification:`` line reflect the verified result.
+ *
+ * Post-repair re-rendering (Part 22): a bundler-backed regenerated backend
+ * (react/vue/svelte) is re-rendered through the real Vite harness
+ * (``opts.bundleInvoker``, injectable for tests) — the same machinery as
+ * the render stage — so the re-measurement covers the actual built output
+ * against the same baseline.  html_css keeps the per-file path; a native
+ * regenerated backend is a defensive inert note (never a fabricated score).
  */
-export function createVerifyStageHandler(): StageHandler {
+export function createVerifyStageHandler(opts?: {
+  bundleInvoker?: typeof invokeBundleRender;
+}): StageHandler {
   return async (ctx: PipelineContext) => {
     const threshold =
       (ctx.shared.get("similarityThreshold") as number | undefined) ??
@@ -1219,18 +1267,61 @@ export function createVerifyStageHandler(): StageHandler {
         ssimClean: boolean | null;
       }> = [];
       let total = 0;
-      for (const f of [...generated.files].sort((a, b) => a.path.localeCompare(b.path))) {
-        const htmlPath = path.join(genDir, f.path);
-        if (!fs.existsSync(htmlPath)) continue;
-        const shot = await invokeRender(cfg, htmlPath, ctx.config.viewport, verifyDir);
-        const cmp = comparator.compare(shot.screenshot, baseline);
-        screens.push({
-          file: f.path,
-          similarity: cmp.similarity,
-          ssim: cmp.ssim ?? null,
-          ssimClean: cmp.ssimClean ?? null,
-        });
-        total += cmp.similarity;
+      if (BUNDLE_BACKENDS.has(generated.backend)) {
+        // Bundler-backed regenerated output (react/vue/svelte, Part 22):
+        // re-build through the real Vite harness — same machinery as the
+        // render stage — so the re-measurement covers the actual built
+        // output against the same baseline.
+        const bundle = opts?.bundleInvoker ?? invokeBundleRender;
+        const assetManifest = ctx.shared.get("assetManifest") as
+          | AssetManifest
+          | undefined;
+        const result = await bundle(
+          cfg,
+          generated.backend,
+          genDir,
+          assetManifest,
+          ctx.config.viewport,
+          verifyDir,
+        );
+        for (const s of result.screens) {
+          const screenshot = path.join(verifyDir, s.png);
+          if (!fs.existsSync(screenshot)) continue;
+          const cmp = comparator.compare(screenshot, baseline);
+          screens.push({
+            file: s.html,
+            similarity: cmp.similarity,
+            ssim: cmp.ssim ?? null,
+            ssimClean: cmp.ssimClean ?? null,
+          });
+          total += cmp.similarity;
+        }
+      } else if (generated.backend !== "html_css") {
+        // Native regenerated backend (defensive guard): no browser harness —
+        // an honest inert note, never a fabricated score or a spawn.
+        return {
+          passed: null,
+          similarity_score: null,
+          threshold,
+          baseline_kind: baselineKind ?? null,
+          screens: [],
+          source: "re-rendered",
+          note: `cannot re-render ${generated.backend} output (no browser harness)`,
+        };
+      } else {
+        for (const f of [...generated.files].sort((a, b) => a.path.localeCompare(b.path))) {
+          const htmlPath = path.join(genDir, f.path);
+          if (!fs.existsSync(htmlPath)) continue;
+          const shot = await invokeRender(cfg, htmlPath, ctx.config.viewport, verifyDir);
+          const cmp = comparator.compare(shot.screenshot, baseline);
+          screens.push({
+            file: f.path,
+            similarity: cmp.similarity,
+            ssim: cmp.ssim ?? null,
+            ssimClean: cmp.ssimClean ?? null,
+          });
+          total += cmp.similarity;
+        }
       }
       if (screens.length === 0) {
         return {
