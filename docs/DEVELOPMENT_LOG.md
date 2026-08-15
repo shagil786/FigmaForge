@@ -765,3 +765,82 @@ stage — `figmaforge run` now exercises six stages.
 Threading resolved local asset paths *into* generated code (the per-backend
 FILLS_IMAGE/IMAGE_ASSETS lift); wiring render/compare/repair/verify into the
 TS runtime; Figma OAuth (token-only).
+
+## Part 19 — Render + Compare Stages (measured visual verdict through the TS runtime)
+
+Part 17 wired `assets`, leaving `render`/`compare`/`repair`/`verify` without
+TS handlers even though the Python machinery (`RenderHarness`,
+`generate_render_html`, the `pixel_diff` CLI with the SSIM gate,
+`DiffEngine._diff_raster`, `figma_assets.download_baselines`) was complete.
+Part 19 closes the loop: `figmaforge run` now renders generated html output
+to real screenshots and measures similarity against a baseline — the run
+reports a real `Score` and a perceptual `Visual verdict`.
+
+### What Changed
+
+1. **`pipeline.py render` subcommand** — one CLI, three modes, one-JSON-line
+   contract: `--html <file>` renders a generated standalone HTML (the shot);
+   `--ir <ir.json> --layout <layout.json>` builds the intended VStyles via the
+   shared web lowering (`reference_styles_from_plan` in `web_common.py` — the
+   same `CssStyleGenerator`/`extend_ir_style` the html_css backend uses) and
+   renders `generate_render_html` (the reference baseline); `--baselines`
+   wraps `figma_assets.download_baselines` for live Figma renders
+   (token-gated, exit 3 without `FIGMA_TOKEN`, `--nodes` required).
+   `render_main(argv, harness_cls, client_cls, transport)` exports the
+   injection seams; viewport errors → 2, bad inputs → 4, render failures → 1
+   (stderr, no traceback).
+2. **TS render stage** (`backend_codegen.ts`) — `invokeRender`/
+   `invokeRenderReference`/`invokeRenderBaselines` spawn the CLI; the render
+   stage handler renders every generated `*.html` into `<run>/renders/` with
+   the real harness. Honest degrade (no fabricated score) for bundler/native
+   targets: native renderers (`flutter_simulator`, `xcode_preview`) and
+   non-standalone web outputs (react/vue/svelte need a bundler) produce
+   `{note, screenshotPath: null}`.
+3. **TS compare stage + metrics seam** — `ctx.updateMetrics` (an additive
+   `PipelineContext` hook wired to `StateMachine.updateMetrics`) lets a stage
+   persist `similarityScore` through the checkpoint. Baseline resolution
+   priority: explicit `--baseline` → `--figma-baseline` (live download) →
+   reference render (default). Each screenshot row goes through the SSIM-gated
+   `ScreenshotComparator`; the `diff_report` artifact carries
+   `similarity_score`, `baseline`, `baseline_kind`, per-screen rows and raster
+   stats (`ssim`, `min_region_ssim`, `ssim_clean`, `diff_percentage`, `mae`).
+   No screenshots → null score + note, metrics untouched — never a fabricated
+   number.
+4. **`cmdRun` wiring** — `figmaforge run` registers **eight real stages**
+   (ingest → normalize → resolve → layout → assets → generate → render →
+   compare) with `--baseline <png>` and `--figma-baseline` flags, and prints a
+   `Visual verdict:` line (perceptually identical / perceptual change / no
+   measured score) beside the real measured `Score`. repair/verify stay
+   unwired (Part 20).
+
+### Testing
+
+- Python: **533** tests OK, zero skips (44 test files) — +12 render-mode
+  tests (`--html` shot + default viewport, viewport flag, bad viewport → 2,
+  missing html → 4, reference mode applies layout-derived styles + `ff-ref-`
+  build ids, `--ir`-without-`--layout` / `--layout`-alone / both-modes → 2,
+  invalid IR → 4, missing Playwright → 1 with install hint, render failure →
+  1 without a traceback, one-JSON-line determinism) and +6 baselines-CLI
+  tests (stub-transport download + content-addressed paths under `assets_dir`,
+  same-URL dedup, missing-token exit 3, missing `--nodes` exit 2, missing
+  `--file-key` exit 2, `--baselines` + `--html` exit 2).
+- TS: **141** runtime tests passing, `npx tsc` clean — +3 render-handler tests
+  (`invokeRender` renders a real HTML → PNG + meta; full real chain produces
+  a `screen_0.html` render row with a real screenshot; flutter target → honest
+  `{note, screenshotPath: null}`), +4 compare-handler tests (`updateMetrics`
+  seam persists into the checkpoint; reference baseline → `baseline_kind:
+  "reference"`, score > 0.9, `similarityScore` in metrics; `--baseline`
+  override → `"explicit"`, score < 0.9, `ssim_clean === false`; no-screenshot
+  degrade → null + note), +3 cmdRun tests (8 artifacts + parsed `Score` > 0.9
+  + `Visual verdict` present + `baseline_kind: "reference"`; `--baseline`
+  red-baseline override → `"explicit"` + score < 0.9 + `ssim_clean === false`;
+  `--figma-baseline` without token → `FIGMA_TOKEN` surfaced).
+- Smoke: real CLI run on the fixture — `Score: 1`, `Visual verdict:
+  similarity 1.0000 vs reference baseline — perceptually identical (SSIM
+  1.0000)`, **9 artifacts** (8 stages + event log).
+- `claude plugin validate --strict` clean (verified at the Part 19 final gate).
+
+### Non-goals (deferred)
+
+Wiring repair/verify into the TS runtime (Part 20); compiling or executing
+generated SwiftUI/Flutter/TSX code; Figma OAuth (token-only).
