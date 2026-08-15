@@ -80,6 +80,12 @@ class RepairConfig:
     min_region_area: int = 8               # contiguous diff regions >= 8px
     pixel_weight: float = 0.15             # capped weight in overall score
 
+    # Perceptual diffing (Part 13).
+    ssim_enabled: bool = True              # SSIM regional gating on/off
+    ssim_threshold: float = 0.95           # min region SSIM for a clean verdict
+    refresh_baseline: bool = False         # adopt clean renders as new baseline
+    max_baseline_refreshes_per_run: int = 3  # bounded adoption per run
+
     def __post_init__(self) -> None:
         # Fail fast on invalid raster knobs at config time, before the loop
         # starts (Part 12): RasterOptions performs the actual validation.
@@ -89,9 +95,22 @@ class RepairConfig:
                 noise_floor=self.noise_floor,
                 min_region_area=self.min_region_area,
                 pixel_weight=self.pixel_weight,
+                ssim_enabled=self.ssim_enabled,
+                ssim_threshold=self.ssim_threshold,
             )
         except ValueError as exc:
             raise ValueError(f"invalid raster knob: {exc}") from exc
+        if self.refresh_baseline and not self.ssim_enabled:
+            # Refresh keys off the SSIM clean verdict; without SSIM it would
+            # silently never fire (review fix F4).
+            raise ValueError(
+                "refresh_baseline requires ssim_enabled=True"
+            )
+        if self.max_baseline_refreshes_per_run < 0:
+            raise ValueError(
+                "max_baseline_refreshes_per_run must be >= 0, got "
+                f"{self.max_baseline_refreshes_per_run}"
+            )
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -107,6 +126,10 @@ class RepairConfig:
             "noise_floor": self.noise_floor,
             "min_region_area": self.min_region_area,
             "pixel_weight": self.pixel_weight,
+            "ssim_enabled": self.ssim_enabled,
+            "ssim_threshold": self.ssim_threshold,
+            "refresh_baseline": self.refresh_baseline,
+            "max_baseline_refreshes_per_run": self.max_baseline_refreshes_per_run,
         }
 
 
@@ -245,6 +268,8 @@ class RepairLoop:
             noise_floor=self._config.noise_floor,
             min_region_area=self._config.min_region_area,
             pixel_weight=self._config.pixel_weight,
+            ssim_enabled=self._config.ssim_enabled,
+            ssim_threshold=self._config.ssim_threshold,
         )
 
     def run(
