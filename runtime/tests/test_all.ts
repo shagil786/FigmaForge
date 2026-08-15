@@ -1795,6 +1795,97 @@ export async function runAllTests(): Promise<SuiteResult[]> {
     }
   }));
 
+  // 13e. cmdRun web-backend repair (Part 22) — end-to-end red-baseline
+  // repair for a bundler-backed target with the REAL toolchain (npm + vite
+  // + chromium).  Set FIGMAFORGE_SKIP_MONEY_TESTS=1 to skip cleanly when
+  // the toolchain is unavailable.
+  results.push(await describe("cmdRun web-backend repair (Part 22)", async () => {
+    const dir = tmpDir();
+    const FIXTURE = path.resolve("plugin/figmaforge/fixtures/figma/layout_desktop.json");
+    const cli = path.resolve("dist/runtime/src/cli/main.js");
+    const PYTHON_BIN = process.env.PYTHON_BIN ?? "python3";
+    try {
+      if (process.env.FIGMAFORGE_SKIP_MONEY_TESTS) {
+        await it("skipped — FIGMAFORGE_SKIP_MONEY_TESTS set (no npm/chromium gate)", () => {});
+        return;
+      }
+
+      await it("run --target=react+tailwind --baseline <red> repairs the run's backend and re-verifies", async () => {
+        const outDir = path.join(dir, "run-react-repair");
+        const base = path.join(dir, "red-baseline.png");
+        fs.writeFileSync(base, makePng(1440, 900, [255, 0, 0]));
+        const res = spawnSync(process.execPath, [
+          cli, "run", `--file=${FIXTURE}`, "--target=react+tailwind", "--no-approval",
+          `--output-dir=${outDir}`, `--baseline=${base}`,
+        ], {
+          cwd: path.resolve("."),
+          env: { ...process.env, PYTHON_BIN },
+          encoding: "utf-8",
+          timeout: 600_000,
+        });
+        assertEqual(res.status, 0, `run exited ${res.status}: ${res.stderr ?? ""}`);
+        const stdout = res.stdout ?? "";
+
+        // The full-red baseline scores ~0, so repair genuinely runs real
+        // iterations and regenerates the RUN'S react output (not html_css).
+        const repairsLine = stdout.split("\n").find((l) => l.includes("Repairs:")) ?? "";
+        const repairs = parseInt(repairsLine.split(":")[1] ?? "0", 10);
+        assert(repairs >= 1,
+          `the repair loop should have run real iterations, got Repairs: ${repairs}`);
+        // F4: no monotonic-improvement assertion — a FAILED verification is
+        // still valid, honest output.
+        assert(stdout.includes("Verification: FAILED"),
+          `expected an honest FAILED verification line, got:\n${stdout}`);
+        assert(stdout.includes("Visual verdict"), "run should print the visual verdict");
+
+        const runs = fs.readdirSync(outDir).filter((f) => f.startsWith("run-"));
+        assertEqual(runs.length, 1, "expected exactly one run dir");
+        const runDir = path.join(outDir, runs[0]);
+        const manifest = JSON.parse(
+          fs.readFileSync(path.join(runDir, "manifest.json"), "utf-8"),
+        );
+        assert(manifest.artifacts.length >= 11,
+          `expected >= 11 artifacts, got ${manifest.artifacts.length}`);
+
+        // Repair regenerated the run's react backend — real .tsx files under
+        // repair/generated/react_tailwind/, not html_css.
+        const repairArtifact = manifest.artifacts.find(
+          (a: { kind: string }) => a.kind === "repair_result",
+        );
+        assert(repairArtifact !== undefined, "expected a repair_result artifact");
+        const repair = JSON.parse(
+          fs.readFileSync(path.join(runDir, "artifacts", repairArtifact.path), "utf-8"),
+        );
+        assert(repair.iterations_run >= 1,
+          `repair should have run loop iterations, got ${repair.iterations_run}`);
+        assertEqual(repair.generated.backend, "react_tailwind",
+          "the repair stage must regenerate the run's backend, not html_css");
+        const genDir = path.join(runDir, "repair", "generated", "react_tailwind");
+        assert(fs.existsSync(genDir), "regenerated react dir should exist");
+        assert(fs.readdirSync(genDir).some((f: string) => f.endsWith(".tsx")),
+          "the repair work dir should contain regenerated react TSX");
+
+        // Verify re-bundled the regenerated react output against the SAME
+        // explicit baseline and re-measured a real score.
+        const verifyArtifact = manifest.artifacts.find(
+          (a: { kind: string }) => a.kind === "metrics",
+        );
+        assert(verifyArtifact !== undefined, "expected a metrics (verify) artifact");
+        const verify = JSON.parse(
+          fs.readFileSync(path.join(runDir, "artifacts", verifyArtifact.path), "utf-8"),
+        );
+        assertEqual(verify.source, "re-rendered",
+          "after repair, verify must re-measure the regenerated output");
+        assert(typeof verify.similarity_score === "number",
+          "verify must carry a real re-measured score");
+        assertEqual(verify.baseline_kind, "explicit");
+        assertEqual(verify.passed, false);
+      });
+    } finally {
+      cleanDir(dir);
+    }
+  }));
+
   // 14. Backend code generation (Part 15) — real Python backends through the pipeline
   results.push(...await runBackendCodegenTests());
 
