@@ -33,6 +33,8 @@ import {
   createAssetsStageHandler,
   createRenderStageHandler,
   createCompareStageHandler,
+  createRepairStageHandler,
+  createVerifyStageHandler,
   invokeIngest,
   invokeBackendGenerator,
   TARGET_BACKENDS,
@@ -118,6 +120,10 @@ Options:
                            (overrides the default IR reference baseline)
   --figma-baseline         Use live Figma renders as the baseline (requires
                            --file-key and the FIGMA_TOKEN env var)
+  --no-repair              Skip the auto-repair stage (repair short-circuits;
+                           verify still reports the final gate)
+  --similarity-threshold=<0.0-1.0>  Repair/verify similarity gate (alias of
+                           --threshold; default: 0.95)
   --no-approval            Skip approval gates
   --approve-dir=<path>     Add an approved directory (repeatable)
   --verbose                Enable verbose output
@@ -138,7 +144,9 @@ function buildConfig(args: CliArgs): RuntimeConfig {
   const runId = args.flags["run-id"] ?? makeRunId();
   const outputDir = path.resolve(args.flags["output-dir"] ?? "./figmaforge-output");
   const fileKey = args.flags["file-key"] ?? "";
-  const threshold = parseFloat(args.flags["threshold"] ?? "0.95");
+  const threshold = parseFloat(
+    args.flags["threshold"] ?? args.flags["similarity-threshold"] ?? "0.95",
+  );
   const maxIterations = parseInt(args.flags["max-iterations"] ?? "20", 10);
   const maxRepair = parseInt(args.flags["max-repair"] ?? "10", 10);
   const maxTime = parseInt(args.flags["max-time"] ?? "300000", 10);
@@ -258,7 +266,8 @@ async function cmdRun(args: CliArgs): Promise<void> {
   // (Part 15: ingest+generate; Part 16: full front half; Part 17: assets).
   // render + compare (Part 19) then measure the generated output against a
   // baseline (explicit --baseline, live --figma-baseline, or the IR
-  // reference render) — repair/verify remain unwired (Part 20).
+  // reference render); repair + verify (Part 20) close the ten-stage loop:
+  // auto-repair toward an external baseline and measure the final gate.
   if (localFile) {
     pipeline.setShared("filePath", path.resolve(localFile));
   }
@@ -267,6 +276,9 @@ async function cmdRun(args: CliArgs): Promise<void> {
   }
   if (args.flags["figma-baseline"] === "true") {
     pipeline.setShared("figmaBaseline", true);
+  }
+  if (args.flags["no-repair"] === "true") {
+    pipeline.setShared("noRepair", true);
   }
   pipeline.onStage("ingest", createIngestStageHandler());
   pipeline.onStage("normalize", createNormalizeStageHandler());
@@ -278,6 +290,8 @@ async function cmdRun(args: CliArgs): Promise<void> {
   // assets-stage manifest can thread resolved paths into generated code.
   pipeline.onStage("render", createRenderStageHandler());
   pipeline.onStage("compare", createCompareStageHandler());
+  pipeline.onStage("repair", createRepairStageHandler());
+  pipeline.onStage("verify", createVerifyStageHandler());
 
   const result = await pipeline.run();
 
@@ -312,6 +326,33 @@ async function cmdRun(args: CliArgs): Promise<void> {
       );
     } else {
       console.log(`  Visual verdict: no measured score (${report.note ?? "no screenshots"})`);
+    }
+  }
+
+  // Final verification from the verify stage's metrics-kind artifact (Part
+  // 20) — the terminal pass/fail gate: PASSED / FAILED / cannot verify.
+  // A failed verification does NOT fail the run: the report is valid output
+  // (the run already exited 0 for a completed pipeline).
+  const verifyArtifacts = artifacts.byKind("metrics");
+  if (verifyArtifacts.length > 0) {
+    const verify = artifacts.loadJSON(verifyArtifacts[0]) as {
+      passed: boolean | null;
+      similarity_score: number | null;
+      threshold: number;
+      note?: string | null;
+    };
+    if (verify.passed === true) {
+      console.log(
+        `  Verification: PASSED ` +
+        `(${(verify.similarity_score ?? 0).toFixed(4)} >= ${verify.threshold})`,
+      );
+    } else if (verify.passed === false) {
+      console.log(
+        `  Verification: FAILED ` +
+        `(${(verify.similarity_score ?? 0).toFixed(4)} < ${verify.threshold})`,
+      );
+    } else {
+      console.log(`  Verification: cannot verify (${verify.note ?? "no measured score"})`);
     }
   }
 
