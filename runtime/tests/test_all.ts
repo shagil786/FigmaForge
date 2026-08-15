@@ -9,6 +9,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { pathToFileURL } from "node:url";
+import * as zlib from "node:zlib";
 
 import { describe, it, assert, assertEqual, assertThrows, assertRejects, assertGreaterThan, assertLessOrEqual } from "./test_framework.js";
 import type { SuiteResult } from "./test_framework.js";
@@ -25,7 +26,7 @@ import { PathSandbox, SecretGuard, ShellGuard, AssetValidator, ApprovalGate, Sec
 import { PipelineCoordinator } from "../src/core/pipeline.js";
 import { compareSnapshot, saveSnapshot, loadFixtures, injectFailure } from "../src/core/evaluation.js";
 import { createProvider, AnthropicProvider, OpenAIProvider } from "../src/core/providers.js";
-import { ScreenshotComparator } from "../src/core/screenshot_compare.js";
+import { ScreenshotComparator, parsePixelDiffOutput } from "../src/core/screenshot_compare.js";
 import { vnodeToHtml, buildBrowserRenderScript, parseBrowserRenderOutput, pickLayoutMeta } from "../src/core/render_handler.js";
 
 // ---------------------------------------------------------------------------
@@ -40,6 +41,67 @@ function cleanDir(dir: string): void {
   if (fs.existsSync(dir)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+}
+
+// --- Filter-0 PNG generator for comparator tests (Part 12) ----------------
+
+let CRC_TABLE: Uint32Array | null = null;
+
+function crc32(data: Buffer): number {
+  if (!CRC_TABLE) {
+    CRC_TABLE = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      CRC_TABLE[n] = c >>> 0;
+    }
+  }
+  let c = 0xffffffff;
+  for (let i = 0; i < data.length; i++) {
+    c = CRC_TABLE[(c ^ data[i]) & 0xff] ^ (c >>> 8);
+  }
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type: string, data: Buffer): Buffer {
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.length);
+  const typeBuf = Buffer.from(type, "ascii");
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(Buffer.concat([typeBuf, data])));
+  return Buffer.concat([len, typeBuf, data, crc]);
+}
+
+interface Rect { x: number; y: number; w: number; h: number; rgb: [number, number, number]; }
+
+function makePng(width: number, height: number, fill: [number, number, number], rect?: Rect): Buffer {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;   // bit depth
+  ihdr[9] = 2;   // color type RGB
+  const rows: Buffer[] = [];
+  for (let y = 0; y < height; y++) {
+    const row = Buffer.alloc(1 + width * 3);
+    row[0] = 0;  // filter 0
+    for (let x = 0; x < width; x++) {
+      const inRect = rect !== undefined
+        && x >= rect.x && x < rect.x + rect.w
+        && y >= rect.y && y < rect.y + rect.h;
+      const [r, g, b] = inRect ? rect.rgb : fill;
+      row[1 + x * 3] = r;
+      row[2 + x * 3] = g;
+      row[3 + x * 3] = b;
+    }
+    rows.push(row);
+  }
+  const idat = zlib.deflateSync(Buffer.concat(rows));
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    pngChunk("IHDR", ihdr),
+    pngChunk("IDAT", idat),
+    pngChunk("IEND", Buffer.alloc(0)),
+  ]);
 }
 
 // ---------------------------------------------------------------------------
@@ -985,34 +1047,43 @@ export async function runAllTests(): Promise<SuiteResult[]> {
     });
   }));
 
-  // 14. Screenshot Comparator
+  // 14. Screenshot Comparator (real python shell-out — Part 12)
   results.push(await describe("screenshot comparator", async () => {
     const dir = tmpDir();
     try {
-      await it("identical buffers produce similarity 1.0", async () => {
+      await it("identical buffers produce similarity 1.0 via hash fast-path", async () => {
         const comparator = new ScreenshotComparator();
-        const buf = Buffer.from("fake png data for testing");
+        const buf = makePng(8, 8, [255, 255, 255]);
         const result = comparator.compareBuffers(buf, buf);
         assertEqual(result.similarity, 1.0);
         assertEqual(result.identical, true);
         assertEqual(result.diffPixelCount, 0);
+        assertEqual(result.totalPixels, 64);
+        assertEqual(result.width, 8);
+        assertEqual(result.height, 8);
       });
 
-      await it("different buffers produce similarity < 1.0", async () => {
+      await it("different real PNGs shell out and report the diff block", async () => {
         const comparator = new ScreenshotComparator();
-        const bufA = Buffer.from("image data A");
-        const bufB = Buffer.from("image data B completely different content");
+        const bufA = makePng(8, 8, [255, 255, 255]);
+        const bufB = makePng(8, 8, [255, 255, 255], { x: 0, y: 0, w: 2, h: 2, rgb: [255, 0, 0] });
         const result = comparator.compareBuffers(bufA, bufB);
-        assert(result.similarity < 1.0, `Expected < 1.0, got ${result.similarity}`);
         assertEqual(result.identical, false);
+        assert(result.similarity < 1.0, `Expected < 1.0, got ${result.similarity}`);
+        assertEqual(result.diffPixelCount, 4);
+        assertEqual(result.totalPixels, 64);
+        // White-vs-red block: red channel is identical (255 vs 255), so MAE is
+        // carried by the green/blue channels — assert a channel that actually differs.
+        assertGreaterThan(result.meanAbsoluteError.g, 0);
       });
 
       await it("compare reads files from disk", async () => {
         const comparator = new ScreenshotComparator();
         const fileA = path.join(dir, "a.png");
         const fileB = path.join(dir, "b.png");
-        fs.writeFileSync(fileA, "identical content");
-        fs.writeFileSync(fileB, "identical content");
+        const buf = makePng(4, 4, [1, 2, 3]);
+        fs.writeFileSync(fileA, buf);
+        fs.writeFileSync(fileB, buf);
         const result = comparator.compare(fileA, fileB);
         assertEqual(result.identical, true);
       });
@@ -1021,8 +1092,9 @@ export async function runAllTests(): Promise<SuiteResult[]> {
         const comparator = new ScreenshotComparator();
         const fileA = path.join(dir, "x.png");
         const fileB = path.join(dir, "y.png");
-        fs.writeFileSync(fileA, "same");
-        fs.writeFileSync(fileB, "same");
+        const buf = makePng(4, 4, [9, 9, 9]);
+        fs.writeFileSync(fileA, buf);
+        fs.writeFileSync(fileB, buf);
         assert(comparator.passesThreshold(fileA, fileB, 0.95));
       });
 
@@ -1030,8 +1102,8 @@ export async function runAllTests(): Promise<SuiteResult[]> {
         const comparator = new ScreenshotComparator();
         const fileA = path.join(dir, "p.png");
         const fileB = path.join(dir, "q.png");
-        fs.writeFileSync(fileA, "data A");
-        fs.writeFileSync(fileB, "completely different data B with more content");
+        fs.writeFileSync(fileA, makePng(8, 8, [255, 255, 255]));
+        fs.writeFileSync(fileB, makePng(8, 8, [0, 0, 0]));
         assert(!comparator.passesThreshold(fileA, fileB, 0.99));
       });
 
@@ -1039,8 +1111,9 @@ export async function runAllTests(): Promise<SuiteResult[]> {
         const comparator = new ScreenshotComparator();
         const fileA = path.join(dir, "same1.png");
         const fileB = path.join(dir, "same2.png");
-        fs.writeFileSync(fileA, "same data");
-        fs.writeFileSync(fileB, "same data");
+        const buf = makePng(4, 4, [7, 7, 7]);
+        fs.writeFileSync(fileA, buf);
+        fs.writeFileSync(fileB, buf);
         const report = comparator.generateDiffReport(fileA, fileB);
         assertEqual(report.summary, "Images are identical");
         assertEqual(report.regions.length, 0);
@@ -1050,11 +1123,58 @@ export async function runAllTests(): Promise<SuiteResult[]> {
         const comparator = new ScreenshotComparator();
         const fileA = path.join(dir, "diff1.png");
         const fileB = path.join(dir, "diff2.png");
-        fs.writeFileSync(fileA, "aaa");
-        fs.writeFileSync(fileB, "bbb very different content here");
+        fs.writeFileSync(fileA, makePng(8, 8, [255, 255, 255]));
+        fs.writeFileSync(fileB, makePng(8, 8, [0, 0, 0]));
         const report = comparator.generateDiffReport(fileA, fileB);
         assert(report.summary.includes("differ"), `Expected 'differ' in: ${report.summary}`);
         assertGreaterThan(report.regions.length, 0);
+      });
+
+      await it("parsePixelDiffOutput parses the last JSON line", async () => {
+        const stdout = [
+          "python startup noise",
+          JSON.stringify({
+            similarity: 0.9, diffPixelCount: 10, diffPercentage: 0.1,
+            totalPixels: 100, width: 10, height: 10, identical: false,
+            meanAbsoluteError: { r: 1, g: 2, b: 3 },
+          }),
+        ].join("\n");
+        const parsed = parsePixelDiffOutput(stdout);
+        assert(parsed !== null, "expected parsed result");
+        assertEqual(parsed!.similarity, 0.9);
+        assertEqual(parsed!.diffPixelCount, 10);
+        assertEqual(parsed!.meanAbsoluteError.b, 3);
+      });
+
+      await it("parsePixelDiffOutput returns null for garbage and error payloads", async () => {
+        assertEqual(parsePixelDiffOutput("not json at all"), null);
+        assertEqual(parsePixelDiffOutput(""), null);
+        assertEqual(
+          parsePixelDiffOutput(JSON.stringify({ error: "size mismatch" })),
+          null,
+        );
+      });
+
+      await it("missing python binary yields clean typed failure", async () => {
+        const comparator = new ScreenshotComparator(
+          undefined,
+          { pythonBin: "/nonexistent/python3", pluginDir: "./plugin/figmaforge" },
+        );
+        const bufA = makePng(4, 4, [255, 255, 255]);
+        const bufB = makePng(4, 4, [0, 0, 0]);
+        const result = comparator.compareBuffers(bufA, bufB);
+        assertEqual(result.similarity, 0.0);
+        assertEqual(result.diffPixelCount, -1);
+        assertEqual(result.identical, false);
+      });
+
+      await it("size-mismatched PNGs yield clean typed failure", async () => {
+        const comparator = new ScreenshotComparator();
+        const bufA = makePng(4, 4, [255, 255, 255]);
+        const bufB = makePng(6, 4, [255, 255, 255]);
+        const result = comparator.compareBuffers(bufA, bufB);
+        assertEqual(result.similarity, 0.0);
+        assertEqual(result.diffPixelCount, -1);
       });
     } finally {
       cleanDir(dir);
