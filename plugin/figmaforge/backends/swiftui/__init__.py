@@ -1,12 +1,24 @@
 """
-SwiftUI backend adapter.
+SwiftUI backend adapter (Part 14).
 
-Generates SwiftUI view structs (.swift files) for iOS/macOS targets.
+Converts the framework-neutral Design IR + LayoutPlan into SwiftUI view
+structs (``.swift``): flex containers lower to ``VStack``/``HStack`` (with
+``alignment`` and ``spacing:``), leaves to ``Text(_:)`` / ``Color(...)`` /
+``LinearGradient``, and every node's layout + style to a SwiftUI modifier
+chain (``.frame(width:height:)``, ``.padding``, ``.background(Color)``,
+``.cornerRadius``, ``.opacity``, ``.foregroundColor``, ``.font``,
+``.multilineTextAlignment``, ``.kerning``, ``.lineSpacing``, ``.position``).
+Hex colors become deterministic ``Color(red: 0.20, green: 0.40, blue: 0.80)``
+doubles.  No web machinery — a self-contained lowering.
+
+Fidelity honesty: features this backend cannot represent (e.g. image fills)
+are reported by ``preflight`` and degraded with an inline ``// fidelity:``
+marker — never silently.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..protocol import (
     BackendAdapter,
@@ -16,8 +28,13 @@ from ..protocol import (
     GeneratedFile,
     GeneratedOutput,
 )
-from core.ir_types import IRDocument
-from core.layout_types import LayoutPlan
+from core.ir_types import IRDocument, IRNode
+from core.layout_types import (
+    DISPLAY_ABSOLUTE,
+    DISPLAY_FLEX,
+    LayoutNodePlan,
+    LayoutPlan,
+)
 from core.resolver import ResolutionReport
 
 # SwiftUI supports a different set of features than web
@@ -67,7 +84,6 @@ _SWIFTUI_PARTIAL = frozenset({
 })
 
 _SWIFTUI_UNSUPPORTED = frozenset({
-    Feature.FILL_SIZE,  # Partial — no CSS-equivalent flex: 1
     Feature.PERCENT_SIZE,  # GeometryReader needed, not native
     Feature.MIN_MAX_CONSTRAINTS,  # .frame(min:max:) exists but limited
     Feature.CONSTRAINTS,  # Different constraint model
@@ -78,6 +94,51 @@ _SWIFTUI_UNSUPPORTED = frozenset({
     Feature.SVG_ASSETS,
     Feature.TOKEN_REFERENCES,
 })
+
+_STACK_ALIGN_V = {
+    "MIN": ".leading",
+    "CENTER": None,
+    "MAX": ".trailing",
+    "STRETCH": ".leading",
+}
+_STACK_ALIGN_H = {
+    "MIN": ".top",
+    "CENTER": None,
+    "MAX": ".bottom",
+    "STRETCH": ".top",
+}
+_WEIGHT_SWIFT = {
+    100: ".ultraLight",
+    200: ".thin",
+    300: ".light",
+    500: ".medium",
+    600: ".semibold",
+    700: ".bold",
+    800: ".heavy",
+    900: ".black",
+}
+_ALIGN_SWIFT = {"LEFT": ".leading", "CENTER": ".center", "RIGHT": ".trailing"}
+
+
+def _fmt_num(value: Any) -> str:
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def _swift_color(color: Any) -> str:
+    r = color.r if color.r is not None else 0.0
+    g = color.g if color.g is not None else 0.0
+    b = color.b if color.b is not None else 0.0
+    return f"red: {r:.2f}, green: {g:.2f}, blue: {b:.2f}"
+
+
+def _escape_swift(s: str) -> str:
+    return (
+        s.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+    )
 
 
 class SwiftUIBackend(BackendAdapter):
@@ -116,10 +177,11 @@ class SwiftUIBackend(BackendAdapter):
         options: Optional[Dict[str, Any]] = None,
     ) -> GeneratedOutput:
         output = GeneratedOutput()
+        ir_by_id: Dict[str, IRNode] = {n.id: n for n in document.all_nodes()}
 
         for screen_idx, screen in enumerate(layout_plan.screens):
             view_name = _to_pascal_case(screen.name or f"Screen{screen_idx}")
-            swift_content = self._generate_view(screen, view_name)
+            swift_content = self._generate_view(screen, view_name, ir_by_id)
             node_ids = [n.node_id for n in screen.walk() if n.node_id]
 
             output.files.append(GeneratedFile(
@@ -139,22 +201,25 @@ class SwiftUIBackend(BackendAdapter):
         }
         return output
 
-    def _generate_view(self, plan: Any, name: str) -> str:
+    # ---------------------------------------------------------------- emit
+
+    def _generate_view(
+        self,
+        screen: LayoutNodePlan,
+        name: str,
+        ir_by_id: Dict[str, IRNode],
+    ) -> str:
+        root_ir = ir_by_id.get(screen.node_id)
+        body = self._render(screen, root_ir, ir_by_id, indent=2)
         return f"""\
 import SwiftUI
 
 // FigmaForge generated SwiftUI view
-// Source: LayoutPlan node {plan.node_id}
+// Source: LayoutPlan node {screen.node_id}
 
 struct {name}View: View {{
     var body: some View {{
-        VStack(spacing: 0) {{
-            // TODO: Generate from LayoutPlan for node {plan.node_id}
-            Text("{name}")
-                .font(.title)
-                .padding()
-        }}
-        .frame(width: 390)
+{body}
     }}
 }}
 
@@ -162,6 +227,174 @@ struct {name}View: View {{
     {name}View()
 }}
 """
+
+    def _render(
+        self,
+        plan_node: LayoutNodePlan,
+        ir: Optional[IRNode],
+        ir_by_id: Dict[str, IRNode],
+        indent: int,
+    ) -> str:
+        pad = "  " * indent
+        head, children, modifiers, markers = self._lower(plan_node, ir)
+
+        lines: List[str] = []
+        for marker in markers:
+            lines.append(f"{pad}// {marker}")
+
+        if children:
+            lines.append(f"{pad}{head} {{")
+            for child in plan_node.children:
+                lines.append(self._render(
+                    child, ir_by_id.get(child.node_id), ir_by_id, indent + 1,
+                ))
+            lines.append(f"{pad}}}")
+        else:
+            lines.append(f"{pad}{head}")
+
+        for modifier in modifiers:
+            lines.append(f"{pad}  {modifier}")
+        return "\n".join(lines)
+
+    def _lower(
+        self,
+        plan_node: LayoutNodePlan,
+        ir: Optional[IRNode],
+    ) -> Tuple[str, bool, List[str], List[str]]:
+        """Return (head, is_container, modifiers, fidelity_markers)."""
+        modifiers: List[str] = []
+        markers: List[str] = []
+        fill = _primary_fill(ir)
+        is_text = plan_node.kind == "text" and bool(
+            plan_node.text and plan_node.text.characters
+        )
+        is_container = bool(plan_node.children)
+
+        if is_text:
+            head = f'Text("{_escape_swift(plan_node.text.characters)}")'
+        elif is_container:
+            if plan_node.direction == "column":
+                head = "VStack" + _stack_params(plan_node, vertical=True)
+            else:
+                head = "HStack" + _stack_params(plan_node, vertical=False)
+            if fill is not None and fill[0] == "solid":
+                modifiers.append(f".background(Color({_swift_color(fill[1])}))")
+        elif fill is not None and fill[0] == "solid":
+            head = f"Color({_swift_color(fill[1])})"
+        elif fill is not None and fill[0] == "gradient":
+            colors = ", ".join(
+                f"Color({_swift_color(st.color)})"
+                for st in fill[2]
+                if st.color is not None
+            )
+            head = (
+                "LinearGradient(gradient: Gradient(colors: "
+                f"[{colors}]), startPoint: .top, endPoint: .bottom)"
+            )
+        elif fill is not None and fill[0] == "image":
+            markers.append("fidelity: fills_image approximated (solid fallback)")
+            head = "Rectangle()"
+            modifiers.append(".background(Color(red: 0.94, green: 0.94, blue: 0.94))")
+        else:
+            head = "Rectangle()"
+
+        if not is_text and plan_node.box is not None:
+            modifiers.append(
+                f".frame(width: {_fmt_num(plan_node.box.width)}, "
+                f"height: {_fmt_num(plan_node.box.height)})"
+            )
+
+        if plan_node.display == DISPLAY_ABSOLUTE and plan_node.box is not None:
+            modifiers.append(
+                f".position(x: {_fmt_num(plan_node.box.x)}, y: {_fmt_num(plan_node.box.y)})"
+            )
+
+        if plan_node.spacing is not None and plan_node.spacing.padding is not None:
+            p = plan_node.spacing.padding
+            edges = [p.top, p.right, p.bottom, p.left]
+            present = [e for e in edges if e is not None]
+            if len(present) == 4 and len(set(present)) == 1:
+                modifiers.append(f".padding({_fmt_num(present[0])})")
+            else:
+                if p.top is not None:
+                    modifiers.append(f".padding(.top, {_fmt_num(p.top)})")
+                if p.right is not None:
+                    modifiers.append(f".padding(.trailing, {_fmt_num(p.right)})")
+                if p.bottom is not None:
+                    modifiers.append(f".padding(.bottom, {_fmt_num(p.bottom)})")
+                if p.left is not None:
+                    modifiers.append(f".padding(.leading, {_fmt_num(p.left)})")
+
+        if ir is not None and ir.style is not None:
+            s = ir.style
+            if is_text and fill is not None and fill[0] == "solid":
+                modifiers.append(f".foregroundColor(Color({_swift_color(fill[1])}))")
+            if s.radius is not None:
+                modifiers.append(f".cornerRadius({_fmt_num(s.radius)})")
+            if s.opacity is not None and s.opacity < 1.0:
+                modifiers.append(f".opacity({_fmt_num(s.opacity)})")
+            for border in s.borders:
+                if border.visible and border.weight is not None and border.color is not None:
+                    modifiers.append(
+                        f".border(Color({_swift_color(border.color)}), "
+                        f"width: {_fmt_num(border.weight)})"
+                    )
+                    break
+
+        if ir is not None and ir.opacity < 1.0:
+            modifiers.append(f".opacity({_fmt_num(ir.opacity)})")
+
+        if ir is not None and ir.typography is not None:
+            t = ir.typography
+            if t.font_size is not None:
+                size_arg = f"size: {_fmt_num(t.font_size)}"
+                weight = _WEIGHT_SWIFT.get(
+                    int(round(float(t.font_weight))) if t.font_weight is not None else None
+                )
+                if weight:
+                    modifiers.append(f".font(.system({size_arg}, weight: {weight}))")
+                else:
+                    modifiers.append(f".font(.system({size_arg}))")
+            if t.line_height is not None:
+                modifiers.append(f".lineSpacing({_fmt_num(t.line_height)})")
+            if t.letter_spacing is not None:
+                modifiers.append(f".kerning({_fmt_num(t.letter_spacing)})")
+            if t.text_align:
+                modifiers.append(
+                    f".multilineTextAlignment({_ALIGN_SWIFT.get(t.text_align, '.center')})"
+                )
+
+        return head, is_container, modifiers, markers
+
+
+def _primary_fill(ir: Optional[IRNode]) -> Optional[Tuple[str, Any, List]]:
+    """Return (kind, color, gradient_stops) for the first visible fill, or None."""
+    if ir is None or ir.style is None:
+        return None
+    for fill in ir.style.fills:
+        if not fill.visible or fill.kind == "none":
+            continue
+        if fill.kind == "solid":
+            return ("solid", fill.color, [])
+        if fill.kind == "gradient":
+            return ("gradient", None, fill.gradient_stops)
+        return (fill.kind, None, [])
+    return None
+
+
+def _stack_params(plan_node: LayoutNodePlan, vertical: bool) -> str:
+    params: List[str] = []
+    align = plan_node.alignment.align if plan_node.alignment else None
+    mapping = _STACK_ALIGN_V if vertical else _STACK_ALIGN_H
+    alignment = mapping.get(align) if align else None
+    spacing = plan_node.spacing.gap if plan_node.spacing else None
+    if alignment:
+        params.append(f"alignment: {alignment}")
+    if spacing is not None:
+        params.append(f"spacing: {_fmt_num(spacing)}")
+    if not params:
+        return ""
+    return "(" + ", ".join(params) + ")"
 
 
 def _to_pascal_case(name: str) -> str:
