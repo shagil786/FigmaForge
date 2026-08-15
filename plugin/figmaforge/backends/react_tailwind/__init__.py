@@ -33,6 +33,7 @@ from ..web_common import (
     CssStyleGenerator,
     VNode,
     VNodeBuilder,
+    bp_to_css_prop,
     escape_attr,
 )
 from core.ir_types import IRDocument, IRNode
@@ -206,20 +207,11 @@ def _css_class(prop: str, value: str) -> Optional[str]:
 
 def _breakpoint_class(bp: Any) -> Optional[str]:
     """LayoutPlan breakpoint change -> ``max-[{width}px]:{class}`` variant."""
-    prop_map = {
-        "direction": "flexDirection",
-        "gap": "gap",
-        "width": "width",
-        "height": "height",
-        "paddingTop": "paddingTop",
-        "paddingRight": "paddingRight",
-        "paddingBottom": "paddingBottom",
-        "paddingLeft": "paddingLeft",
-    }
-    css_prop = prop_map.get(bp.property)
-    if css_prop is None or bp.after is None:
+    mapped = bp_to_css_prop(bp)
+    if mapped is None:
         return None
-    cls = _css_class(css_prop, str(bp.after))
+    css_prop, value = mapped
+    cls = _css_class(css_prop, value)
     if cls is None:
         return None
     return f"max-[{_fmt_num(bp.width)}px]:{cls}"

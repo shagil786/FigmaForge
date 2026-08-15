@@ -24,7 +24,7 @@ html_css originals.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from core.layout_types import (
     DISPLAY_ABSOLUTE,
@@ -306,6 +306,29 @@ class VNodeBuilder:
 
 def camel_to_kebab(s: str) -> str:
     return "".join(f"-{c.lower()}" if c.isupper() else c for c in s)
+
+
+def bp_to_css_prop(bp: Any) -> Optional[Tuple[str, str]]:
+    """Map a LayoutPlan breakpoint change to ``(camelCase css prop, value)``.
+
+    Returns None for properties the web backends do not lower.  Shared by the
+    vue/svelte scoped-CSS backends and the react_tailwind class mapper so all
+    web backends agree on breakpoint semantics.
+    """
+    prop_map = {
+        "direction": "flexDirection",
+        "gap": "gap",
+        "width": "width",
+        "height": "height",
+        "paddingTop": "paddingTop",
+        "paddingRight": "paddingRight",
+        "paddingBottom": "paddingBottom",
+        "paddingLeft": "paddingLeft",
+    }
+    css_prop = prop_map.get(getattr(bp, "property", ""))
+    if css_prop is None or getattr(bp, "after", None) is None:
+        return None
+    return (css_prop, str(bp.after))
 
 
 def escape_html(s: str) -> str:
