@@ -269,6 +269,340 @@ class TestHtmlCssBackend(unittest.TestCase):
         self.assertEqual(output.metadata["backend"], "html_css")
         self.assertEqual(output.metadata["screen_count"], 0)
 
+    def test_web_common_shared_machinery(self):
+        """The shared web machinery lives in web_common with public names."""
+        from backends import web_common
+        from core.layout_types import DISPLAY_FLEX, LayoutNodePlan
+
+        for name in (
+            "VNode",
+            "VStyle",
+            "CssStyleGenerator",
+            "VNodeBuilder",
+            "semantic_tag",
+            "camel_to_kebab",
+            "escape_html",
+            "escape_attr",
+        ):
+            self.assertTrue(
+                hasattr(web_common, name), f"web_common is missing {name}"
+            )
+
+        # A trivial one-node plan lowers to the expected flex base style,
+        # guarding the shared module in isolation.
+        plan = LayoutNodePlan(
+            node_id="1:1",
+            name="Row",
+            display=DISPLAY_FLEX,
+            direction="row",
+        )
+        style = web_common.CssStyleGenerator().generate_style(plan)
+        self.assertEqual(style.base.get("display"), "flex")
+        self.assertEqual(style.base.get("flexDirection"), "row")
+        self.assertEqual(web_common.semantic_tag("Header"), "header")
+        self.assertEqual(web_common.camel_to_kebab("paddingTop"), "padding-top")
+        self.assertEqual(web_common.escape_html("<b>&"), "&lt;b&gt;&amp;")
+
+    def test_html_css_emit_smoke(self):
+        """Refactored html_css still generates the full file set end-to-end."""
+        from core.figma_fixtures import FixtureLoader
+        from core.figma_types import FigmaFile
+        from core.ir_builder import IRBuilder
+        from core.layout_analyzer import LayoutAnalyzer
+        from core.library_types import LibraryLoader
+
+        plugin_root = Path(__file__).parent.parent
+        loader = FixtureLoader(plugin_root / "fixtures" / "figma")
+        doc = IRBuilder().build(
+            FigmaFile.from_dict("lay1440", loader.load("layout_desktop"))
+        )
+        plan = LayoutAnalyzer().analyze(doc, library=LibraryLoader().load())
+        output = self.backend.generate(document=doc, layout_plan=plan)
+
+        # One HTML file per screen plus a combined stylesheet.
+        html_files = [f for f in output.files if f.path.endswith(".html")]
+        self.assertEqual(len(html_files), len(plan.screens))
+        self.assertTrue(any(f.path == "styles.css" for f in output.files))
+        self.assertEqual(output.metadata["screen_count"], len(plan.screens))
+
+        # The first screen's HTML file covers all of its nodes.
+        screen_ids = {
+            n.node_id for n in plan.screens[0].walk() if n.node_id
+        }
+        self.assertTrue(screen_ids)
+        self.assertTrue(set(html_files[0].node_ids) >= screen_ids)
+        self.assertIn("<!DOCTYPE html>", html_files[0].content)
+
+    # -- declared-supported features must be emitted, never silently dropped --
+    @staticmethod
+    def _rich_fixture():
+        """A screen exercising the full IR style surface the audit found
+        declared-supported but silently dropped by the reference backend."""
+        from core.ir_types import (
+            IRBlur,
+            IRColor,
+            IRDocument,
+            IRFill,
+            IRNode,
+            IRShadow,
+            IRSource,
+            IRStyle,
+            IRTextContent,
+            IRTypography,
+            KIND_FRAME,
+            KIND_PAGE,
+            KIND_TEXT,
+        )
+        from core.layout_types import (
+            AlignmentSpec,
+            Box,
+            DISPLAY_FLEX,
+            DISPLAY_NONE,
+            LayoutNodePlan,
+            LayoutPlan,
+            OVERFLOW_CLIP,
+            OverflowSpec,
+            TextModel,
+        )
+
+        label = IRNode(
+            id="t:3", name="Label", kind=KIND_TEXT, node_type="TEXT",
+            source=IRSource(file_key="html", node_id="t:3"),
+            typography=IRTypography(
+                font_family="Inter", font_size=14.0, font_weight=600.0,
+                letter_spacing=0.5, text_decoration="UNDERLINE",
+                text_case="UPPER",
+            ),
+            text=IRTextContent(characters="Save changes"),
+        )
+        card = IRNode(
+            id="card:1", name="Card", kind=KIND_FRAME, node_type="FRAME",
+            source=IRSource(file_key="html", node_id="card:1"),
+            style=IRStyle(
+                fills=[IRFill(
+                    kind="solid", color=IRColor(r=0.1, g=0.1, b=0.1, a=1.0),
+                )],
+                shadows=[IRShadow(
+                    color=IRColor(r=0.0, g=0.0, b=0.0, a=0.25),
+                    x=0.0, y=4.0, blur=8.0,
+                )],
+                blurs=[IRBlur(kind="layer", radius=4.0)],
+            ),
+            children=[label],
+        )
+        page = IRNode(
+            id="page-1", name="Page", kind=KIND_PAGE, node_type="CANVAS",
+            source=IRSource(file_key="html", node_id="page-1"),
+            children=[card],
+        )
+        doc = IRDocument(file_key="html", name="Rich", pages=[page])
+        doc.root = card
+
+        card_plan = LayoutNodePlan(
+            node_id="card:1", name="Card", kind="frame", display=DISPLAY_FLEX,
+            box=Box(x=0, y=0, width=200, height=80),
+            alignment=AlignmentSpec(align_self="MAX"),
+            overflow=OverflowSpec(x=OVERFLOW_CLIP, y=OVERFLOW_CLIP),
+        )
+        label_plan = LayoutNodePlan(
+            node_id="t:3", name="Label", kind="text", display=DISPLAY_NONE,
+            text=TextModel(characters="Save changes"),
+        )
+        card_plan.children.append(label_plan)
+        plan = LayoutPlan(file_key="html", viewport=1440.0, screens=[card_plan])
+        return doc, plan
+
+    @staticmethod
+    def _fidelity_fixture():
+        """Gradient + image fills and an absolute node — all representable in
+        HTML/CSS, so they must lower to real CSS (plus a marker for images)."""
+        from core.ir_types import (
+            IRColor,
+            IRDocument,
+            IRFill,
+            IRGradientStop,
+            IRNode,
+            IRPosition,
+            IRSource,
+            IRStyle,
+            KIND_FRAME,
+            KIND_PAGE,
+        )
+        from core.layout_types import (
+            Box,
+            DISPLAY_ABSOLUTE,
+            DISPLAY_FLEX,
+            DISPLAY_NONE,
+            LayoutNodePlan,
+            LayoutPlan,
+        )
+
+        grad = IRNode(
+            id="grad:1", name="Gradient", kind=KIND_FRAME, node_type="FRAME",
+            source=IRSource(file_key="html", node_id="grad:1"),
+            style=IRStyle(fills=[IRFill(
+                kind="gradient",
+                gradient_stops=[
+                    IRGradientStop(
+                        position=0.0, color=IRColor(r=1.0, g=0.0, b=0.0, a=1.0),
+                    ),
+                    IRGradientStop(
+                        position=1.0, color=IRColor(r=0.0, g=0.0, b=1.0, a=1.0),
+                    ),
+                ],
+            )]),
+        )
+        img = IRNode(
+            id="img:1", name="Photo", kind=KIND_FRAME, node_type="FRAME",
+            source=IRSource(file_key="html", node_id="img:1"),
+            style=IRStyle(fills=[IRFill(kind="image", image_ref="asset://photo")]),
+        )
+        badge = IRNode(
+            id="abs:1", name="Badge", kind=KIND_FRAME, node_type="FRAME",
+            source=IRSource(file_key="html", node_id="abs:1"),
+            position=IRPosition(mode="absolute", left=8.0, top=8.0),
+        )
+        root = IRNode(
+            id="0:9", name="Overlay", kind=KIND_FRAME, node_type="FRAME",
+            source=IRSource(file_key="html", node_id="0:9"),
+            children=[grad, img, badge],
+        )
+        page = IRNode(
+            id="page-1", name="Page", kind=KIND_PAGE, node_type="CANVAS",
+            source=IRSource(file_key="html", node_id="page-1"),
+            children=[root],
+        )
+        doc = IRDocument(file_key="html", name="Overlay", pages=[page])
+        doc.root = root
+
+        screen = LayoutNodePlan(
+            node_id="0:9", name="Overlay", kind="frame",
+            display=DISPLAY_FLEX, direction="column",
+            box=Box(x=0, y=0, width=400, height=300),
+        )
+        screen.children.append(LayoutNodePlan(
+            node_id="grad:1", name="Gradient", kind="frame",
+            display=DISPLAY_NONE, box=Box(x=0, y=0, width=200, height=100),
+        ))
+        screen.children.append(LayoutNodePlan(
+            node_id="img:1", name="Photo", kind="frame",
+            display=DISPLAY_NONE, box=Box(x=0, y=0, width=100, height=50),
+        ))
+        screen.children.append(LayoutNodePlan(
+            node_id="abs:1", name="Badge", kind="frame",
+            display=DISPLAY_ABSOLUTE, box=Box(x=8, y=8, width=64, height=24),
+        ))
+        plan = LayoutPlan(file_key="html", viewport=1440.0, screens=[screen])
+        return doc, plan
+
+    def test_ir_style_emitted(self):
+        """The reference backend lowers the IR style surface, not just layout."""
+        doc, plan = self._rich_fixture()
+        content = "\n".join(
+            f.content for f in self.backend.generate(
+                document=doc, layout_plan=plan,
+            ).files
+        )
+        # Shadows -> box-shadow; blur -> filter.
+        self.assertIn("box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.25)", content)
+        self.assertIn("filter: blur(4px)", content)
+        # Text decoration / case / letter spacing / typography.
+        self.assertIn("text-decoration: underline", content)
+        self.assertIn("text-transform: uppercase", content)
+        self.assertIn("letter-spacing: 0.5px", content)
+        self.assertIn("font-size: 14px", content)
+        self.assertIn("font-family: Inter", content)
+        # Overflow clip + explicit align-self.
+        self.assertIn("overflow: hidden", content)
+        self.assertIn("align-self: flex-end", content)
+
+    def test_gradient_and_image_fills_lowered(self):
+        """Gradients are real CSS; image fills degrade with a marker."""
+        doc, plan = self._fidelity_fixture()
+        output = self.backend.generate(document=doc, layout_plan=plan)
+        content = "\n".join(f.content for f in output.files)
+        # Gradient -> real linear-gradient.
+        self.assertIn(
+            "background: linear-gradient(to bottom, #ff0000 0%, #0000ff 100%)",
+            content,
+        )
+        # Image fill -> named fallback + inline marker, never silent.
+        self.assertIn("background: #f0f0f0", content)
+        self.assertIn(
+            "<!-- fidelity: fills_image approximated (solid fallback) -->",
+            content,
+        )
+
+    def test_absolute_positioning_is_valid_css(self):
+        """Positioning lowers to position + anchors, never ``display: absolute``."""
+        doc, plan = self._fidelity_fixture()
+        content = "\n".join(
+            f.content for f in self.backend.generate(
+                document=doc, layout_plan=plan,
+            ).files
+        )
+        self.assertIn("position: absolute", content)
+        self.assertNotIn("display: absolute", content)
+
+    def test_breakpoints_lower_to_media_rules(self):
+        """Breakpoint changes fold into @media rules in the emitted CSS."""
+        from core.layout_types import BreakpointChange
+        doc, plan = self._rich_fixture()
+        plan.screens[0].breakpoints.append(BreakpointChange(
+            breakpoint="md", width=768.0, node_id="card:1",
+            property="direction", before="column", after="row",
+            evidence="measured",
+        ))
+        content = "\n".join(
+            f.content for f in self.backend.generate(
+                document=doc, layout_plan=plan,
+            ).files
+        )
+        self.assertIn("@media (max-width: 768px)", content)
+        self.assertIn("flex-direction: row", content)
+
+    def test_capability_declaration_honesty(self):
+        """Partial features must not be reported supported; emitted ones must."""
+        caps = self.backend.capabilities
+        supported = caps.supported_features
+        for partial in (
+            Feature.MARGIN,
+            Feature.FILLS_IMAGE,
+            Feature.RELATIVE_POSITIONING,
+            Feature.IMAGE_ASSETS,
+            Feature.SVG_ASSETS,
+            Feature.DESIGN_TOKENS,
+            Feature.TOKEN_REFERENCES,
+            Feature.PROTOTYPE_LINKS,
+            Feature.INTERACTIONS,
+        ):
+            self.assertIn(partial, caps.partial_features)
+            self.assertNotIn(partial, supported)
+        # Features the shared machinery genuinely emits.
+        for emitted in (
+            Feature.FILLS_SOLID,
+            Feature.FILLS_GRADIENT,
+            Feature.SHADOWS,
+            Feature.BLUR,
+            Feature.BORDERS,
+            Feature.CORNER_RADIUS,
+            Feature.PER_CORNER_RADIUS,
+            Feature.OPACITY,
+            Feature.TEXT_DECORATION,
+            Feature.TEXT_CASE,
+            Feature.LETTER_SPACING,
+            Feature.OVERFLOW_CLIP,
+            Feature.OVERFLOW_SCROLL,
+            Feature.BREAKPOINTS,
+            Feature.MEDIA_QUERIES,
+            Feature.ALIGN_SELF,
+        ):
+            self.assertIn(emitted, supported)
+        # HTML/CSS genuinely supports absolute positioning (position + anchors).
+        self.assertIn(Feature.ABSOLUTE_POSITIONING, supported)
+        # No common-IR feature is unrepresentable in HTML/CSS.
+        self.assertEqual(len(caps.unsupported_features), 0)
+
 
 # ---------------------------------------------------------------------------
 # Stub backend tests

@@ -511,3 +511,61 @@ Diff heatmap image output, native TS pixel diffing, image resampling beyond the 
 downsample, grayscale/palette/16-bit PNG support, scheduled/cron baseline refresh
 (auto-refresh is loop-scoped), stub backend implementations.
 
+## Part 14 — Backend Implementations (react+tailwind, vue, svelte, swiftui, flutter)
+
+The five stub backend adapters from Part 10 are now real `LayoutPlan` → target-code
+lowerings. One shared web style-mapping implementation serves every web target; the two
+native targets are self-contained. Every feature the common IR surface cannot express is
+an explicit `FidelityLoss` with a named fallback or an inline `fidelity:` marker — never
+silent — and a repo-wide honesty audit now locks that contract.
+
+### What Changed
+1. **`backends/web_common.py`** — new: the shared web machinery, extracted verbatim from
+   `html_css` (`VStyle`/`VNode`, `CssStyleGenerator`, `VNodeBuilder`, `semantic_tag`,
+   escaping helpers) plus `ScopedCssGenerator` (scoped CSS collector), `extend_ir_style`
+   (IR fills/radius/borders/opacity/shadows/blur/typography/overflow/breakpoints),
+   and `bp_to_css_prop` (shared breakpoint semantics, px units for numeric length props).
+   ONE style-mapping implementation; html_css, vue, and svelte cannot drift apart.
+2. **`backends/react_tailwind/`** — real TSX generator: arbitrary-value Tailwind classes
+   for exactness (`bg-[#3366cc]`, `max-[768px]:flex-row`), IR-sourced style/typography,
+   real token extraction into `tailwind.config.figmaforge.js`, deterministic.
+3. **`backends/vue/`** — real `.vue` SFC: `<template>` scoped `n-{id}` classes,
+   `<script setup>`, `<style scoped>` from the shared CSS rules, `@media` breakpoints.
+4. **`backends/svelte/`** — real `.svelte` component: `<script lang="ts">` props,
+   scoped class markup, shared scoped CSS.
+5. **`backends/swiftui/`** — real `.swift` view: `VStack`/`HStack` + spacing/alignment,
+   `.frame/.padding/.background/.cornerRadius/.opacity/.font/.shadow/...` modifier
+   chains, real `LinearGradient` and `.position()`.
+6. **`backends/flutter/`** — real `.dart` widget tree: `Row`/`Column` with
+   `mainAxisAlignment`/`crossAxisAlignment` + `SizedBox` gap separators,
+   `Container`+`BoxDecoration`, `EdgeInsets`, `Text`+`TextStyle` (incl. `fontFamily`),
+   real `LinearGradient`, `Stack`+`Positioned`, `Opacity`, `Clip.hardEdge`.
+7. **Fidelity honesty audits** — three commits closing the capability-vs-output gap:
+   (a) the five new backends emit every declared-supported feature (gradients, shadows,
+   blur, decoration/case, overflow, `.custom` fonts, letter-spacing, clip) and move
+   unimplementable features to partial with the base-set subtraction that keeps
+   `supports()` honest; (b) the html_css reference backend was emitting only layout CSS
+   despite declaring the full style surface — it now lowers the shared IR style
+   extension, fixes the invalid `display: absolute` output, and emits the image-fill
+   fallback + inline marker; (c) **`tests/test_backend_honesty_audit.py`** — a repo-wide
+   audit renders ONE canonical rich fixture through every backend and fails when any
+   declared-supported feature has no signal in the output (coverage guard + mutation
+   proofs). It immediately caught and fixed: flutter `FONT_FAMILY` (now emitted) and
+   `FILL_SIZE`/`HUG_SIZE`/`PERCENT_SIZE` (moved to partial — lowered as computed box
+   size, not `Expanded`/`IntrinsicWidth`/`FractionallySizedBox`), swiftui `JUSTIFY`
+   (no main-axis justification in SwiftUI stacks — partial), react_tailwind
+   `IMAGE_ASSETS` shadowing (supported now subtracts the partial set), and unitless
+   breakpoint length values in `bp_to_css_prop`.
+8. **Docs** — this entry; README/CLAUDE.md/architecture.md updated through Part 14.
+
+### Testing
+- Python: 66 new tests across the six backends + audit (Task 1: 2, Task 2: 11, Task 3: 10,
+  Task 4: 10, Task 5: 10, Task 6: 10, audits: 13). Full gate: **461** tests OK, zero skips
+  (39 test files), including 5 committed backend golden snapshots.
+- TS: unchanged — **117** runtime tests passing, `npx tsc` clean.
+- `claude plugin validate --strict` clean.
+
+### Non-goals (deferred)
+Real-Figma end-to-end demo, real-repository testing, rollback procedure docs, diff heatmap
+output + extended PNG formats, flutter `Expanded`/`IntrinsicWidth`/`FractionallySizedBox`
+sizing idioms (declared partial), SwiftUI main-axis justification (Spacer idiom, partial).

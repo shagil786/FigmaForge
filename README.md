@@ -1,7 +1,7 @@
 # FigmaForge Universal Adaptive Platform
 
 **Version:** 0.0.2-dev  
-**Status:** Parts 1–13 complete — full pixel-diff pipeline (Part 12) plus perceptual SSIM gating and baseline auto-refresh (Part 13); validation gate green (395 Python / 117 TS tests)
+**Status:** Parts 1–14 complete — full pixel-diff pipeline (Part 12), perceptual SSIM gating and baseline auto-refresh (Part 13), and all six backend adapters implemented (Part 14: react+tailwind, vue, svelte, swiftui, flutter) with capability-vs-output honesty audits; validation gate green (461 Python / 117 TS tests)
 
 A technology-agnostic, adaptive, full-lifecycle Claude Code engineering platform that enables any software project type by detecting stack-specific signals and routing to appropriate capabilities. FigmaForge also converts normalized Figma design IR into framework-neutral layout plans and generates production-quality React/CSS output.
 
@@ -299,12 +299,14 @@ Md Shagil Nizami
 - ✅ **Part 7** Asset Pipeline + Browser Rendering (deterministic harness)
 - ✅ **Part 8** Diff Engine + Repair Loop (per-category scoring, 9 repair categories, rollback)
 - ✅ **Part 9** TypeScript orchestration runtime (6-command CLI, composable targets)
-- ✅ **Part 10** Backend adapter architecture (HTML+CSS real; react_tailwind/vue/svelte/swiftui/flutter stubs)
+- ✅ **Part 10** Backend adapter architecture (protocol, registry, capability declaration, fidelity losses)
 - ✅ **Part 11** Real browser render harness (Playwright + headless chromium, layout metadata)
 - ✅ **Part 12** Pixel diffing + Figma baseline download (stdlib PNG codec, pixel diff CLI, capped pixel weight)
 - ✅ **Part 13** Perceptual diffing (SSIM) + baseline auto-refresh (regional gating, opt-in clean-render adoption, CLI verdict)
-- ✅ Full validation suite green (395 Python + 117 TS tests, zero skips)
-- ✅ CLAUDE.md + docs updated through Part 13
+- ✅ **Part 14** Six backend implementations (react+tailwind, vue, svelte, swiftui, flutter) — shared web machinery, real lowerings, golden snapshots, fidelity markers
+- ✅ **Part 14** Repo-wide capability-vs-output honesty audits (html_css reference included; test_backend_honesty_audit locks the contract)
+- ✅ Full validation suite green (461 Python + 117 TS tests, zero skips)
+- ✅ CLAUDE.md + docs updated through Part 14
 
 ---
 
@@ -313,5 +315,5 @@ Md Shagil Nizami
 1. Execute an end-to-end demo against a real Figma file
 2. Test with real repositories
 3. Document the rollback procedure
-4. Implement the five stub backend adapters (react+tailwind, vue, svelte, swiftui, flutter)
-5. Diff heatmap output + extended PNG formats (deferred non-goals from Parts 12–13)
+4. Diff heatmap output + extended PNG formats (deferred non-goals from Parts 12–13)
+5. Flutter fill/hug/percent sizing idioms (Expanded / IntrinsicWidth / FractionallySizedBox) and SwiftUI main-axis justification (Spacer) — currently declared partial, lifted to supported when implemented

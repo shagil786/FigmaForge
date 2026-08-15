@@ -29,7 +29,7 @@ This is a complete platform implementation (version 0.0.1-dev), containing a 100
     - **Resolution:** `resolver.py`, `matcher.py`, `component_index.py`, `variant_resolver.py`, `token_resolver.py`, `library_types.py`
     - **Layout:** `layout_engine.py` (988 lines), `layout_types.py`, `layout_analyzer.py`, `constraint_model.py`, `breakpoint_model.py`
     - **Generators:** `react_generator.py` (wired to ResolutionReport), `css_generator.py` (all sizing modes), `generator_types.py`
-    - **Backend Adapters (Part 10):** `backends/protocol.py` (BackendAdapter ABC, Feature vocabulary, FidelityLoss), `backends/registry.py` (discover/register/lookup), `backends/html_css/` (fully implemented), `backends/react_tailwind/`, `backends/vue/`, `backends/svelte/`, `backends/swiftui/`, `backends/flutter/` (stubs)
+    - **Backend Adapters (Parts 10 + 14):** `backends/protocol.py` (BackendAdapter ABC, Feature vocabulary, FidelityLoss), `backends/registry.py` (discover/register/lookup), `backends/web_common.py` (shared VStyle/VNode + CssStyleGenerator + ScopedCssGenerator + extend_ir_style), and six implemented adapters: `backends/html_css/` (reference), `backends/react_tailwind/` (TSX + Tailwind config), `backends/vue/` (SFC), `backends/svelte/` (component), `backends/swiftui/` (modifier chains), `backends/flutter/` (widget trees)
     - **Platform:** `detector.py`, `router.py` (trigger→phase + language→domain scoring), `catalog.py`, `state.py` (adjacent-only transitions)
     - **Assets & Diff:** `asset_handler.py`, `asset_manager.py` (content-addressed, SVG security), `figma_assets.py` (baseline download), `png_codec.py` + `pixel_diff.py` (stdlib pixel diffing + CLI + shared SSIM verdict), `ssim.py` (pure-stdlib perceptual SSIM, Part 13), `render_harness.py`, `diff_engine.py` (per-category scoring + capped pixel weight + regional SSIM gating)
     - **Repair Loop (Part 8):** `repair_classifier.py` (9 categories), `patch_planner.py` (strategy-ordered), `patch_executor.py` (with rollback), `repair_loop.py` (iteration controller), `repair_history.py` (manifest)
@@ -41,7 +41,7 @@ This is a complete platform implementation (version 0.0.1-dev), containing a 100
   - `schemas/`: `design-ir.schema.json`, `layout-plan.schema.json`, `resolution-report.schema.json`, `detection.schema.json`, `router.schema.json`, `task-state.schema.json`.
   - `templates/`: Inert examples for MCP and LSP configurations.
   - `library/`: `components.json` (5 project components), `tokens.json` (12 design tokens).
-  - `tests/` (33 test files, 395 tests): Unit, integration, snapshot, property-based, repair-loop, backend adapter, render-harness, pixel-diff, SSIM-gating, and baseline-refresh tests.
+  - `tests/` (39 test files, 461 tests): Unit, integration, snapshot, property-based, repair-loop, backend adapter (six real generators + 5 golden snapshots), capability-vs-output honesty audit, render-harness, pixel-diff, SSIM-gating, and baseline-refresh tests.
 - `runtime/` (Part 9 — TypeScript Orchestration Runtime):
   - `src/core/` (15 modules): `types.ts` (composable `CodegenTarget = { framework, styling }`), `events.ts`, `checkpoint.ts`, `artifacts.ts`, `tools.ts`, `state.ts`, `budget.ts`, `retry.ts`, `security.ts`, `pipeline.ts`, `evaluation.ts`, `providers.ts`, `screenshot_compare.ts`, `render_handler.ts`, `index.ts`
   - `src/cli/main.ts`: CLI with 6 commands (run, inspect, render, compare, repair, replay) + `--target=<framework+styling>` flag
@@ -76,7 +76,7 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 > `buildConfig`), e.g. `PYTHON_BIN=/opt/homebrew/bin/python3.14 node dist/runtime/tests/run_all.js`
 > or `PYTHON_BIN=/opt/homebrew/bin/python3.14 node dist/runtime/src/cli/main.js compare ...`.
 
-* **Run all tests (395 tests):**
+* **Run all tests (461 tests):**
   `cd plugin/figmaforge && python3 -m unittest discover -s tests -v`
 * **Run runtime tests (117 tests):**
   `npx tsc && node dist/runtime/tests/run_all.js`
@@ -104,7 +104,7 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 
 ## 7. Testing Requirements
 
-- All 395 Python tests across 33 test files must pass (`python3 -m unittest discover -s tests`); browser-render tests skip cleanly without chromium.
+- All 461 Python tests across 39 test files must pass (`python3 -m unittest discover -s tests`); browser-render tests skip cleanly without chromium.
 - All 117 TypeScript runtime tests must pass (`npx tsc && node dist/runtime/tests/run_all.js`).
 - Test categories: unit tests, integration tests, golden-file snapshot tests, property-based tests, perceptual (SSIM) gating tests.
 - Snapshot tests use `REWRITE_SNAPSHOTS=1` to regenerate golden files after intentional output changes.
@@ -123,7 +123,7 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 1. Discuss architecture impact (review `docs/architecture.md`).
 2. Run full test suite (`python3 -m unittest discover -s tests` from `plugin/figmaforge/`).
 3. Make atomic, minimal coherent changes explicitly matching schemas.
-4. Verify all 395 tests pass and regenerate snapshots if output changed intentionally.
+4. Verify all 461 tests pass and regenerate snapshots if output changed intentionally.
 5. Update `docs/DEVELOPMENT_LOG.md` with the change entry.
 6. Only document verified, executable routines.
 
@@ -131,7 +131,7 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 
 - Scope is strictly adhered to (no speculative integrations).
 - All changes maintain schema constraints (run `claude plugin validate --strict`).
-- Full test suite passes: `python3 -m unittest discover -s tests` (395 tests, 33 files).
+- Full test suite passes: `python3 -m unittest discover -s tests` (461 tests, 39 files).
 - Changes align exactly with architectural constraints in `docs/architecture.md`.
 - `docs/DEVELOPMENT_LOG.md` updated with the change entry.
 - No exposed credentials, secrets, or unintentional active `.lsp.json`/`.mcp.json` templates exist.
