@@ -22,6 +22,7 @@ import { ToolRegistry } from "../core/tools.js";
 import { BudgetTracker } from "../core/budget.js";
 import { PipelineCoordinator } from "../core/pipeline.js";
 import { ScreenshotComparator } from "../core/screenshot_compare.js";
+import { createIngestStageHandler, createGenerateStageHandler } from "../core/backend_codegen.js";
 
 // ---------------------------------------------------------------------------
 // Argument parsing
@@ -81,7 +82,9 @@ Commands:
   replay    Replay a previous run from its event log
 
 Options:
-  --file-key=<key>         Figma file key (required for 'run')
+  --file-key=<key>         Figma file key (live ingest; requires FIGMA_TOKEN)
+  --file=<path>            Local Figma file JSON (offline ingest)
+                           Exactly one of --file-key / --file is required for 'run'
   --output-dir=<path>      Output directory (default: ./figmaforge-output)
   --target=<framework+styling>  Code generation target (default: html+css)
                            Format: <framework>+<styling> — any combination is valid.
@@ -185,14 +188,16 @@ body { width: ${viewport.width}px; min-height: ${viewport.height}px; font-family
 
 async function cmdRun(args: CliArgs): Promise<void> {
   const config = buildConfig(args);
+  const localFile = args.flags["file"];
 
-  if (!config.fileKey) {
-    console.error("Error: --file-key is required for 'run' command");
+  if (!config.fileKey && !localFile) {
+    console.error("Error: --file-key or --file is required for 'run' command");
     process.exit(1);
   }
 
   console.log(`Starting pipeline run ${config.runId}`);
-  console.log(`  File key: ${config.fileKey}`);
+  console.log(`  File key: ${config.fileKey || "(local file)"}`);
+  if (localFile) console.log(`  Local file: ${path.resolve(localFile)}`);
   console.log(`  Output:   ${config.outputDir}`);
   console.log(`  Threshold: ${config.similarityThreshold}`);
   console.log(`  Viewport:  ${config.viewport.width}x${config.viewport.height}`);
@@ -224,6 +229,14 @@ async function cmdRun(args: CliArgs): Promise<void> {
     ac.abort();
   });
   pipeline.setAbortSignal(ac.signal);
+
+  // Wire the real Python pipeline stages (Part 15): ingest fetches (or
+  // reads locally) the Figma file; generate lowers it through the backend.
+  if (localFile) {
+    pipeline.setShared("filePath", path.resolve(localFile));
+  }
+  pipeline.onStage("ingest", createIngestStageHandler());
+  pipeline.onStage("generate", createGenerateStageHandler());
 
   const result = await pipeline.run();
 

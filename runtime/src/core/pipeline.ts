@@ -128,6 +128,11 @@ export class PipelineCoordinator {
     this.handlers.set(stage, handler);
   }
 
+  /** Seed shared stage data before running (e.g. a local file path). */
+  setShared(key: string, value: unknown): void {
+    this.ctx.shared.set(key, value);
+  }
+
   /** Set the abort signal for cancellation. */
   setAbortSignal(signal: AbortSignal): void {
     this.ctx.abortSignal = signal;
