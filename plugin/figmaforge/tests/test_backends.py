@@ -634,6 +634,67 @@ class TestHtmlCssBackend(unittest.TestCase):
         self.assertEqual(len(caps.unsupported_features), 0)
 
 
+class TestHtmlCssStylesOverride(unittest.TestCase):
+    """Part 20: the styles_override seam lets repaired styles reach the
+    generated html_css output.  Overrides apply per-node AFTER the computed
+    style (union on top); absent/empty overrides are byte-identical."""
+
+    def _generate(self, options=None):
+        from backends.html_css import HtmlCssBackend
+        doc, plan = TestHtmlCssBackend._rich_fixture()
+        backend = HtmlCssBackend()
+        return backend.generate(document=doc, layout_plan=plan, options=options)
+
+    def test_override_applies_background_to_named_node(self):
+        output = self._generate(options={
+            "styles_override": {
+                "card:1": {"base": {"background": "#ff0000"}, "breakpoints": {}},
+            },
+        })
+        css = next(f.content for f in output.files if f.path == "styles.css")
+        # The repaired color replaces the computed fill color on the node.
+        self.assertIn("background: #ff0000", css)
+        self.assertNotIn("background: #1a1a1a", css)  # computed fill replaced
+        # The override is scoped to the node's own selector.
+        self.assertIn(".n-card-1", css)
+
+    def test_override_only_touches_listed_node(self):
+        output = self._generate(options={
+            "styles_override": {
+                "card:1": {"base": {"background": "#ff0000"}, "breakpoints": {}},
+            },
+        })
+        css = next(f.content for f in output.files if f.path == "styles.css")
+        # The sibling text node keeps its computed styles (its own selector
+        # is emitted, and the override value appears exactly once).
+        self.assertIn(".n-t-3", css)
+        self.assertEqual(css.count("background: #ff0000"), 1)
+
+    def test_absent_or_empty_override_is_byte_identical(self):
+        baseline = self._generate(options=None)
+        empty = self._generate(options={"styles_override": {}})
+        self.assertEqual(
+            [(f.path, f.content) for f in baseline.files],
+            [(f.path, f.content) for f in empty.files],
+        )
+        # And the computed background is still present without an override.
+        css = next(f.content for f in baseline.files if f.path == "styles.css")
+        self.assertIn("background: #1a1a1a", css)
+
+    def test_breakpoints_merged_from_override(self):
+        output = self._generate(options={
+            "styles_override": {
+                "card:1": {
+                    "base": {},
+                    "breakpoints": {"md": {"flexDirection": "column"}},
+                },
+            },
+        })
+        css = next(f.content for f in output.files if f.path == "styles.css")
+        self.assertIn("@media (max-width: md)", css)
+        self.assertIn("flex-direction: column", css)
+
+
 # ---------------------------------------------------------------------------
 # Stub backend tests
 # ---------------------------------------------------------------------------

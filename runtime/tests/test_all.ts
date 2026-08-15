@@ -1460,9 +1460,9 @@ export async function runAllTests(): Promise<SuiteResult[]> {
         const manifest = JSON.parse(
           fs.readFileSync(path.join(runDir, "manifest.json"), "utf-8"),
         );
-        // 8 stage artifacts (ingest…compare) + the event log = 9.
-        assertEqual(manifest.artifacts.length, 9,
-          `expected 9 artifacts, got ${manifest.artifacts.length}`);
+        // 10 stage artifacts (ingest…verify, Part 20) + the event log = 11.
+        assertEqual(manifest.artifacts.length, 11,
+          `expected 11 artifacts, got ${manifest.artifacts.length}`);
         const diffArtifact = manifest.artifacts.find(
           (a: { kind: string }) => a.kind === "diff_report",
         );
@@ -1525,6 +1525,163 @@ export async function runAllTests(): Promise<SuiteResult[]> {
         const combined = (res.stdout ?? "") + (res.stderr ?? "");
         assert(combined.includes("FIGMA_TOKEN"),
           `expected a FIGMA_TOKEN error, got: ${combined}`);
+      });
+    } finally {
+      cleanDir(dir);
+    }
+  }));
+
+  // 13c. cmdRun repair+verify (Part 20) — ten-stage run with a terminal gate
+  results.push(await describe("cmdRun repair+verify (Part 20)", async () => {
+    const dir = tmpDir();
+    const FIXTURE = path.resolve("plugin/figmaforge/fixtures/figma/layout_desktop.json");
+    const cli = path.resolve("dist/runtime/src/cli/main.js");
+    const PYTHON_BIN = process.env.PYTHON_BIN ?? "python3";
+    try {
+      await it("html+css run completes all ten stages with a PASSED verification", async () => {
+        const outDir = path.join(dir, "run-a");
+        const res = spawnSync(process.execPath, [
+          cli, "run", `--file=${FIXTURE}`, "--target=html+css", "--no-approval",
+          `--output-dir=${outDir}`,
+        ], {
+          cwd: path.resolve("."),
+          env: { ...process.env, PYTHON_BIN },
+          encoding: "utf-8",
+          timeout: 240_000,
+        });
+        assertEqual(res.status, 0, `run exited ${res.status}: ${res.stderr ?? ""}`);
+        const stdout = res.stdout ?? "";
+        const scoreLine = stdout.split("\n").find((l) => l.includes("Score:")) ?? "";
+        const score = parseFloat(scoreLine.split(":")[1] ?? "0");
+        assert(score > 0.9, `measured score should be > 0.9, got ${score}`);
+        assert(stdout.includes("Visual verdict"), "run should print the visual verdict");
+        assert(stdout.includes("Verification: PASSED"),
+          `expected a PASSED verification line, got:\n${stdout}`);
+        const repairsLine = stdout.split("\n").find((l) => l.includes("Repairs:")) ?? "";
+        const repairs = parseInt(repairsLine.split(":")[1] ?? "0", 10);
+        assertEqual(repairs, 0, "no repair should have run");
+
+        const runs = fs.readdirSync(outDir).filter((f) => f.startsWith("run-"));
+        assertEqual(runs.length, 1, "expected exactly one run dir");
+        const runDir = path.join(outDir, runs[0]);
+        const manifest = JSON.parse(
+          fs.readFileSync(path.join(runDir, "manifest.json"), "utf-8"),
+        );
+        // 10 stage artifacts (ingest…verify) + the event log = 11.
+        assertEqual(manifest.artifacts.length, 11,
+          `expected 11 artifacts, got ${manifest.artifacts.length}`);
+        const verifyArtifact = manifest.artifacts.find(
+          (a: { kind: string }) => a.kind === "metrics",
+        );
+        assert(verifyArtifact !== undefined, "expected a metrics (verify) artifact");
+        const verify = JSON.parse(
+          fs.readFileSync(path.join(runDir, "artifacts", verifyArtifact.path), "utf-8"),
+        );
+        assertEqual(verify.passed, true);
+        assertEqual(verify.source, "compare");
+        assertEqual(verify.baseline_kind, "reference");
+      });
+
+      await it("red baseline runs the real repair loop and verifies FAILED honestly", async () => {
+        const outDir = path.join(dir, "run-b");
+        const base = path.join(dir, "red-baseline.png");
+        fs.writeFileSync(base, makePng(1440, 900, [255, 0, 0]));
+        const res = spawnSync(process.execPath, [
+          cli, "run", `--file=${FIXTURE}`, "--target=html+css", "--no-approval",
+          `--output-dir=${outDir}`, `--baseline=${base}`,
+        ], {
+          cwd: path.resolve("."),
+          env: { ...process.env, PYTHON_BIN },
+          encoding: "utf-8",
+          timeout: 240_000,
+        });
+        assertEqual(res.status, 0, `run exited ${res.status}: ${res.stderr ?? ""}`);
+        const stdout = res.stdout ?? "";
+        // The full-red baseline scores ~0, so repair genuinely runs (the
+        // default gate is 0.95) and verify honestly fails after re-measuring.
+        assert(stdout.includes("Verification: FAILED"),
+          `expected a FAILED verification line, got:\n${stdout}`);
+        const repairsLine = stdout.split("\n").find((l) => l.includes("Repairs:")) ?? "";
+        const repairs = parseInt(repairsLine.split(":")[1] ?? "0", 10);
+        assert(repairs >= 1,
+          `the repair loop should have run real iterations, got Repairs: ${repairs}`);
+
+        const runs = fs.readdirSync(outDir).filter((f) => f.startsWith("run-"));
+        const runDir = path.join(outDir, runs[0]);
+        const manifest = JSON.parse(
+          fs.readFileSync(path.join(runDir, "manifest.json"), "utf-8"),
+        );
+        assertEqual(manifest.artifacts.length, 11,
+          `expected 11 artifacts, got ${manifest.artifacts.length}`);
+        const repairArtifact = manifest.artifacts.find(
+          (a: { kind: string }) => a.kind === "repair_result",
+        );
+        assert(repairArtifact !== undefined, "expected a repair_result artifact");
+        const repair = JSON.parse(
+          fs.readFileSync(path.join(runDir, "artifacts", repairArtifact.path), "utf-8"),
+        );
+        assert(repair.iterations_run >= 1,
+          `repair should have run loop iterations, got ${repair.iterations_run}`);
+        assert(repair.repaired_styles_path !== null,
+          "repaired styles must serialize to the repair out dir");
+        // The repair work dir exists with the regenerated html_css output.
+        const genDir = path.join(runDir, "repair", "generated", "html_css");
+        assert(fs.existsSync(genDir), "regenerated html_css should exist");
+        assert(fs.readdirSync(genDir).some((f: string) => f.endsWith(".html")),
+          "the repair work dir should contain regenerated html");
+
+        // Verify re-measured the regenerated code (not the compare score).
+        const verifyArtifact = manifest.artifacts.find(
+          (a: { kind: string }) => a.kind === "metrics",
+        );
+        assert(verifyArtifact !== undefined, "expected a metrics (verify) artifact");
+        const verify = JSON.parse(
+          fs.readFileSync(path.join(runDir, "artifacts", verifyArtifact.path), "utf-8"),
+        );
+        assertEqual(verify.passed, false);
+        assertEqual(verify.source, "re-rendered");
+        assertEqual(verify.baseline_kind, "explicit");
+      });
+
+      await it("--no-repair skips the repair stage and still verifies honestly", async () => {
+        const outDir = path.join(dir, "run-c");
+        const base = path.join(dir, "red-baseline.png");
+        fs.writeFileSync(base, makePng(1440, 900, [255, 0, 0]));
+        const res = spawnSync(process.execPath, [
+          cli, "run", `--file=${FIXTURE}`, "--target=html+css", "--no-approval",
+          `--output-dir=${outDir}`, `--baseline=${base}`, "--no-repair",
+        ], {
+          cwd: path.resolve("."),
+          env: { ...process.env, PYTHON_BIN },
+          encoding: "utf-8",
+          timeout: 240_000,
+        });
+        assertEqual(res.status, 0, `run exited ${res.status}: ${res.stderr ?? ""}`);
+        const stdout = res.stdout ?? "";
+        assert(stdout.includes("Verification: FAILED"),
+          `expected a FAILED verification line, got:\n${stdout}`);
+        const repairsLine = stdout.split("\n").find((l) => l.includes("Repairs:")) ?? "";
+        const repairs = parseInt(repairsLine.split(":")[1] ?? "0", 10);
+        assertEqual(repairs, 0, "--no-repair must not run the loop");
+
+        const runs = fs.readdirSync(outDir).filter((f) => f.startsWith("run-"));
+        const runDir = path.join(outDir, runs[0]);
+        const manifest = JSON.parse(
+          fs.readFileSync(path.join(runDir, "manifest.json"), "utf-8"),
+        );
+        const repairArtifact = manifest.artifacts.find(
+          (a: { kind: string }) => a.kind === "repair_result",
+        );
+        assert(repairArtifact !== undefined, "expected a repair_result artifact");
+        const repair = JSON.parse(
+          fs.readFileSync(path.join(runDir, "artifacts", repairArtifact.path), "utf-8"),
+        );
+        assertEqual(repair.repairs, 0);
+        assert(repair.note.includes("disabled"),
+          `expected the disabled note, got: ${repair.note}`);
+        // No repair work dir was ever created.
+        assert(!fs.existsSync(path.join(runDir, "repair")),
+          "--no-repair must never create the repair dir");
       });
     } finally {
       cleanDir(dir);

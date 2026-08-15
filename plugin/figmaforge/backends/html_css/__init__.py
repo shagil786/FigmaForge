@@ -223,7 +223,9 @@ class HtmlCssBackend(BackendAdapter):
             root_vnode = node_builder.build(screen)
 
             # Apply styles from layout plan
-            self._apply_styles(root_vnode, screen, style_gen, ir_by_id, assets=assets)
+            self._apply_styles(
+                root_vnode, screen, style_gen, ir_by_id, opts, assets=assets,
+            )
 
             # Emit HTML + CSS
             html, css = emitter.emit(
@@ -272,13 +274,29 @@ class HtmlCssBackend(BackendAdapter):
         plan: LayoutNodePlan,
         style_gen: CssStyleGenerator,
         ir_by_id: Dict[str, IRNode],
+        opts: Optional[Dict[str, Any]] = None,
         assets: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> None:
-        """Recursively apply CSS styles from the layout plan to VNodes."""
+        """Recursively apply CSS styles from the layout plan to VNodes.
+
+        ``opts["styles_override"]`` (Part 20) applies per-node repaired
+        styles as a union ON TOP of the computed style (``base`` and
+        ``breakpoints``), so the repair loop's fixes reach the generated
+        code.  Absent/empty override leaves the computed output untouched.
+        """
         vnode.style = style_gen.generate_style(plan)
         extend_ir_style(vnode.style, plan, ir_by_id.get(vnode.node_id), assets=assets)
+        if opts:
+            override = (opts.get("styles_override") or {}).get(vnode.node_id)
+            if override:
+                if override.get("base"):
+                    vnode.style.base.update(override["base"])
+                if override.get("breakpoints"):
+                    vnode.style.breakpoints.update(override["breakpoints"])
         for child_vnode, child_plan in zip(vnode.children, plan.children):
-            self._apply_styles(child_vnode, child_plan, style_gen, ir_by_id, assets=assets)
+            self._apply_styles(
+                child_vnode, child_plan, style_gen, ir_by_id, opts, assets=assets,
+            )
 
     def _wrap_html_document(
         self,

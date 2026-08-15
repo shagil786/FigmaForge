@@ -26,11 +26,13 @@ Design goals — consistent with FigmaForge conventions:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from .ir_types import IRDocument, IRNode
 from .layout_types import LayoutPlan, LayoutNodePlan
 from .library_types import ProjectLibrary, ProjectToken
+from .png_codec import PngError, decode_png
 from .repair_classifier import (
     ALL_CATEGORIES,
     CATEGORY_ASSET,
@@ -182,10 +184,12 @@ class PatchPlanner:
         plan: Optional[LayoutPlan] = None,
         document: Optional[IRDocument] = None,
         library: Optional[ProjectLibrary] = None,
+        baseline_png: Optional[str] = None,
     ):
         self._plan = plan
         self._document = document
         self._library = library
+        self._baseline_png = baseline_png
         self._ir_index: Dict[str, IRNode] = {}
         self._patch_counter: int = 0
         if document is not None:
@@ -338,8 +342,8 @@ class PatchPlanner:
         # Determine target type based on category and source mapping
         target_type = self._determine_target_type(candidate)
         target_key = self._determine_target_key(candidate)
-        property_name = self._determine_property(candidate)
         new_value = self._determine_new_value(candidate)
+        property_name = self._determine_property(candidate, new_value)
 
         if new_value is None and target_type != TARGET_STRUCTURE:
             return None
@@ -396,7 +400,9 @@ class PatchPlanner:
             return candidate.source_mapping.css_selector
         return candidate.node_id
 
-    def _determine_property(self, candidate: RepairCandidate) -> str:
+    def _determine_property(
+        self, candidate: RepairCandidate, new_value: Any = None,
+    ) -> str:
         """Determine which property to change."""
         if candidate.source_mapping.token_property:
             return candidate.source_mapping.token_property
@@ -411,6 +417,12 @@ class PatchPlanner:
         if cat == CATEGORY_TYPOGRAPHY:
             return "fontSize"
         if cat == CATEGORY_COLOR:
+            # A pixel-derived color patch carries a concrete #rrggbb value
+            # (Part 20): html_css emits fills via `background`, so the
+            # style patch must target it.  Without a real color (legacy
+            # region-dict degrade) the generic property stays "color".
+            if isinstance(new_value, str) and new_value.startswith("#"):
+                return "background"
             return "color"
         return ""
 
@@ -432,6 +444,15 @@ class PatchPlanner:
             if ir_node and ir_node.typography and ir_node.typography.font_size:
                 return ir_node.typography.font_size
             return None
+        if cat == CATEGORY_COLOR:
+            # Pixel-derived color mismatch (Part 20): extract the actual
+            # baseline color in the attributed region so the style patch
+            # can genuinely fix the render.  Falls back to the legacy
+            # expected dict when no decodable baseline is available.
+            region_color = self._extract_region_color(candidate)
+            if region_color is not None:
+                return region_color
+            return expected
         if cat in (CATEGORY_MISSING_ELEMENT, CATEGORY_EXTRA_ELEMENT):
             return None  # structural patches don't have simple values
         return expected
@@ -439,6 +460,52 @@ class PatchPlanner:
     def _get_current_value(self, candidate: RepairCandidate) -> Any:
         """Get the current value for rollback purposes."""
         return candidate.actual
+
+    def _extract_region_color(
+        self, candidate: RepairCandidate,
+    ) -> Optional[str]:
+        """Extract the baseline's mean RGB in the mismatch region (Part 20).
+
+        Returns a ``#rrggbb`` string, or ``None`` when the baseline is
+        unavailable/undecodable or the region is empty/offscreen — the
+        caller then keeps the legacy (non-color) patch value.  Region is
+        clamped to the image bounds; the mean is over the clamped area.
+        """
+        if self._baseline_png is None:
+            return None
+        expected = candidate.expected
+        region = expected.get("region") if expected else None
+        if not region:
+            return None
+        try:
+            image = decode_png(Path(str(self._baseline_png)).read_bytes())
+        except (OSError, PngError):
+            return None
+
+        x0 = max(0, min(int(region.get("x", 0)), image.width))
+        y0 = max(0, min(int(region.get("y", 0)), image.height))
+        x1 = max(0, min(int(region.get("x", 0)) + int(region.get("width", 0)), image.width))
+        y1 = max(0, min(int(region.get("y", 0)) + int(region.get("height", 0)), image.height))
+        if x1 <= x0 or y1 <= y0:
+            return None
+
+        total_r = total_g = total_b = 0
+        count = 0
+        for yy in range(y0, y1):
+            row_start = (yy * image.width + x0) * image.channels
+            for xx in range(x1 - x0):
+                off = row_start + xx * image.channels
+                total_r += image.pixels[off]
+                total_g += image.pixels[off + 1]
+                total_b += image.pixels[off + 2]
+                count += 1
+        if count == 0:
+            return None
+        return "#{:02x}{:02x}{:02x}".format(
+            int(round(total_r / count)),
+            int(round(total_g / count)),
+            int(round(total_b / count)),
+        )
 
     def _extract_token_value(
         self, token_key: str, candidate: RepairCandidate,

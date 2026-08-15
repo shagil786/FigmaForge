@@ -384,6 +384,7 @@ class RepairLoop:
             # Step 4: Plan
             planner = PatchPlanner(
                 plan=plan, document=document, library=library,
+                baseline_png=self._config.baseline_png,
             )
             patch_plan = planner.plan(classification, iteration=iteration)
 

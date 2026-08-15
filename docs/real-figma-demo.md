@@ -130,10 +130,10 @@ PYTHON_BIN=/opt/homebrew/bin/python3.14 node dist/runtime/src/cli/main.js run \
   --no-approval --output-dir=./figmaforge-output
 ```
 
-The `run` command exercises the **full eight-stage pipeline**: ingest →
-normalize → resolve → layout → assets → generate → render → compare, each a
-real stage that shells out to `scripts/pipeline.py` and stores its own
-artifact.
+The `run` command exercises the **full ten-stage pipeline**: ingest →
+normalize → resolve → layout → assets → generate → render → compare → repair
+→ verify, each a real stage that shells out to `scripts/pipeline.py` and
+stores its own artifact.
 Artifacts land under `./figmaforge-output/<run-id>/artifacts/`:
 
 - `ingest_output_*.json` — the normalized Figma file (`figma_raw`)
@@ -152,6 +152,14 @@ Artifacts land under `./figmaforge-output/<run-id>/artifacts/`:
 - `compare_output_*.json` — the diff report (`diff_report`): SSIM-gated
   similarity vs the resolved baseline (explicit `--baseline` → `--figma-baseline`
   → reference render), with per-screen raster stats and the perceptual verdict
+- `repair_output_*.json` — the repair result (`repair_result`): the real
+  `RepairLoop` run against an external baseline — iterations, final score,
+  `styles.repaired.json` + full history under `<run>/repair/`, and the
+  regenerated html_css under `<run>/repair/generated/html_css/`
+- `verify_output_*.json` — the final gate (`metrics`): `passed`
+  (`score >= threshold`), the score (re-measured on the **regenerated** files
+  when repair ran, else the compare score), threshold, baseline kind, and the
+  per-screen rows
 
 Each stage consumes the previous stage's JSON artifact directly (the IR and
 layout-plan JSON round-trip loaders make this lossless), and `generate` lowers
@@ -189,6 +197,19 @@ real `Score`. Design judgment against actual Figma output uses `--baseline
 <your.png>` or `--figma-baseline` (live download via the Figma images API,
 token-gated).
 
+The repair + verify stages close the loop (Part 20): when the measured score
+is below the gate (`--similarity-threshold`, default 0.95) against an
+**external** baseline, repair runs the real Python `RepairLoop` (mutates the
+shared plan + styles, regenerates html_css via the `styles_override` seam),
+and verify then re-renders the **regenerated** files against the **same**
+baseline for the honest post-repair measurement. The run prints `Repairs:`
+(the real loop iterations) and a `Verification: PASSED / FAILED / cannot
+verify` terminal line. Honesty contract: against the **reference** baseline
+repair is inert by construction (the reference render IS the intended render
+— a low score there is a codegen regression verify catches, not something to
+converge toward); `--no-repair` forces the short-circuit; and a FAILED
+verification does **not** fail the run — the report is valid output.
+
 Valid `--target` keys (those with Python backends): `html+css`,
 `react+tailwind`, `vue+scoped_css`, `svelte+scoped_css`,
 `swiftui+swiftui_modifiers`, `flutter+flutter_widgets`. Targets without a
@@ -214,6 +235,7 @@ The demo's verification is **structural** by design (repo rule): generated
 code is never compiled (no swiftc/dart/tsc) and generated apps are never
 executed. The gate is: all six backends generate cleanly, the manifests and
 loss counts match each backend's declarations, the generated html renders and
-diffs against its reference baseline with a measured score, and the Python
-(`python3.14 -m unittest discover -s tests`, 544 tests) + TS
-(`node dist/runtime/tests/run_all.js`, 143 tests) suites are green.
+diffs against its reference baseline with a measured score (with repair +
+verify closing the loop against external baselines), and the Python
+(`python3.14 -m unittest discover -s tests`, 565 tests) + TS
+(`node dist/runtime/tests/run_all.js`, 155 tests) suites are green.
