@@ -1,6 +1,7 @@
 # Repair + Verify Stages — auto-repair and final verification through the TS runtime (Part 20) — Design Spec
 
 > **Branch:** `feat/part-20-repair-verify` (from main @ `40269c2`; Parts 18–19 are open PRs #21/#22 — this branch assumes only the Part 17 main state).
+> **BRANCH-STATE DISCOVERY (at Task 4):** the TS half of this part (compare-baseline sharing, TS repair/verify handlers, cmdRun wiring) structurally requires Part 19's TS machinery (`createCompareStageHandler`, `invokeRender*`, the `ctx.updateMetrics` seam), which exists only on the open PR #22 branch. Those tasks are gated on merging #21 + #22 and re-basing this branch (see the plan's discovery note for the exact procedure). The Python half (Tasks 1–3: pixel→color repair, styles_override, `pipeline.py repair`) is branch-independent and complete.
 > **Gate baseline (this branch, off main):** Python **515 OK, zero skips** (43 files) · TS `npx tsc` clean, **131 passing** · `claude plugin validate --strict` ✔. If #21/#22 merge first, counts shift to 526/133 and 533/141 respectively — the plan's per-task expectations state the branch-real numbers.
 
 ## Problem

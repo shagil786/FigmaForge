@@ -2,6 +2,15 @@
 
 > **Branch:** `feat/part-20-repair-verify` (from main @ `40269c2`). See the [design spec](./2026-08-18-repair-verify-runtime-design.md) for findings, honesty contract, and risk review.
 > **Gate baseline (this branch, off main):** Python **515 OK, zero skips** (43 files) · TS **131 passing**, `npx tsc` clean · `claude plugin validate --strict` ✔. Expected after: **~535 / ~150**.
+>
+> **BRANCH-STATE DISCOVERY (at Task 4):** main @ `40269c2` has **no Part 19 TS machinery** — no `createRenderStageHandler`/`createCompareStageHandler`, no `invokeRender*`, no `ctx.updateMetrics` seam, no render/compare wiring in `cmdRun`. Tasks 4–7 as written depend on that code, which exists only on the open PR #22 branch. **Tasks 1–3 (Python) are branch-independent and complete (536 OK). Tasks 4–7 are gated on PRs #21 (Part 18) and #22 (Part 19) merging into main first**, then this branch re-based:
+>
+> 1. Merge #21, then #22 into main (repo convention, merge commits).
+> 2. `git checkout feat/part-20-repair-verify && git rebase main`.
+> 3. Resolve the two trivial overlaps: `web_common.reference_styles_from_plan` (identical duplicate — keep the merged copy) and `pipeline.py main()` dispatch (reconcile the `repair` dispatch with #22's `_execute`/`_report_error` refactor, and reuse `_execute` instead of the standalone `repair_main` error contract if it fits).
+> 4. Re-verify the Python suite (expect 536, unless #22's render tests shift it), then execute Tasks 4–7 against the real Part 19 TS state.
+>
+> Tasks 4–7 below are therefore written against the post-merge state; do NOT attempt them on the pre-merge branch (they would duplicate PR #22's work and force conflicts).
 > **Conventions:** test-first, one commit per task after the full suite goes green, commits on `feat/part-20-repair-verify`, PR against main (no merge, repo convention). Chrome: real-chromium tests only where deterministic; unit tests inject a fake harness (Part 19 render-test convention).
 
 ## Task 1 — Pixel → color repair (Python, test-first, contained)
@@ -46,7 +55,7 @@
 **Verify**: new tests green; full Python suite **~545 OK**; one real-chromium smoke (fixture vs a color-shifted reference baseline → regenerated CSS carries the shifted color, exit 0).
 **Commit**: `feat(pipeline): add repair subcommand — RepairLoop + html_css regeneration in one atomic unit`.
 
-## Task 4 — Compare handler shares its resolved baseline (TS, test-first)
+## Task 4 — Compare handler shares its resolved baseline (TS, test-first)  [blocked: requires #21 + #22 merged + re-base]
 
 **Tests (red)** in `runtime/tests/backend_codegen.test.ts`:
 - Existing reference-baseline compare test extended: after the compare stage, `ctx.shared` contains `compareBaseline` (an existing PNG path) and `compareBaselineKind` (`"reference"` | `"explicit"` | `"figma"`).
@@ -55,7 +64,7 @@
 **Verify**: extended test green; TS suite still **141 passing**.
 **Commit**: `feat(runtime): compare stage shares its resolved baseline for repair/verify`.
 
-## Task 5 — TS repair stage handler (TS, test-first)
+## Task 5 — TS repair stage handler (TS, test-first)  [blocked: requires #21 + #22 merged + re-base]
 
 **Tests (red)** in `runtime/tests/backend_codegen.test.ts`:
 - Clean-compare short-circuit: full chain on the fixture (reference baseline, score ≥ threshold) → repair artifact `{repairs: 0, note: "gate already satisfied"}`, no repair spawn (assert `Repairs`/budget untouched), run completes with 9 artifacts (8 stages + event log) — i.e., repair+verify not yet registered.
@@ -68,7 +77,7 @@
 **Verify**: new tests green; TS suite **~145 passing**, tsc clean; Python unchanged.
 **Commit**: `feat(runtime): repair stage handler — real RepairLoop spawn with honest short-circuits`.
 
-## Task 6 — TS verify stage handler (TS, test-first)
+## Task 6 — TS verify stage handler (TS, test-first)  [blocked: requires #21 + #22 merged + re-base]
 
 **Tests (red)** in `runtime/tests/backend_codegen.test.ts`:
 - No-repair verify: full chain on the fixture (repair short-circuits) → verify artifact `{passed: true, similarity_score ≈ 1.0, threshold, baseline_kind: "reference"}`, artifact kind `metrics`.
@@ -81,7 +90,7 @@
 **Verify**: new tests green; TS suite **~149 passing**, tsc clean.
 **Commit**: `feat(runtime): verify stage handler — final measured pass/fail gate`.
 
-## Task 7 — cmdRun wiring: ten stages + flags + Verification line (TS, test-first)
+## Task 7 — cmdRun wiring: ten stages + flags + Verification line (TS, test-first)  [blocked: requires #21 + #22 merged + re-base]
 
 **Tests (red)** in `runtime/tests/test_all.ts` (CLI level, Part 19 conventions):
 - `run --target=html+css` (fixture) → exit 0, **10 artifacts**, `Score` ≥ 0.95, `Repairs: 0`, `Visual verdict` present, **`Verification: PASSED`** in stdout.
