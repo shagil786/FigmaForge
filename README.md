@@ -1,7 +1,7 @@
 # FigmaForge Universal Adaptive Platform
 
 **Version:** 0.0.2-dev  
-**Status:** Parts 1–15 complete — full pixel-diff pipeline (Part 12), perceptual SSIM gating and baseline auto-refresh (Part 13), all six backend adapters implemented (Part 14: react+tailwind, vue, svelte, swiftui, flutter) with capability-vs-output honesty audits, and the real-Figma end-to-end demo wired through the TS runtime (Part 15: Python pipeline CLI + ingest/generate stage handlers + `figmaforge demo`); validation gate green (481 Python / 124 TS tests)
+**Status:** Parts 1–16 complete — full pixel-diff pipeline (Part 12), perceptual SSIM gating and baseline auto-refresh (Part 13), all six backend adapters implemented (Part 14: react+tailwind, vue, svelte, swiftui, flutter) with capability-vs-output honesty audits, the real-Figma end-to-end demo wired through the TS runtime (Part 15: Python pipeline CLI + ingest/generate stage handlers + `figmaforge demo`), and the full front half wired (Part 16: IR/layout JSON round-trip loaders, normalize/resolve/layout subcommands, staged generate, five-stage `figmaforge run`); validation gate green (499 Python / 128 TS tests)
 
 A technology-agnostic, adaptive, full-lifecycle Claude Code engineering platform that enables any software project type by detecting stack-specific signals and routing to appropriate capabilities. FigmaForge also converts normalized Figma design IR into framework-neutral layout plans and generates production-quality React/CSS output.
 
@@ -309,8 +309,11 @@ Md Shagil Nizami
 - ✅ **Part 15** Python pipeline CLI (`scripts/pipeline.py` — ingest/generate subcommands, deterministic manifests, exit codes 2/3/4)
 - ✅ **Part 15** TS runtime wiring — target→backend map (`backend_codegen.ts`), real ingest+generate stage handlers, `figmaforge run --file=<fixture>` produces a generated-code artifact
 - ✅ **Part 15** `figmaforge demo` command — all six backends from one ingest, deterministic comparison table, best-effort `--render`, offline-fixture default
-- ✅ Full validation suite green (481 Python + 124 TS tests, zero skips)
-- ✅ CLAUDE.md + docs updated through Part 15
+- ✅ **Part 16** IR + LayoutPlan JSON round-trip loaders (`from_dict`) — artifact stability locked by identity tests across all fixtures
+- ✅ **Part 16** pipeline `normalize`/`resolve`/`layout` subcommands + staged `generate --ir/--layout/[--resolution]` (byte-identical to `--file` mode)
+- ✅ **Part 16** TS normalize/resolve/layout stage handlers — `figmaforge run` exercises the full front half (5 real stages, 5 artifact kinds)
+- ✅ Full validation suite green (499 Python + 128 TS tests, zero skips)
+- ✅ CLAUDE.md + docs updated through Part 16
 
 ---
 
@@ -318,5 +321,5 @@ Md Shagil Nizami
 
 1. Test with real repositories
 2. Document the rollback procedure
-3. Wire the remaining pipeline stages (normalize/resolve/layout/assets/render/compare/repair/verify) into the TS runtime
+3. Wire the remaining TS pipeline stages (assets/render/compare/repair/verify) into the runtime
 4. Diff heatmap output + extended PNG formats (deferred non-goals from Parts 12–13)

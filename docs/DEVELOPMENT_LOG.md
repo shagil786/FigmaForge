@@ -648,3 +648,63 @@ fallback). Part 15 gives the pipeline its first real stages — `ingest` and
 Wiring the remaining pipeline stages (normalize/resolve/layout/assets/render/
 compare/repair/verify) into the TS runtime; compiling or executing generated
 SwiftUI/Flutter/TSX code; Figma OAuth (token-only); CI for the demo.
+
+## Part 16 — Front-Half Stage Wiring (normalize / resolve / layout through the TS runtime)
+
+Part 15 wired ingest + generate; the other stages were still skipped. Part 16
+makes the **full front half** real: normalize/resolve/layout are composable TS
+stages whose JSON artifacts are consumed losslessly by the next stage, and
+`figmaforge run` exercises the whole front of the pipeline for the first time.
+
+### What Changed
+
+1. **JSON round-trip loaders** — `IRDocument.from_dict` (`core/ir_types.py`,
+   ~30 loader helpers) and `LayoutPlan.from_dict` (`core/layout_types.py`, ~16
+   helpers) rebuild the full object trees from their `to_dict` shapes. The
+   contract is JSON identity — `from_dict(x.to_dict()).to_dict() ==
+   x.to_dict()` exactly (floats are already rounded at serialization time) —
+   locked by identity tests across every fixture + a programmatic rich IR + a
+   single-node plan. One real drift bug was caught by the diff: empty
+   `IRComponent()` values would have re-created phantom `component` keys on
+   nodes that had none.
+2. **Front-half subcommands** (`scripts/pipeline.py`) — `normalize` (build +
+   `ir_validator` schema-check the design IR), `resolve` (Resolver → report),
+   and `layout` (LayoutAnalyzer → plan), each printing one deterministic JSON
+   line with optional `--out`. All fixtures verified to pass the IR schema
+   before baking validation in.
+3. **Staged generate** — `generate --ir <ir.json> --layout <layout.json>
+   [--resolution <report.json>]` consumes the front-half artifacts directly
+   (no recompute); `--file` recompute stays for compatibility. Both modes
+   share `--viewport` and are proven **byte-identical** (manifests + file
+   bytes, react_tailwind + flutter).
+4. **TS stage handlers** (`backend_codegen.ts`) — `invokeNormalize`/
+   `invokeResolve`/`invokeLayout` (shared temp-file staging + single-JSON-line
+   parsing, extracted as `parseJsonLine`), `invokeBackendGeneratorFromStages`
+   (staged spawn), and `createNormalizeStageHandler`/`createResolveStageHandler`/
+   `createLayoutStageHandler` threading fileJson → irJson → resolutionJson /
+   layoutJson through `ctx.shared`. `createGenerateStageHandler` prefers the
+   staged path and falls back to legacy `--file` for ingest+generate-only
+   callers. `cmdRun` registers all five handlers.
+5. **Docs** — this entry; real-figma-demo.md (five-stage artifact layout);
+   README/CLAUDE.md/architecture.md updated through Part 16.
+
+### Testing
+
+- Python: **499** tests OK, zero skips (42 test files) — +11 round-trip identity
+  tests (IR: 4 fixtures + rich + empty; Layout: 3 fixtures + single-node +
+  tree shape) and +7 front-half CLI tests (normalize determinism/validation,
+  resolve/layout consume normalize output, invalid-IR exit 4, staged ≡ file
+  byte-identity, bad arg combos).
+- TS: **128** runtime tests passing, `npx tsc` clean — +4 backend-codegen tests
+  (five-stage run → all five artifact kinds; five-handler manifest deep-equals
+  file-mode; missing-IR stage error; ingest+generate legacy fallback).
+- Smoke: `figmaforge run --file=<fixture> --target=flutter+flutter_widgets`
+  produced 6 artifacts (ingest/normalize/resolve/layout/generate + event log)
+  and the flutter file — full front half verified end-to-end.
+- `claude plugin validate --strict` clean (verified at the Part 16 final gate).
+
+### Non-goals (deferred)
+
+Wiring assets/render/compare/repair/verify into the TS runtime; compiling or
+executing generated SwiftUI/Flutter/TSX code; changing the `figmaforge demo`
+backend-direct path; schema-version migration for old IR/layout artifacts.
