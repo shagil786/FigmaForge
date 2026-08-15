@@ -25,12 +25,15 @@ import {
   invokeNormalize,
   invokeLayout,
   invokeAssets,
+  invokeRender,
   createIngestStageHandler,
   createGenerateStageHandler,
   createNormalizeStageHandler,
   createResolveStageHandler,
   createLayoutStageHandler,
   createAssetsStageHandler,
+  createRenderStageHandler,
+  createCompareStageHandler,
 } from "../src/core/backend_codegen.js";
 import { EventLog } from "../src/core/events.js";
 import { CheckpointManager } from "../src/core/checkpoint.js";
@@ -622,6 +625,325 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
         assertEqual(result.status, "completed");
         assertEqual(result.errors.length, 0);
         assertGreaterThan(artifacts.byKind("generated_code").length, 0);
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("invokeRender renders a generated HTML file to a real screenshot", async () => {
+      const dir = tmpDir();
+      try {
+        const html = path.join(dir, "screen.html");
+        fs.writeFileSync(
+          html,
+          '<div style="width:200px;height:100px;background:#4a90d9"><p>hi</p></div>',
+          "utf-8",
+        );
+        const result = await invokeRender(
+          { pythonBin: PYTHON_BIN, pluginDir: PLUGIN_DIR },
+          html,
+          { width: 1440, height: 900 },
+          dir,
+        );
+        assert(result.screenshot !== "", "expected a screenshot path");
+        assert(fs.existsSync(result.screenshot),
+          `screenshot file missing: ${result.screenshot}`);
+        assert(fs.existsSync(result.html),
+          `written html file missing: ${result.html}`);
+        assert(typeof result.meta === "object", "meta should be an object");
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("render stage captures a real screenshot of generated html_css output", async () => {
+      const dir = tmpDir();
+      try {
+        const config = makeConfig(dir, {
+          target: { framework: "html", styling: "css" },
+        });
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.setShared("filePath", FIXTURE);
+        pipeline.onStage("ingest", createIngestStageHandler());
+        pipeline.onStage("normalize", createNormalizeStageHandler());
+        pipeline.onStage("resolve", createResolveStageHandler());
+        pipeline.onStage("layout", createLayoutStageHandler());
+        pipeline.onStage("assets", createAssetsStageHandler());
+        pipeline.onStage("generate", createGenerateStageHandler());
+        pipeline.onStage("render", createRenderStageHandler());
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "completed");
+        assertEqual(result.errors.length, 0);
+
+        const renderArtifacts = artifacts.byStage("render");
+        assertGreaterThan(renderArtifacts.length, 0, "expected render artifacts");
+        const stored = artifacts.loadJSON(renderArtifacts[0]) as {
+          screenshots: Array<{
+            file: string;
+            html: string;
+            screenshot: string;
+            meta: Record<string, unknown>;
+          }>;
+          rendersDir: string;
+        };
+        assertGreaterThan(stored.screenshots.length, 0, "expected at least one screenshot row");
+        assertEqual(stored.screenshots[0].file, "screen_0.html");
+        assert(fs.existsSync(stored.screenshots[0].screenshot),
+          `rendered screenshot missing: ${stored.screenshots[0].screenshot}`);
+        assert(fs.existsSync(stored.rendersDir), "renders dir should exist");
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("render stage degrades honestly for a non-browser target (flutter)", async () => {
+      const dir = tmpDir();
+      try {
+        const config = makeConfig(dir); // default target: flutter
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.setShared("filePath", FIXTURE);
+        pipeline.onStage("ingest", createIngestStageHandler());
+        pipeline.onStage("normalize", createNormalizeStageHandler());
+        pipeline.onStage("resolve", createResolveStageHandler());
+        pipeline.onStage("layout", createLayoutStageHandler());
+        pipeline.onStage("assets", createAssetsStageHandler());
+        pipeline.onStage("generate", createGenerateStageHandler());
+        pipeline.onStage("render", createRenderStageHandler());
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "completed");
+        assertEqual(result.errors.length, 0);
+
+        const renderArtifacts = artifacts.byStage("render");
+        assertGreaterThan(renderArtifacts.length, 0, "expected a render artifact");
+        const stored = artifacts.loadJSON(renderArtifacts[0]) as {
+          note: string;
+          screenshotPath: string | null;
+          rendersDir: string;
+        };
+        assertEqual(stored.screenshotPath, null,
+          "non-browser targets must report no screenshot, never a fabricated one");
+        assert(stored.note.length > 0, "degrade must carry an explanatory note");
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("updateMetrics seam lets a stage write metrics.similarityScore", async () => {
+      const dir = tmpDir();
+      try {
+        const config = makeConfig(dir);
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.onStage("ingest", async (ctx) => {
+          ctx.updateMetrics({ similarityScore: 0.42 });
+          return {};
+        });
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "completed");
+        const cp = checkpoints.loadLatest();
+        assert(cp !== null, "expected a saved checkpoint");
+        assertEqual(cp!.metrics.similarityScore, 0.42,
+          "stage-written metrics must persist into the checkpoint");
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("compare stage measures a diff_report against the reference baseline", async () => {
+      const dir = tmpDir();
+      try {
+        const config = makeConfig(dir, {
+          target: { framework: "html", styling: "css" },
+        });
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.setShared("filePath", FIXTURE);
+        pipeline.onStage("ingest", createIngestStageHandler());
+        pipeline.onStage("normalize", createNormalizeStageHandler());
+        pipeline.onStage("resolve", createResolveStageHandler());
+        pipeline.onStage("layout", createLayoutStageHandler());
+        pipeline.onStage("assets", createAssetsStageHandler());
+        pipeline.onStage("generate", createGenerateStageHandler());
+        pipeline.onStage("render", createRenderStageHandler());
+        pipeline.onStage("compare", createCompareStageHandler());
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "completed");
+        assertEqual(result.errors.length, 0);
+
+        const compareArtifacts = artifacts.byStage("compare");
+        assertGreaterThan(compareArtifacts.length, 0, "expected a diff_report artifact");
+        const report = artifacts.loadJSON(compareArtifacts[0]) as {
+          similarity_score: number;
+          categories: { geometry: unknown; style: unknown; pixels: number };
+          raster_stats: {
+            ssim: number | null;
+            min_region_ssim: number | null;
+            ssim_clean: boolean | null;
+            diff_percentage: number;
+          };
+          screens: Array<{ file: string; similarity: number }>;
+          baseline: string;
+          baseline_kind: string;
+        };
+        assertEqual(report.baseline_kind, "reference");
+        assert(fs.existsSync(report.baseline), "reference baseline PNG should exist");
+        assert(typeof report.raster_stats.ssim_clean === "boolean",
+          "SSIM verdict should be a real boolean");
+        assertGreaterThan(report.similarity_score, 0.9,
+          "html_css output should closely reproduce the reference render");
+        assertGreaterThan(report.screens.length, 0);
+        assertEqual(report.screens[0].file, "screen_0.html");
+        assertEqual(report.categories.pixels, report.similarity_score);
+
+        // The measured score must reach run metrics + the checkpoint.
+        const cp = checkpoints.loadLatest();
+        assert(cp !== null);
+        assertEqual(
+          cp!.metrics.similarityScore, report.similarity_score,
+          "run metrics.similarityScore must equal the diff_report score",
+        );
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("explicit --baseline override wins and detects a real visual change", async () => {
+      const dir = tmpDir();
+      try {
+        // A deliberately-different baseline: a full-red render at the exact
+        // viewport (margin reset so the full-page capture is 1440x900, the
+        // same size as the reference render the generated output matches).
+        const redHtml = path.join(dir, "red.html");
+        fs.writeFileSync(
+          redHtml,
+          '<!DOCTYPE html><html><head><style>' +
+            '*{margin:0;padding:0;box-sizing:border-box}' +
+            'body{width:1440px;height:900px;overflow:hidden}' +
+            '</style></head><body>' +
+            '<div style="width:1440px;height:900px;background:#ff0000"></div>' +
+            '</body></html>',
+          "utf-8",
+        );
+        const red = await invokeRender(
+          { pythonBin: PYTHON_BIN, pluginDir: PLUGIN_DIR },
+          redHtml,
+          { width: 1440, height: 900 },
+          dir,
+        );
+
+        const config = makeConfig(dir, {
+          target: { framework: "html", styling: "css" },
+        });
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.setShared("filePath", FIXTURE);
+        pipeline.setShared("baselinePath", red.screenshot);
+        pipeline.onStage("ingest", createIngestStageHandler());
+        pipeline.onStage("normalize", createNormalizeStageHandler());
+        pipeline.onStage("resolve", createResolveStageHandler());
+        pipeline.onStage("layout", createLayoutStageHandler());
+        pipeline.onStage("assets", createAssetsStageHandler());
+        pipeline.onStage("generate", createGenerateStageHandler());
+        pipeline.onStage("render", createRenderStageHandler());
+        pipeline.onStage("compare", createCompareStageHandler());
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "completed");
+        const compareArtifacts = artifacts.byStage("compare");
+        const report = artifacts.loadJSON(compareArtifacts[0]) as {
+          similarity_score: number;
+          baseline_kind: string;
+          raster_stats: { ssim_clean: boolean | null };
+        };
+        assertEqual(report.baseline_kind, "explicit");
+        assert(report.similarity_score < 0.9,
+          "a full-red baseline vs the fixture render must drop the score");
+        assertEqual(report.raster_stats.ssim_clean, false,
+          "a real visual change must fail the SSIM gate");
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("compare stage degrades with no measured score when there is no screenshot", async () => {
+      const dir = tmpDir();
+      try {
+        const config = makeConfig(dir); // flutter — render degrades
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.setShared("filePath", FIXTURE);
+        pipeline.onStage("ingest", createIngestStageHandler());
+        pipeline.onStage("normalize", createNormalizeStageHandler());
+        pipeline.onStage("resolve", createResolveStageHandler());
+        pipeline.onStage("layout", createLayoutStageHandler());
+        pipeline.onStage("assets", createAssetsStageHandler());
+        pipeline.onStage("generate", createGenerateStageHandler());
+        pipeline.onStage("render", createRenderStageHandler());
+        pipeline.onStage("compare", createCompareStageHandler());
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "completed");
+        const compareArtifacts = artifacts.byStage("compare");
+        assertGreaterThan(compareArtifacts.length, 0);
+        const report = artifacts.loadJSON(compareArtifacts[0]) as {
+          similarity_score: number | null;
+          note: string;
+        };
+        assertEqual(report.similarity_score, null,
+          "no screenshot → no measured score, never a fabricated one");
+        assertGreaterThan(report.note.length, 0);
+        const cp = checkpoints.loadLatest();
+        assert(cp !== null);
+        assertEqual(cp!.metrics.similarityScore, 0,
+          "metrics must stay untouched when no score is measured");
       } finally {
         cleanDir(dir);
       }

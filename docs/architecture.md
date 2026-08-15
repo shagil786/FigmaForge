@@ -362,7 +362,7 @@ concrete adapter exists for a given combination.
   with main/cross axis alignment + SizedBox gap separators, Container+BoxDecoration,
   EdgeInsets, Text+TextStyle, Stack+Positioned; unsupported features declared
   explicitly.
-- `scripts/pipeline.py` — **Pipeline CLI (Parts 15–17):** the bridge between the TS
+- `scripts/pipeline.py` — **Pipeline CLI (Parts 15–19):** the bridge between the TS
   runtime and the Python backends. `ingest` (live `--file-key` or local `--file`)
   prints one deterministic JSON line (raw payload + `file_key`/`pages`); the front
   half is `normalize` (IRBuilder → schema-validated design IR), `resolve`
@@ -376,22 +376,36 @@ concrete adapter exists for a given combination.
   the asset manifest through `options["assets"]` so resolved image fills become
   real references in generated code, writes files under `<out-dir>/<backend>/`,
   and prints a deterministic manifest (`backend`, files, `fidelity_losses`,
-  `metadata`). Exit codes 2/3/4 mirror the documented contract; stdout carries
-  exactly one JSON line per success. IR and layout-plan JSON round-trip loaders
-  (`IRDocument.from_dict`, `LayoutPlan.from_dict`) make every stage's artifact
-  directly consumable by the next.
-- `runtime/src/core/backend_codegen.ts` — **Runtime bridge (Parts 15–17):**
+  `metadata`); `render` (Part 19) has three modes — `--html` renders a
+  generated standalone HTML (the shot), `--ir --layout` builds the intended
+  VStyles via `web_common.reference_styles_from_plan` (the same
+  `CssStyleGenerator`/`extend_ir_style` the html_css backend uses) and renders
+  `generate_render_html` (the reference baseline), and `--baselines` wraps
+  `figma_assets.download_baselines` for live Figma renders (token-gated, exit
+  3). `render_main(argv, harness_cls, client_cls, transport)` exports the
+  injection seams. Exit codes 2/3/4 mirror the documented contract;
+  stdout carries exactly one JSON line per success. IR and layout-plan JSON
+  round-trip loaders (`IRDocument.from_dict`, `LayoutPlan.from_dict`) make every
+  stage's artifact directly consumable by the next.
+- `runtime/src/core/backend_codegen.ts` — **Runtime bridge (Parts 15–19):**
   `TARGET_BACKENDS` maps the six backend-bearing presets to Python backend names;
   `backendForTarget` rejects backend-less targets with a typed error;
   `invokeBackendGenerator`/`invokeIngest`/`invokeNormalize`/`invokeResolve`/
-  `invokeLayout`/`invokeAssets` spawn `scripts/pipeline.py`;
+  `invokeLayout`/`invokeAssets`/`invokeRender`/`invokeRenderReference`/
+  `invokeRenderBaselines` spawn `scripts/pipeline.py`;
   `createIngestStageHandler` through `createGenerateStageHandler` (incl.
   `createAssetsStageHandler`, which downloads + content-addresses IR asset refs
-  into a run-scoped store) are the pipeline's real stage handlers (generate
-  prefers the staged front-half artifacts and threads the assets-stage manifest
-  via `--assets`, with a legacy `--file` fallback); `PIPELINE_STAGES` runs
-  assets before generate (Part 18) so its manifest is a generate input.
-  Registered by `figmaforge run` and reused by `figmaforge demo`.
+  into a run-scoped store) plus the Part-19 `createRenderStageHandler` (real
+  chromium screenshots of generated html into `<run>/renders/`, honest
+  `{note, screenshotPath: null}` degrade for bundler/native targets) and
+  `createCompareStageHandler` (baseline priority `--baseline` →
+  `--figma-baseline` → reference render; SSIM-gated `diff_report` artifact;
+  measured score written via the `ctx.updateMetrics` seam) are the pipeline's
+  real stage handlers (generate prefers the staged front-half artifacts and
+  threads the assets-stage manifest via `--assets`, with a legacy `--file`
+  fallback); `PIPELINE_STAGES` runs assets before generate (Part 18) so its
+  manifest is a generate input. Registered by `figmaforge run` (eight real
+  stages) and reused by `figmaforge demo`.
 
 **Core modules remain framework-neutral:**
 - `ir_types.py` (784 lines) — framework-neutral semantic vocabulary.
@@ -686,7 +700,7 @@ FigmaForge is a planned, not-implemented, technology-agnostic, adaptive platform
 - **Evidence-driven transitions** (not prose claims)
 - **Strict safety invariants** and backup/rollback strategy
 
-**Implementation status:** Core modules (detector, router, catalog, state machine) are implemented and tested. The Figma-to-Code pipeline (Parts 1-8) is fully implemented. The backend adapter architecture (Parts 10 + 14) is implemented with all six backends real — HTML+CSS (reference), React+Tailwind, Vue, Svelte, SwiftUI, and Flutter — sharing one web style-mapping implementation (`web_common.py`) and enforcing the capability-vs-output honesty rule via a repo-wide audit. The TypeScript orchestration runtime (Part 9) is implemented with composable code-generation targets, and since Part 15 it actually drives the Python backends: `figmaforge run` registers real `ingest`/`normalize`/`resolve`/`layout`/`assets`/`generate` stage handlers (`backend_codegen.ts`) that shell out to the `scripts/pipeline.py` CLI, so the **full six-stage front half** runs stage-by-stage — each JSON artifact (figma_raw, design_ir, resolution_report, layout_plan, asset_manifest) is consumed losslessly by the next via the Part-16 round-trip loaders, the assets stage content-addresses the IR's image/SVG refs into a run-scoped store (running before generate so its manifest is an input), and `generate` lowers the staged artifacts instead of recomputing — threading resolved asset paths into the generated web code (`FILLS_IMAGE` supported, honesty-audit locked). The `figmaforge demo` command generates all six backends from one ingest with a comparison table (live `--file-key` or offline fixture). Integration between the Adaptive Platform and the Figma pipeline is in progress.
+**Implementation status:** Core modules (detector, router, catalog, state machine) are implemented and tested. The Figma-to-Code pipeline (Parts 1-8) is fully implemented. The backend adapter architecture (Parts 10 + 14) is implemented with all six backends real — HTML+CSS (reference), React+Tailwind, Vue, Svelte, SwiftUI, and Flutter — sharing one web style-mapping implementation (`web_common.py`) and enforcing the capability-vs-output honesty rule via a repo-wide audit. The TypeScript orchestration runtime (Part 9) is implemented with composable code-generation targets, and since Part 15 it actually drives the Python backends: `figmaforge run` registers real `ingest`/`normalize`/`resolve`/`layout`/`assets`/`generate`/`render`/`compare` stage handlers (`backend_codegen.ts`) that shell out to the `scripts/pipeline.py` CLI, so the **full eight-stage pipeline** runs stage-by-stage — each JSON artifact (figma_raw, design_ir, resolution_report, layout_plan, asset_manifest, generated_code, screenshot, diff_report) is consumed losslessly by the next via the Part-16 round-trip loaders, the assets stage content-addresses the IR's image/SVG refs into a run-scoped store (running before generate so its manifest is an input — Part 18), `generate` lowers the staged artifacts instead of recomputing and threads resolved asset paths into the generated web code (`FILLS_IMAGE` supported, honesty-audit locked), and since Part 19 the render stage screenshots the generated html with real chromium while the compare stage measures similarity against a baseline (explicit `--baseline` → live `--figma-baseline` → reference render) through the SSIM-gated comparator — the run ends with a real measured `Score` and a `Visual verdict` line. The `figmaforge demo` command generates all six backends from one ingest with a comparison table (live `--file-key` or offline fixture). Integration between the Adaptive Platform and the Figma pipeline is in progress.
 
 ---
 

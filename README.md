@@ -1,7 +1,7 @@
 # FigmaForge Universal Adaptive Platform
 
 **Version:** 0.0.2-dev  
-**Status:** Parts 1–18 complete — full pixel-diff pipeline (Part 12), perceptual SSIM gating and baseline auto-refresh (Part 13), all six backend adapters implemented (Part 14: react+tailwind, vue, svelte, swiftui, flutter) with capability-vs-output honesty audits, the real-Figma end-to-end demo wired through the TS runtime (Part 15: Python pipeline CLI + ingest/generate stage handlers + `figmaforge demo`), the full front half wired (Part 16: IR/layout JSON round-trip loaders, normalize/resolve/layout subcommands, staged generate, five-stage `figmaforge run`), the assets stage wired (Part 17: asset-reference collector, `assets` subcommand, content-addressed image/SVG store, six-stage `figmaforge run`), and resolved assets threaded into generated web code (Part 18: `generate --assets`, real `background-image`/`bg-[url(...)]` references, `FILLS_IMAGE` lifted to supported with the honesty audit locked); validation gate green (526 Python / 133 TS tests)
+**Status:** Parts 1–19 complete — full pixel-diff pipeline (Part 12), perceptual SSIM gating and baseline auto-refresh (Part 13), all six backend adapters implemented (Part 14: react+tailwind, vue, svelte, swiftui, flutter) with capability-vs-output honesty audits, the real-Figma end-to-end demo wired through the TS runtime (Part 15: Python pipeline CLI + ingest/generate stage handlers + `figmaforge demo`), the full front half wired (Part 16: IR/layout JSON round-trip loaders, normalize/resolve/layout subcommands, staged generate, five-stage `figmaforge run`), the assets stage wired (Part 17: asset-reference collector, `assets` subcommand, content-addressed image/SVG store, six-stage `figmaforge run`), resolved assets threaded into generated web code (Part 18: `generate --assets`, real `background-image`/`bg-[url(...)]` references, `FILLS_IMAGE` lifted to supported with the honesty audit locked), and render+compare wired into the runtime (Part 19: `pipeline.py render` shot/reference/live-baseline modes, real browser screenshots of generated html, SSIM-gated diff_report with measured similarity + `Visual verdict`, eight-stage `figmaforge run`); validation gate green (533 Python / 141 TS tests)
 
 A technology-agnostic, adaptive, full-lifecycle Claude Code engineering platform that enables any software project type by detecting stack-specific signals and routing to appropriate capabilities. FigmaForge also converts normalized Figma design IR into framework-neutral layout plans and generates production-quality React/CSS output.
 
@@ -319,8 +319,11 @@ Md Shagil Nizami
 - ✅ **Part 18** Real image references in all four web backends — `background-image: url(...)` (html_css/vue/svelte) and `bg-[url(...)] bg-cover bg-center` (react_tailwind); unresolved fills keep the honest marked fallback
 - ✅ **Part 18** `FILLS_IMAGE` lifted partial → supported for the web backends + honesty audit locked (canonical image node, signals, audit options)
 - ✅ **Part 18** TS wiring — `PIPELINE_STAGES` reordered so assets runs before generate; the generate stage threads `assetManifest`
-- ✅ Full validation suite green (526 Python + 133 TS tests, zero skips)
-- ✅ CLAUDE.md + docs updated through Part 18
+- ✅ **Part 19** `pipeline.py render` subcommand — `--html` (shot), `--ir --layout` (reference baseline via the shared web lowering), `--baselines` (live Figma download, token-gated)
+- ✅ **Part 19** TS render + compare stage handlers — real chromium screenshots of generated html, honest degrade for bundler/native targets, `ctx.updateMetrics` seam, `diff_report` artifact with SSIM verdict, baseline priority `--baseline` → `--figma-baseline` → reference
+- ✅ **Part 19** `figmaforge run` exercises **8 real stages** (ingest → normalize → resolve → layout → assets → generate → render → compare) with a measured `Score` and `Visual verdict` line
+- ✅ Full validation suite green (533 Python + 141 TS tests, zero skips)
+- ✅ CLAUDE.md + docs updated through Part 19
 
 ---
 
@@ -328,6 +331,6 @@ Md Shagil Nizami
 
 1. Test with real repositories
 2. Document the rollback procedure
-3. Wire the remaining TS pipeline stages (render/compare/repair/verify) into the runtime
+3. Wire the final TS pipeline stages (repair/verify) into the runtime
 4. Image-fill fit modes beyond cover/center + asset bundling for deployment
 5. Diff heatmap output + extended PNG formats (deferred non-goals from Parts 12–13)

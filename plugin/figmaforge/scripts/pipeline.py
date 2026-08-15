@@ -26,22 +26,26 @@ sorted by path, losses in backend order).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
+import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 # The TS runtime may invoke this script from anywhere; make the plugin
 # root importable so `core` / `backends` resolve like the test suite.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from backends.registry import get_registry  # noqa: E402
+from backends.web_common import reference_styles_from_plan  # noqa: E402
 from core.asset_collector import AssetRef, collect_asset_refs  # noqa: E402
 from core.asset_manager import AssetManager  # noqa: E402
 from core.figma_assets import (  # noqa: E402
     DEFAULT_MAX_RETRIES,
     DEFAULT_TIMEOUT_SECONDS,
     default_transport,
+    download_baselines,
     fetch_with_retry,
 )
 from core.figma_client import FigmaClient  # noqa: E402
@@ -54,12 +58,15 @@ from core.layout_analyzer import LayoutAnalyzer  # noqa: E402
 from core.layout_types import LayoutPlan  # noqa: E402
 from core.library_types import LibraryLoader  # noqa: E402
 from core.matcher import MatchResult  # noqa: E402
+from core.render_harness import RenderHarness, RenderHarnessError  # noqa: E402
+from core.render_html import generate_render_html  # noqa: E402
 from core.resolver import ResolutionReport, Resolver  # noqa: E402
 from core.token_resolver import SemanticToken, TokenResolution  # noqa: E402
 
 DEFAULT_VIEWPORT = 1440.0
 DEFAULT_OUT_DIR = "generated"
 DEFAULT_ASSETS_DIR = "assets"
+DEFAULT_RENDER_VIEWPORT = "1440x900"
 _TOKEN_ENV = "FIGMA_TOKEN"
 
 
@@ -107,13 +114,17 @@ def _load_ir(path_str: str) -> IRDocument:
     return IRDocument.from_dict(data)
 
 
-def _load_file_payload(path_str: str) -> Dict[str, Any]:
-    """Read + parse a JSON object; any failure is a user error (exit 4)."""
-    path = Path(path_str)
+def _read_text(path_str: str) -> str:
+    """Read a file's UTF-8 text; any failure is a user error (exit 4)."""
     try:
-        text = path.read_text(encoding="utf-8")
+        return Path(path_str).read_text(encoding="utf-8")
     except OSError as exc:
         raise _CliError(4, f"cannot read input file {path_str!r}: {exc}")
+
+
+def _load_file_payload(path_str: str) -> Dict[str, Any]:
+    """Read + parse a JSON object; any failure is a user error (exit 4)."""
+    text = _read_text(path_str)
     try:
         data = json.loads(text)
     except json.JSONDecodeError as exc:
@@ -207,6 +218,197 @@ def _cmd_layout(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 # assets — the asset stage (Part 17)
 # ---------------------------------------------------------------------------
+
+
+def _parse_viewport(spec: str) -> Tuple[int, int]:
+    """Parse a ``WxH`` viewport spec; invalid input is a usage error (exit 2)."""
+    parts = str(spec).split("x", 1)
+    if len(parts) != 2:
+        raise _CliError(2, f"invalid --viewport {spec!r}: expected WxH (e.g. 1440x900)")
+    try:
+        width, height = int(parts[0]), int(parts[1])
+    except ValueError:
+        raise _CliError(2, f"invalid --viewport {spec!r}: expected WxH (e.g. 1440x900)") from None
+    if width <= 0 or height <= 0:
+        raise _CliError(2, f"invalid --viewport {spec!r}: dimensions must be positive")
+    return width, height
+
+
+# ---------------------------------------------------------------------------
+# render — the render stage (Part 19)
+# ---------------------------------------------------------------------------
+
+
+def _parse_node_list(spec: Optional[str]) -> List[str]:
+    """Parse a comma-separated node id list; a bad list is a usage error (2)."""
+    if not spec or not spec.strip():
+        raise _CliError(
+            2, "render --baselines: --nodes is required "
+            "(comma-separated Figma node ids)",
+        )
+    node_ids = [n.strip() for n in spec.split(",") if n.strip()]
+    if not node_ids:
+        raise _CliError(2, "render --baselines: --nodes lists no node ids")
+    return node_ids
+
+
+def _cmd_render_baselines(
+    args: argparse.Namespace,
+    client_cls,
+    transport,
+    out_dir: Path,
+) -> int:
+    """Download live Figma baseline renders for the given nodes (Part 19).
+
+    Wraps ``figma_assets.download_baselines``: ``get_images`` presigned URLs
+    → bounded-retry fetch → ``AssetManager`` content-addressed store under
+    ``<out>/assets``.  Requires ``--file-key`` (exit 2) and ``FIGMA_TOKEN``
+    (exit 3, mirroring the assets stage).  Emits ``{ok, kind: "figma",
+    baselines: {node_id: local_path}, assets_dir}``.
+    """
+    if not args.file_key:
+        raise _CliError(2, "render --baselines: --file-key is required")
+    node_ids = _parse_node_list(args.nodes)
+
+    client = client_cls()
+    try:
+        client.require_token()
+    except FigmaAuthError as exc:
+        raise _CliError(3, str(exc)) from exc
+
+    assets_dir = out_dir / "assets"
+    manager = AssetManager(assets_dir)
+    results = download_baselines(
+        client,
+        args.file_key,
+        node_ids,
+        manager,
+        transport=transport,
+        timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+        max_retries=DEFAULT_MAX_RETRIES,
+    )
+    _emit({
+        "ok": True,
+        "kind": "figma",
+        "baselines": {
+            node_id: asset.local_path
+            for node_id, asset in sorted(results.items())
+        },
+        "assets_dir": str(assets_dir),
+    })
+    return 0
+
+
+def _cmd_render(
+    args: argparse.Namespace,
+    harness_cls=RenderHarness,
+    client_cls=FigmaClient,
+    transport=None,
+) -> int:
+    """Render generated HTML (shot), the IR reference (baseline), or the
+    live Figma baselines.
+
+    Three mutually exclusive modes:
+
+    - ``--html <file>`` — render a generated standalone HTML file (the
+      code-under-test screenshot).
+    - ``--ir + --layout`` — compute the intended per-node VStyles from the
+      layout plan via the shared web lowering (``reference_styles_from_plan``),
+      build the reference document with ``generate_render_html``, and render
+      it (the baseline ``figmaforge run`` diffs against).
+    - ``--baselines`` — download live Figma renders via ``download_baselines``.
+
+    ``--html``/``--ir`` modes print exactly one JSON line: ``{ok, kind,
+    screenshot, html, meta, viewport}``.  Failures raise ``_CliError``
+    (exit 2 usage / 4 input / 1 render) — never a traceback.
+    """
+    html_mode = args.html is not None
+    ref_mode = args.ir is not None or args.layout is not None
+    baselines_mode = bool(args.baselines)
+    if int(html_mode) + int(ref_mode) + int(baselines_mode) != 1:
+        raise _CliError(
+            2,
+            "render: exactly one of --html, --ir/--layout, or --baselines",
+        )
+    if ref_mode and (args.ir is None or args.layout is None):
+        raise _CliError(2, "render: --ir and --layout must be provided together")
+
+    out_dir = Path(args.out) if args.out else Path(tempfile.mkdtemp(prefix="ff-render-"))
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    if baselines_mode:
+        return _cmd_render_baselines(args, client_cls, transport, out_dir)
+
+    width, height = _parse_viewport(args.viewport)
+    viewport = {"width": width, "height": height}
+
+    if html_mode:
+        content = _read_text(args.html)
+        kind = "generated"
+        build_prefix = "ff-shot"
+    else:
+        doc = _load_ir(args.ir)
+        plan_data = _load_file_payload(args.layout)
+        if "screens" not in plan_data:
+            raise _CliError(
+                4, f"input file {args.layout!r} is not a layout plan document",
+            )
+        plan = LayoutPlan.from_dict(plan_data)
+        styles = reference_styles_from_plan(doc, plan)
+        content = generate_render_html(doc, styles, viewport)
+        kind = "reference"
+        build_prefix = "ff-ref"
+
+    build_id = f"{build_prefix}-{hashlib.sha256(content.encode('utf-8')).hexdigest()[:8]}"
+    html_path = out_dir / f"{build_id}.html"
+    # Write the content first (the real harness rewrites identical bytes) so
+    # the emitted ``html`` path is always a real file, harness or not.
+    html_path.write_text(content, encoding="utf-8")
+
+    try:
+        harness = harness_cls(out_dir)
+        result = harness.render(content, viewport, build_id, full_page=True)
+    except RenderHarnessError as exc:
+        raise _CliError(1, str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 — CLI boundary: never traceback
+        raise _CliError(1, f"browser rendering failed: {exc}") from exc
+
+    _emit({
+        "ok": True,
+        "kind": kind,
+        "screenshot": str(result.screenshot_path),
+        "html": str(html_path),
+        "meta": result.layout_metadata,
+        "viewport": viewport,
+    })
+    return 0
+
+
+def render_main(
+    argv: Optional[List[str]] = None,
+    harness_cls=RenderHarness,
+    client_cls=FigmaClient,
+    transport=None,
+) -> int:
+    """Entry point for the ``render`` subcommand alone (testable seam).
+
+    Accepts the same arguments as ``pipeline.py render`` and lets tests
+    inject a fake harness / client / transport.  The harness is constructed
+    as ``harness_cls(out_dir)`` — a class (real usage) or a callable
+    instance (tests); the client as ``client_cls()``.
+    """
+    parser = build_parser()
+    try:
+        args = parser.parse_args(["render"] + list(argv or []))
+    except SystemExit as exc:
+        return int(exc.code or 2)
+    try:
+        return _cmd_render(
+            args, harness_cls=harness_cls,
+            client_cls=client_cls, transport=transport,
+        )
+    except Exception as exc:  # noqa: BLE001 — CLI boundary: never traceback
+        return _report_error(exc)
 
 
 def _group_by_format(refs: List[AssetRef]) -> Dict[str, List[AssetRef]]:
@@ -512,6 +714,45 @@ def build_parser() -> argparse.ArgumentParser:
     )
     assets.add_argument("--out", help="optional path to also write the manifest JSON")
 
+    render = sub.add_parser(
+        "render",
+        help="render generated HTML (shot) or the IR reference (baseline) to a PNG",
+    )
+    render.add_argument(
+        "--html",
+        help="generated standalone HTML file to render (shot mode)",
+    )
+    render.add_argument(
+        "--ir",
+        help="design IR JSON (reference mode; with --layout)",
+    )
+    render.add_argument(
+        "--layout",
+        help="layout plan JSON (reference mode; with --ir)",
+    )
+    render.add_argument(
+        "--viewport", default=DEFAULT_RENDER_VIEWPORT,
+        help="viewport as WxH (default %s)" % DEFAULT_RENDER_VIEWPORT,
+    )
+    render.add_argument(
+        "--baselines",
+        action="store_true",
+        help="download live Figma baseline renders for the given nodes "
+             "(requires --file-key + the %s env var)" % _TOKEN_ENV,
+    )
+    render.add_argument(
+        "--file-key",
+        help="Figma file key for --baselines mode",
+    )
+    render.add_argument(
+        "--nodes",
+        help="comma-separated Figma node ids to download as baselines",
+    )
+    render.add_argument(
+        "--out",
+        help="output directory for the screenshot + html (default: temp dir)",
+    )
+
     gen = sub.add_parser("generate", help="generate backend code from a Figma file JSON")
     gen.add_argument("--file", help="Figma file JSON (recompute mode; ingest output or raw)")
     gen.add_argument("--ir", help="design IR JSON (staged mode; normalize output)")
@@ -538,6 +779,40 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _execute(args: argparse.Namespace) -> int:
+    """Dispatch a parsed invocation to its subcommand handler."""
+    if args.command == "ingest":
+        return _cmd_ingest(args)
+    if args.command == "normalize":
+        return _cmd_normalize(args)
+    if args.command == "resolve":
+        return _cmd_resolve(args)
+    if args.command == "layout":
+        return _cmd_layout(args)
+    if args.command == "assets":
+        return _cmd_assets(args)
+    if args.command == "render":
+        return _cmd_render(args)
+    if args.command == "generate":
+        return _cmd_generate(args)
+    raise _CliError(2, f"unknown command {args.command!r}")
+
+
+def _report_error(exc: BaseException) -> int:
+    """Map an exception to the CLI error contract: message on stderr, exit code."""
+    if isinstance(exc, _CliError):
+        print(f"error: {exc.message}", file=sys.stderr)
+        return exc.exit_code
+    if isinstance(exc, FigmaAuthError):
+        print(f"error: {exc}", file=sys.stderr)
+        return 3
+    if isinstance(exc, FigmaError):
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(f"error: {exc}", file=sys.stderr)
+    return 1
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     try:
@@ -547,31 +822,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         return int(exc.code or 2)
 
     try:
-        if args.command == "ingest":
-            return _cmd_ingest(args)
-        if args.command == "normalize":
-            return _cmd_normalize(args)
-        if args.command == "resolve":
-            return _cmd_resolve(args)
-        if args.command == "layout":
-            return _cmd_layout(args)
-        if args.command == "assets":
-            return _cmd_assets(args)
-        if args.command == "generate":
-            return _cmd_generate(args)
-        raise _CliError(2, f"unknown command {args.command!r}")
-    except _CliError as exc:
-        print(f"error: {exc.message}", file=sys.stderr)
-        return exc.exit_code
-    except FigmaAuthError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 3
-    except FigmaError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
+        return _execute(args)
     except Exception as exc:  # noqa: BLE001 — CLI boundary: never traceback
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
+        return _report_error(exc)
 
 
 if __name__ == "__main__":
