@@ -13,6 +13,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { spawnSync } from "node:child_process";
 import { PIPELINE_STAGES, DEFAULT_CONFIG, DEFAULT_BUDGETS, DEFAULT_RETRY, makeRunId, PRESET_TARGETS, parseTargetKey, targetKey } from "../core/types.js";
 import type { RuntimeConfig, PipelineStage, CodegenTarget } from "../core/types.js";
 import { EventLog } from "../core/events.js";
@@ -22,6 +23,14 @@ import { ToolRegistry } from "../core/tools.js";
 import { BudgetTracker } from "../core/budget.js";
 import { PipelineCoordinator } from "../core/pipeline.js";
 import { ScreenshotComparator } from "../core/screenshot_compare.js";
+import { buildBrowserRenderScript, parseBrowserRenderOutput } from "../core/render_handler.js";
+import {
+  createIngestStageHandler,
+  createGenerateStageHandler,
+  invokeIngest,
+  invokeBackendGenerator,
+  TARGET_BACKENDS,
+} from "../core/backend_codegen.js";
 
 // ---------------------------------------------------------------------------
 // Argument parsing
@@ -79,9 +88,14 @@ Commands:
   compare   Run only the compare stage for a run
   repair    Run only the repair stage for a run
   replay    Replay a previous run from its event log
+  demo      Generate all six backends and print a comparison table
 
 Options:
-  --file-key=<key>         Figma file key (required for 'run')
+  --file-key=<key>         Figma file key (live ingest; requires FIGMA_TOKEN)
+  --file=<path>            Local Figma file JSON (offline ingest)
+                           Exactly one of --file-key / --file is required for 'run'
+  --out=<dir>              Demo output directory (default: ./demo-out)
+  --render                 Best-effort render of the html_css output (Playwright)
   --output-dir=<path>      Output directory (default: ./figmaforge-output)
   --target=<framework+styling>  Code generation target (default: html+css)
                            Format: <framework>+<styling> — any combination is valid.
@@ -185,14 +199,16 @@ body { width: ${viewport.width}px; min-height: ${viewport.height}px; font-family
 
 async function cmdRun(args: CliArgs): Promise<void> {
   const config = buildConfig(args);
+  const localFile = args.flags["file"];
 
-  if (!config.fileKey) {
-    console.error("Error: --file-key is required for 'run' command");
+  if (!config.fileKey && !localFile) {
+    console.error("Error: --file-key or --file is required for 'run' command");
     process.exit(1);
   }
 
   console.log(`Starting pipeline run ${config.runId}`);
-  console.log(`  File key: ${config.fileKey}`);
+  console.log(`  File key: ${config.fileKey || "(local file)"}`);
+  if (localFile) console.log(`  Local file: ${path.resolve(localFile)}`);
   console.log(`  Output:   ${config.outputDir}`);
   console.log(`  Threshold: ${config.similarityThreshold}`);
   console.log(`  Viewport:  ${config.viewport.width}x${config.viewport.height}`);
@@ -224,6 +240,14 @@ async function cmdRun(args: CliArgs): Promise<void> {
     ac.abort();
   });
   pipeline.setAbortSignal(ac.signal);
+
+  // Wire the real Python pipeline stages (Part 15): ingest fetches (or
+  // reads locally) the Figma file; generate lowers it through the backend.
+  if (localFile) {
+    pipeline.setShared("filePath", path.resolve(localFile));
+  }
+  pipeline.onStage("ingest", createIngestStageHandler());
+  pipeline.onStage("generate", createGenerateStageHandler());
 
   const result = await pipeline.run();
 
@@ -464,6 +488,130 @@ async function cmdCompare(args: CliArgs): Promise<void> {
   }
 }
 
+async function cmdDemo(args: CliArgs): Promise<void> {
+  const config = buildConfig(args);
+  const outDir = path.resolve(args.flags["out"] ?? args.flags["output-dir"] ?? "./demo-out");
+  const renderFlag = args.flags["render"] === "true";
+  const cfg = { pythonBin: config.pythonBin, pluginDir: config.pluginDir };
+
+  // Resolve the source: --file (local), --file-key (live), or the checked-in
+  // offline fixture when neither is given.
+  let source: { file?: string; fileKey?: string };
+  if (args.flags["file"]) {
+    source = { file: path.resolve(args.flags["file"]) };
+  } else if (args.flags["file-key"]) {
+    source = { fileKey: args.flags["file-key"] };
+  } else {
+    source = { file: path.join(config.pluginDir, "fixtures", "figma", "layout_desktop.json") };
+    console.log(`No --file or --file-key given — using the offline fixture: ${source.file}`);
+  }
+
+  let fileJson: Record<string, unknown>;
+  try {
+    const ingest = await invokeIngest(cfg, source);
+    fileJson = ingest.fileJson;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`error: ${message}`);
+    process.exit(message.includes("FIGMA_TOKEN") ? 3 : 1);
+  }
+
+  // Generate through every Python backend, collecting the summary rows.
+  console.log(`Generating all backends into ${outDir}`);
+  const rows: Array<{ backend: string; files: number; losses: number; nodes: number }> = [];
+  for (const [key, backend] of Object.entries(TARGET_BACKENDS)) {
+    try {
+      const result = await invokeBackendGenerator(
+        cfg, key, fileJson, outDir, { viewport: config.viewport.width },
+      );
+      const nodes = new Set<string>();
+      for (const f of result.manifest.files) {
+        for (const n of f.node_ids) nodes.add(n);
+      }
+      rows.push({
+        backend,
+        files: result.manifest.files.length,
+        losses: result.manifest.fidelity_losses.length,
+        nodes: nodes.size,
+      });
+      console.log(
+        `  ${backend}: ${result.manifest.files.length} file(s), ` +
+        `${result.manifest.fidelity_losses.length} loss(es) → ${result.filesDir}`,
+      );
+    } catch (err) {
+      console.error(`error: ${backend} generation failed: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+  }
+
+  // Deterministic summary table.
+  const width = Math.max("backend".length, ...rows.map((r) => r.backend.length));
+  console.log("\nSummary:");
+  console.log(`  ${`backend`.padEnd(width)}  files  losses  nodes`);
+  for (const r of rows) {
+    console.log(
+      `  ${r.backend.padEnd(width)}  ${String(r.files).padStart(5)}  ` +
+      `${String(r.losses).padStart(6)}  ${String(r.nodes).padStart(5)}`,
+    );
+  }
+
+  if (renderFlag) {
+    renderDemoWeb(config, outDir);
+  }
+}
+
+/**
+ * Best-effort demo rendering: only the html_css reference output is directly
+ * renderable (complete standalone HTML).  React/Vue/Svelte outputs need a
+ * bundler, and native targets need simulators.  Any failure degrades to a
+ * note — never a hard error.
+ */
+function renderDemoWeb(config: RuntimeConfig, outDir: string): void {
+  const htmlDir = path.join(outDir, "html_css");
+  if (!fs.existsSync(htmlDir)) {
+    console.log("  --render: no html_css output to render");
+    return;
+  }
+  const htmlFiles = fs.readdirSync(htmlDir).filter((f: string) => f.endsWith(".html"));
+  if (htmlFiles.length === 0) {
+    console.log("  --render: no html files in the html_css output");
+    return;
+  }
+
+  const rendersDir = path.join(outDir, "_renders");
+  fs.mkdirSync(rendersDir, { recursive: true });
+  console.log("\n--render (best-effort):");
+  for (const file of htmlFiles) {
+    const htmlPath = path.join(htmlDir, file);
+    const pngPath = path.join(rendersDir, file.replace(/\.html$/, ".png"));
+    const script = buildBrowserRenderScript(htmlPath, pngPath, config.viewport);
+    let res: { stdout?: string; stderr?: string; status: number | null };
+    try {
+      res = spawnSync(config.pythonBin, ["-"], {
+        input: script,
+        encoding: "utf-8",
+        timeout: 60_000,
+      });
+    } catch {
+      console.log(`  render skipped for ${file}: spawn failed`);
+      continue;
+    }
+    const parsed = parseBrowserRenderOutput(res.stdout ?? "");
+    if (parsed) {
+      console.log(`  rendered ${file} → ${parsed.screenshotPath}`);
+      continue;
+    }
+    const line = (res.stdout ?? "").trim().split("\n").pop() ?? "";
+    let reason = line || (res.stderr ?? "").trim() || "unknown failure";
+    try {
+      const payload = JSON.parse(line) as { error?: string };
+      if (payload.error) reason = payload.error;
+    } catch { /* keep the raw line */ }
+    console.log(`  render skipped for ${file}: ${reason}`);
+  }
+  console.log("  (react/vue/svelte outputs require a bundler; native targets need simulators — not rendered)");
+}
+
 async function cmdRepair(args: CliArgs): Promise<void> {
   const config = buildConfig(args);
   const runId = args.flags["run-id"] ?? config.runId;
@@ -525,6 +673,9 @@ async function main(): Promise<void> {
       break;
     case "repair":
       await cmdRepair(args);
+      break;
+    case "demo":
+      await cmdDemo(args);
       break;
     case "help":
     case "--help":

@@ -1,7 +1,7 @@
 # FigmaForge Universal Adaptive Platform
 
 **Version:** 0.0.2-dev  
-**Status:** Parts 1–14 complete — full pixel-diff pipeline (Part 12), perceptual SSIM gating and baseline auto-refresh (Part 13), and all six backend adapters implemented (Part 14: react+tailwind, vue, svelte, swiftui, flutter) with capability-vs-output honesty audits; validation gate green (461 Python / 117 TS tests)
+**Status:** Parts 1–15 complete — full pixel-diff pipeline (Part 12), perceptual SSIM gating and baseline auto-refresh (Part 13), all six backend adapters implemented (Part 14: react+tailwind, vue, svelte, swiftui, flutter) with capability-vs-output honesty audits, and the real-Figma end-to-end demo wired through the TS runtime (Part 15: Python pipeline CLI + ingest/generate stage handlers + `figmaforge demo`); validation gate green (481 Python / 124 TS tests)
 
 A technology-agnostic, adaptive, full-lifecycle Claude Code engineering platform that enables any software project type by detecting stack-specific signals and routing to appropriate capabilities. FigmaForge also converts normalized Figma design IR into framework-neutral layout plans and generates production-quality React/CSS output.
 
@@ -305,15 +305,18 @@ Md Shagil Nizami
 - ✅ **Part 13** Perceptual diffing (SSIM) + baseline auto-refresh (regional gating, opt-in clean-render adoption, CLI verdict)
 - ✅ **Part 14** Six backend implementations (react+tailwind, vue, svelte, swiftui, flutter) — shared web machinery, real lowerings, golden snapshots, fidelity markers
 - ✅ **Part 14** Repo-wide capability-vs-output honesty audits (html_css reference included; test_backend_honesty_audit locks the contract)
-- ✅ Full validation suite green (461 Python + 117 TS tests, zero skips)
-- ✅ CLAUDE.md + docs updated through Part 14
+- ✅ **Part 14** Real flutter sizing idioms (Expanded / IntrinsicWidth+Height / FractionallySizedBox) and real SwiftUI main-axis justification (Spacer) — lifted from partial to supported
+- ✅ **Part 15** Python pipeline CLI (`scripts/pipeline.py` — ingest/generate subcommands, deterministic manifests, exit codes 2/3/4)
+- ✅ **Part 15** TS runtime wiring — target→backend map (`backend_codegen.ts`), real ingest+generate stage handlers, `figmaforge run --file=<fixture>` produces a generated-code artifact
+- ✅ **Part 15** `figmaforge demo` command — all six backends from one ingest, deterministic comparison table, best-effort `--render`, offline-fixture default
+- ✅ Full validation suite green (481 Python + 124 TS tests, zero skips)
+- ✅ CLAUDE.md + docs updated through Part 15
 
 ---
 
 ## Next Steps
 
-1. Execute an end-to-end demo against a real Figma file
-2. Test with real repositories
-3. Document the rollback procedure
+1. Test with real repositories
+2. Document the rollback procedure
+3. Wire the remaining pipeline stages (normalize/resolve/layout/assets/render/compare/repair/verify) into the TS runtime
 4. Diff heatmap output + extended PNG formats (deferred non-goals from Parts 12–13)
-5. Flutter fill/hug/percent sizing idioms (Expanded / IntrinsicWidth / FractionallySizedBox) and SwiftUI main-axis justification (Spacer) — currently declared partial, lifted to supported when implemented

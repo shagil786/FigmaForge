@@ -29,6 +29,7 @@ import { compareSnapshot, saveSnapshot, loadFixtures, injectFailure } from "../s
 import { createProvider, AnthropicProvider, OpenAIProvider } from "../src/core/providers.js";
 import { ScreenshotComparator, parsePixelDiffOutput } from "../src/core/screenshot_compare.js";
 import { vnodeToHtml, buildBrowserRenderScript, parseBrowserRenderOutput, pickLayoutMeta } from "../src/core/render_handler.js";
+import { runBackendCodegenTests } from "./backend_codegen.test.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1426,6 +1427,9 @@ export async function runAllTests(): Promise<SuiteResult[]> {
       assertEqual(pickLayoutMeta([1] as unknown as Record<string, unknown>, staticMeta), staticMeta);
     });
   }));
+
+  // 14. Backend code generation (Part 15) — real Python backends through the pipeline
+  results.push(...await runBackendCodegenTests());
 
   return results;
 }
