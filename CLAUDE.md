@@ -42,11 +42,11 @@ This is a complete platform implementation (version 0.0.1-dev), containing a 100
   - `schemas/`: `design-ir.schema.json`, `layout-plan.schema.json`, `resolution-report.schema.json`, `detection.schema.json`, `router.schema.json`, `task-state.schema.json`.
   - `templates/`: Inert examples for MCP and LSP configurations.
   - `library/`: `components.json` (5 project components), `tokens.json` (12 design tokens).
-  - `tests/` (44 test files, 533 tests): Unit, integration, snapshot, property-based, repair-loop, backend adapter (six real generators + 5 golden snapshots), capability-vs-output honesty audit, render-harness, pixel-diff, SSIM-gating, baseline-refresh, pipeline-CLI, IR/layout round-trip, asset-collector, assets-CLI, assets-into-code, and render-CLI tests.
+  - `tests/` (44 test files, 544 tests): Unit, integration, snapshot, property-based, repair-loop, backend adapter (six real generators + 5 golden snapshots), capability-vs-output honesty audit, render-harness, pixel-diff, SSIM-gating, baseline-refresh, pipeline-CLI, IR/layout round-trip, asset-collector, assets-CLI, assets-into-code, and render-CLI tests.
 - `runtime/` (Part 9 — TypeScript Orchestration Runtime):
   - `src/core/` (16 modules): `types.ts` (composable `CodegenTarget = { framework, styling }`), `events.ts`, `checkpoint.ts`, `artifacts.ts`, `tools.ts`, `state.ts`, `budget.ts`, `retry.ts`, `security.ts`, `pipeline.ts`, `evaluation.ts`, `providers.ts`, `screenshot_compare.ts`, `render_handler.ts`, `backend_codegen.ts` (Parts 15–19: target→backend map, Python CLI invocation, ingest/normalize/resolve/layout/assets/generate/render/compare stage handlers + staged generate + asset-manifest threading + the `ctx.updateMetrics` metrics seam), `index.ts`
   - `src/cli/main.ts`: CLI with 7 commands (run, inspect, render, compare, repair, replay, demo) + `--target=<framework+styling>` and `--file=<path>` flags
-  - `tests/` (3 files, 141 tests): Comprehensive test suite with custom test framework (incl. backend-codegen stage, demo, six-stage front-half + assets-into-code, and eight-stage render/compare tests)
+  - `tests/` (3 files, 143 tests): Comprehensive test suite with custom test framework (incl. backend-codegen stage, demo, six-stage front-half + assets-into-code, and eight-stage render/compare tests)
   - `evaluation/fixtures/golden/`: 3 golden fixtures (simple-button, login-screen, card-layout)
 - `docs/architecture.md` — In-depth architectural blueprint.
 - `docs/DEVELOPMENT_LOG.md` — Part-by-part development log with decisions and verification.
@@ -77,9 +77,9 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 > `buildConfig`), e.g. `PYTHON_BIN=/opt/homebrew/bin/python3.14 node dist/runtime/tests/run_all.js`
 > or `PYTHON_BIN=/opt/homebrew/bin/python3.14 node dist/runtime/src/cli/main.js compare ...`.
 
-* **Run all tests (533 tests):**
+* **Run all tests (544 tests):**
   `cd plugin/figmaforge && python3 -m unittest discover -s tests -v`
-* **Run runtime tests (141 tests):**
+* **Run runtime tests (143 tests):**
   `npx tsc && node dist/runtime/tests/run_all.js`
 * **Install browser rendering dependencies (required for the render stage):**
   `pip install playwright && playwright install chromium`
@@ -105,8 +105,8 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 
 ## 7. Testing Requirements
 
-- All 533 Python tests across 44 test files must pass (`python3 -m unittest discover -s tests`); browser-render tests skip cleanly without chromium.
-- All 141 TypeScript runtime tests must pass (`npx tsc && node dist/runtime/tests/run_all.js`).
+- All 544 Python tests across 44 test files must pass (`python3 -m unittest discover -s tests`); browser-render tests skip cleanly without chromium.
+- All 143 TypeScript runtime tests must pass (`npx tsc && node dist/runtime/tests/run_all.js`).
 - Test categories: unit tests, integration tests, golden-file snapshot tests, property-based tests, perceptual (SSIM) gating tests.
 - Snapshot tests use `REWRITE_SNAPSHOTS=1` to regenerate golden files after intentional output changes.
 - Adding a new module requires corresponding test coverage.
@@ -124,7 +124,7 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 1. Discuss architecture impact (review `docs/architecture.md`).
 2. Run full test suite (`python3 -m unittest discover -s tests` from `plugin/figmaforge/`).
 3. Make atomic, minimal coherent changes explicitly matching schemas.
-4. Verify all 533 tests pass and regenerate snapshots if output changed intentionally.
+4. Verify all 544 tests pass and regenerate snapshots if output changed intentionally.
 5. Update `docs/DEVELOPMENT_LOG.md` with the change entry.
 6. Only document verified, executable routines.
 
@@ -132,7 +132,7 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 
 - Scope is strictly adhered to (no speculative integrations).
 - All changes maintain schema constraints (run `claude plugin validate --strict`).
-- Full test suite passes: `python3 -m unittest discover -s tests` (533 tests, 44 files).
+- Full test suite passes: `python3 -m unittest discover -s tests` (544 tests, 44 files).
 - Changes align exactly with architectural constraints in `docs/architecture.md`.
 - `docs/DEVELOPMENT_LOG.md` updated with the change entry.
 - No exposed credentials, secrets, or unintentional active `.lsp.json`/`.mcp.json` templates exist.

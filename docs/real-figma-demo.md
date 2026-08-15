@@ -215,5 +215,5 @@ code is never compiled (no swiftc/dart/tsc) and generated apps are never
 executed. The gate is: all six backends generate cleanly, the manifests and
 loss counts match each backend's declarations, the generated html renders and
 diffs against its reference baseline with a measured score, and the Python
-(`python3.14 -m unittest discover -s tests`, 533 tests) + TS
-(`node dist/runtime/tests/run_all.js`, 141 tests) suites are green.
+(`python3.14 -m unittest discover -s tests`, 544 tests) + TS
+(`node dist/runtime/tests/run_all.js`, 143 tests) suites are green.
