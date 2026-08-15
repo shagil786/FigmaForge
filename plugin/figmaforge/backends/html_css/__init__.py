@@ -112,17 +112,18 @@ class _HtmlEmitter:
 # HtmlCssBackend — the public adapter
 # ---------------------------------------------------------------------------
 
-# Features HTML+CSS can only approximate: image fills get a solid fallback
-# plus an inline marker; asset/token/reference plumbing, prototype links, and
-# interactions are outside the common IR surface (spec non-goals); margins
-# only exist as absolute-offset evidence, which is captured via
-# ``position``/anchors rather than a literal ``margin`` property; relative
-# positioning is representable in CSS but the plan model never produces it.
+# Features HTML+CSS can only approximate: asset/token/reference plumbing,
+# prototype links, and interactions are outside the common IR surface (spec
+# non-goals); margins only exist as absolute-offset evidence, which is
+# captured via ``position``/anchors rather than a literal ``margin`` property;
+# relative positioning is representable in CSS but the plan model never
+# produces it.  Image fills are SUPPORTED when the assets stage resolved a
+# path for the node (real ``background-image``); an unresolved image fill
+# keeps the marked solid fallback.
 _HTML_CSS_PARTIAL = frozenset({
     Feature.CONSTRAINTS,  # mapped to CSS positioning but not 1:1
     Feature.MARGIN,  # absolute offsets captured via position/anchors
     Feature.RELATIVE_POSITIONING,  # representable in CSS, no plan source
-    Feature.FILLS_IMAGE,  # solid fallback + inline marker
     Feature.IMAGE_ASSETS,  # asset plumbing (spec non-goal)
     Feature.SVG_ASSETS,  # asset plumbing (spec non-goal)
     Feature.DESIGN_TOKENS,  # token plumbing (spec non-goal)
@@ -140,6 +141,7 @@ _HTML_CSS_SUPPORTED = (WEB_COMMON_FEATURES - _HTML_CSS_PARTIAL) | frozenset({
     Feature.GRID,
     Feature.ALIGN_SELF,
     Feature.FILLS_GRADIENT,
+    Feature.FILLS_IMAGE,  # real background-image when the asset is resolved
     Feature.SHADOWS,
     Feature.BLUR,
     Feature.PER_CORNER_RADIUS,

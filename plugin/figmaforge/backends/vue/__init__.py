@@ -44,13 +44,14 @@ _VUE_UNSUPPORTED = frozenset({
     Feature.AUTO_LAYOUT,  # Vue components, not a Figma layout concept
 })
 
-# Features Vue can only approximate: image fills (solid fallback + inline
-# marker), asset/token/reference plumbing, component variants, and prototype
-# links are all outside the common IR surface (spec non-goals).
+# Features Vue can only approximate: asset/token/reference plumbing,
+# component variants, and prototype links are all outside the common IR
+# surface (spec non-goals).  Image fills are SUPPORTED when the assets stage
+# resolved a path for the node (real scoped-CSS background); an unresolved
+# image fill keeps the marked fallback.
 _VUE_PARTIAL = frozenset({
     Feature.CONSTRAINTS,
     Feature.MARGIN,
-    Feature.FILLS_IMAGE,
     Feature.IMAGE_ASSETS,
     Feature.SVG_ASSETS,
     Feature.DESIGN_TOKENS,
@@ -63,6 +64,7 @@ _VUE_PARTIAL = frozenset({
 _VUE_SUPPORTED = (WEB_COMMON_FEATURES - _VUE_UNSUPPORTED - _VUE_PARTIAL) | frozenset({
     Feature.GRID,
     Feature.FILLS_GRADIENT,
+    Feature.FILLS_IMAGE,  # real scoped-CSS background when the asset is resolved
     Feature.SHADOWS,
     Feature.BLUR,
     Feature.CORNER_RADIUS,

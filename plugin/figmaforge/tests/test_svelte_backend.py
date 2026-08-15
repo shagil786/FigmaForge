@@ -404,10 +404,11 @@ class TestSvelteBackend(unittest.TestCase):
         self.assertIn("absolute_positioning", caps.unsupported_features)
         # Declared partial, never supported: image fills, assets, prototype
         # links, interactions — each has a named fallback or inline marker.
-        for feature in ("fills_image", "prototype_links", "interactions",
-                        "design_tokens"):
+        for feature in ("prototype_links", "interactions", "design_tokens"):
             self.assertIn(feature, caps.partial_features)
             self.assertNotIn(feature, caps.supported_features)
+        # FILLS_IMAGE lifted to supported in Part 18 (resolved-asset path).
+        self.assertIn("fills_image", caps.supported_features)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,9 @@ class using **arbitrary values for exactness** (``bg-[#3366cc]``,
 standard classes only where exact (``flex``, ``flex-col``, ``items-center``,
 ``justify-between``).  Breakpoints become ``max-[{width}px]:`` variants.
 Design tokens resolve into a ``tailwind.config.figmaforge.js`` extension.
+Image fills are SUPPORTED when the assets stage resolved a path for the node
+(``bg-[url(...)] bg-cover bg-center``); an unresolved image fill keeps the
+honest marker.
 
 Fidelity honesty: features this backend cannot represent (e.g. absolute
 positioning) are reported by ``preflight`` and degraded with an inline
@@ -67,7 +70,6 @@ _REACT_TW_PARTIAL = frozenset({
     Feature.MEDIA_QUERIES,  # Tailwind responsive prefixes, not arbitrary
     Feature.COMPONENT_VARIANTS,  # Requires pattern implementation
     Feature.CONSTRAINTS,  # Mapped to Tailwind positioning
-    Feature.FILLS_IMAGE,  # Requires asset/config plumbing (solid fallback + marker)
     Feature.IMAGE_ASSETS,  # Outside the common IR surface (spec non-goal)
     Feature.SVG_ASSETS,  # Outside the common IR surface (spec non-goal)
     Feature.PROTOTYPE_LINKS,  # Requires router wiring (spec non-goal)
@@ -78,6 +80,7 @@ _REACT_TW_SUPPORTED = (
 ) | frozenset({
     Feature.GRID,
     Feature.FILLS_GRADIENT,
+    Feature.FILLS_IMAGE,  # real bg-[url(...)] classes when the asset is resolved
     Feature.SHADOWS,
     Feature.CORNER_RADIUS,
     Feature.OPACITY,

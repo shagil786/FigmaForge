@@ -596,7 +596,6 @@ class TestHtmlCssBackend(unittest.TestCase):
         supported = caps.supported_features
         for partial in (
             Feature.MARGIN,
-            Feature.FILLS_IMAGE,
             Feature.RELATIVE_POSITIONING,
             Feature.IMAGE_ASSETS,
             Feature.SVG_ASSETS,
@@ -607,6 +606,8 @@ class TestHtmlCssBackend(unittest.TestCase):
         ):
             self.assertIn(partial, caps.partial_features)
             self.assertNotIn(partial, supported)
+        # FILLS_IMAGE lifted to supported in Part 18 (resolved-asset path).
+        self.assertIn(Feature.FILLS_IMAGE, supported)
         # Features the shared machinery genuinely emits.
         for emitted in (
             Feature.FILLS_SOLID,
