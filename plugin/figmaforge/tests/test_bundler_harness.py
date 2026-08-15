@@ -87,6 +87,15 @@ class TestScaffoldStructure(unittest.TestCase):
 
             html = (out / "Root.html").read_text()
             self.assertIn("/src/main/Root.tsx", html)
+            # Same global reset as the reference render: Figma widths are
+            # border-box, so padding must not overflow (Part 21, Task 6).
+            # Exact rule — a stray double brace (``{{``) is an invalid
+            # selector that silently disables the reset.
+            self.assertIn(
+                "<style>* { margin: 0; padding: 0; box-sizing: border-box; }</style>",
+                html,
+            )
+            self.assertNotIn("{{ margin", html)
 
             entry = (out / "src/main/Root.tsx").read_text()
             self.assertIn("from '../generated/Root'", entry)
@@ -110,6 +119,12 @@ class TestScaffoldStructure(unittest.TestCase):
             entry = (out / "src/main/Root.ts").read_text()
             self.assertIn("from '../generated/Root.vue'", entry)
             self.assertIn("createApp", entry)
+            html = (out / "Root.html").read_text()
+            self.assertIn(
+                "<style>* { margin: 0; padding: 0; box-sizing: border-box; }</style>",
+                html,
+            )
+            self.assertNotIn("{{ margin", html)
 
     def test_svelte_scaffold(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -126,6 +141,12 @@ class TestScaffoldStructure(unittest.TestCase):
             entry = (out / "src/main/Root.ts").read_text()
             self.assertIn("from '../generated/Root.svelte'", entry)
             self.assertIn("mount", entry)
+            html = (out / "Root.html").read_text()
+            self.assertIn(
+                "<style>* { margin: 0; padding: 0; box-sizing: border-box; }</style>",
+                html,
+            )
+            self.assertNotIn("{{ margin", html)
 
     def test_unknown_backend_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:

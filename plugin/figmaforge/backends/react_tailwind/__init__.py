@@ -402,11 +402,36 @@ class ReactTailwindBackend(BackendAdapter):
             attrs.append(f'className="{escape_attr(" ".join(classes))}"')
         attr_str = (" " + " ".join(attrs)) if attrs else ""
 
+        # Fidelity markers render INSIDE the element (Part 21, Task 6): a
+        # marker as a sibling of the root element would be a second JSX child
+        # of the ``return ( ... )`` — esbuild rejects adjacent children (the
+        # Task 0 S2 buildability class).  Component call sites carry no
+        # markers (their fallback definitions carry the fidelity note).
+        if markers and not is_component_ref:
+            marker_lines = "\n".join(f"{pad}  {{/* {m} */}}" for m in markers)
+            if vnode.text_content is not None and not vnode.children:
+                inline = "".join(f"{{/* {m} */}}" for m in markers)
+                return (
+                    f"{pad}<{tag}{attr_str}>{inline}"
+                    f"{_escape_jsx(vnode.text_content)}</{tag}>"
+                )
+            if vnode.children:
+                children_html = "\n".join(
+                    self._render_node(
+                        child_vn, child_plan, style_gen, ir_by_id, indent + 1,
+                        assets=assets,
+                    )
+                    for child_vn, child_plan in zip(vnode.children, plan_node.children)
+                )
+                inner = f"{marker_lines}\n{children_html}"
+                return f"{pad}<{tag}{attr_str}>\n{inner}\n{pad}</{tag}>"
+            return f"{pad}<{tag}{attr_str}>\n{marker_lines}\n{pad}</{tag}>"
+
         if is_component_ref:
-            element = f"{pad}<{tag}{attr_str}></{tag}>"
-        elif vnode.text_content is not None and not vnode.children:
-            element = f"{pad}<{tag}{attr_str}>{_escape_jsx(vnode.text_content)}</{tag}>"
-        elif vnode.children:
+            return f"{pad}<{tag}{attr_str}></{tag}>"
+        if vnode.text_content is not None and not vnode.children:
+            return f"{pad}<{tag}{attr_str}>{_escape_jsx(vnode.text_content)}</{tag}>"
+        if vnode.children:
             children_html = "\n".join(
                 self._render_node(
                     child_vn, child_plan, style_gen, ir_by_id, indent + 1,
@@ -414,14 +439,8 @@ class ReactTailwindBackend(BackendAdapter):
                 )
                 for child_vn, child_plan in zip(vnode.children, plan_node.children)
             )
-            element = f"{pad}<{tag}{attr_str}>\n{children_html}\n{pad}</{tag}>"
-        else:
-            element = f"{pad}<{tag}{attr_str}></{tag}>"
-
-        if markers:
-            marker_lines = "\n".join(f"{pad}{{/* {m} */}}" for m in markers)
-            return f"{marker_lines}\n{element}"
-        return element
+            return f"{pad}<{tag}{attr_str}>\n{children_html}\n{pad}</{tag}>"
+        return f"{pad}<{tag}{attr_str}></{tag}>"
 
     def _classes_for(
         self,

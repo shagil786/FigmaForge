@@ -46,6 +46,7 @@ from core.layout_types import (  # noqa: E402
     AlignmentSpec,
     AxisSizing,
     Box,
+    DISPLAY_ABSOLUTE,
     DISPLAY_FLEX,
     DISPLAY_NONE,
     LayoutNodePlan,
@@ -94,6 +95,50 @@ def _plain_fixture():
     )
     card_plan.children.append(title_plan)
     plan = LayoutPlan(file_key="ctrl", viewport=1440.0, screens=[card_plan])
+    return doc, plan
+
+
+def _absolute_root_fixture():
+    """A screen whose ROOT node is absolute-positioned.
+
+    The fidelity marker lands at the top of the returned JSX — it must render
+    INSIDE the root element (a marker as a sibling would be a second JSX
+    child of the ``return ( ... )``, which esbuild rejects).
+    """
+    title = IRNode(
+        id="t:1", name="Title", kind=KIND_TEXT, node_type="TEXT",
+        source=IRSource(file_key="abs", node_id="t:1"),
+        typography=IRTypography(font_size=14.0),
+        text=IRTextContent(characters="Hello"),
+    )
+    card = IRNode(
+        id="card:1", name="Card", kind=KIND_FRAME, node_type="FRAME",
+        source=IRSource(file_key="abs", node_id="card:1"),
+        style=IRStyle(fills=[IRFill(kind="solid", color=IRColor(r=0.1, g=0.1, b=0.1, a=1.0))]),
+        children=[title],
+    )
+    page = IRNode(
+        id="page-1", name="Page", kind=KIND_PAGE, node_type="CANVAS",
+        source=IRSource(file_key="abs", node_id="page-1"),
+        children=[card],
+    )
+    doc = IRDocument(file_key="abs", name="Absolute", pages=[page])
+    doc.root = card
+
+    card_plan = LayoutNodePlan(
+        node_id="card:1", name="Root", kind="frame", display=DISPLAY_ABSOLUTE,
+        box=Box(x=0, y=0, width=200, height=80),
+        sizing=SizingSpec(
+            horizontal=AxisSizing(mode=SIZING_FIXED),
+            vertical=AxisSizing(mode=SIZING_FIXED),
+        ),
+    )
+    title_plan = LayoutNodePlan(
+        node_id="t:1", name="Title", kind="text", display=DISPLAY_NONE,
+        text=TextModel(characters="Hello"),
+    )
+    card_plan.children.append(title_plan)
+    plan = LayoutPlan(file_key="abs", viewport=1440.0, screens=[card_plan])
     return doc, plan
 
 
@@ -261,6 +306,35 @@ class TestReactComponentFallback(unittest.TestCase):
         self.assertNotIn("function ButtonCard", tsx)
         self.assertNotIn("component_instance", tsx)
         self.assertNotIn(">ButtonCard<", tsx)
+
+    def test_root_fidelity_marker_renders_inside_the_root_element(self):
+        """Root-level markers must not be siblings of the root element.
+
+        ``return (\n  {/* fidelity: ... */}\n  <div ...>`` is two JSX children
+        — esbuild rejects it (Part 21, Task 6 buildability finding). The
+        marker must live INSIDE the element so the return has one root.
+        """
+        doc, plan = _absolute_root_fixture()
+        tsx = self._generate(doc, plan, resolution=None)
+
+        # The return opens DIRECTLY onto the root element — no marker sibling.
+        return_open = tsx.index("  return (")
+        after_return = tsx[return_open:]
+        self.assertTrue(
+            after_return.startswith("  return (\n      <div data-figma-id=\"card:1\""),
+            f"root element must be the only child of the return, got:\n{after_return[:220]}",
+        )
+        # The honesty marker still appears — inside the element now.
+        self.assertIn("fidelity: absolute_positioning approximated (in-flow)", tsx)
+        marker_line = [
+            l for l in tsx.splitlines()
+            if "fidelity: absolute_positioning approximated" in l
+        ]
+        self.assertEqual(len(marker_line), 1)
+        self.assertTrue(
+            marker_line[0].startswith("        {/*"),
+            f"marker should be indented inside the element, got: {marker_line[0]!r}",
+        )
 
     def test_deterministic(self):
         doc, plan, resolution = canonical_fixture()

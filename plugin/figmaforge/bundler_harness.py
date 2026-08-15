@@ -297,11 +297,17 @@ def scaffold(
         entry = entry_imports + "\n" + spec.entry_mount.format(name=name)
         _write(f"src/main/{name}.{spec.entry_extension}", entry)
         script_src = f"/src/main/{name}.{spec.entry_extension}"
+        # The same global reset as the reference render (``generate_render_html``
+        # in web_common): Figma widths are border-box, so ``width: 1440px`` +
+        # padding must NOT overflow (Part 21, Task 6 — without this, vue/svelte
+        # screens rendered 56px wider than the reference and the SSIM compare
+        # degraded to similarity 0).
         _write(name + ".html",
                "<!doctype html>\n<html lang=\"en\">\n<head>\n"
                "  <meta charset=\"UTF-8\" />\n"
                "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n"
-               f"  <title>{name}</title>\n"
+               "  <title>{name}</title>\n"
+               "  <style>* { margin: 0; padding: 0; box-sizing: border-box; }</style>\n"
                "</head>\n<body>\n"
                "  <div id=\"root\"></div>\n"
                "  <div id=\"app\"></div>\n"

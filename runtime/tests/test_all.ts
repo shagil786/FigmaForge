@@ -1688,6 +1688,113 @@ export async function runAllTests(): Promise<SuiteResult[]> {
     }
   }));
 
+  // 13d. cmdRun bundler-rendered measurement (Part 21) — real Vite + chromium
+  results.push(await describe("cmdRun bundler measurement (Part 21)", async () => {
+    const dir = tmpDir();
+    const FIXTURE = path.resolve("plugin/figmaforge/fixtures/figma/layout_desktop.json");
+    const cli = path.resolve("dist/runtime/src/cli/main.js");
+    const PYTHON_BIN = process.env.PYTHON_BIN ?? "python3";
+
+    function runCli(args: string[], timeout: number) {
+      return spawnSync(process.execPath, [cli, ...args], {
+        cwd: path.resolve("."),
+        env: { ...process.env, PYTHON_BIN },
+        encoding: "utf-8",
+        timeout,
+      });
+    }
+
+    try {
+      await it("run --target=react+tailwind bundles and measures a real PASSED score", async () => {
+        const outDir = path.join(dir, "run-react");
+        const res = runCli([
+          "run", `--file=${FIXTURE}`, "--target=react+tailwind", "--no-approval",
+          `--output-dir=${outDir}`,
+        ], 480_000);
+        assertEqual(res.status, 0, `run exited ${res.status}: ${res.stderr ?? ""}`);
+        const stdout = res.stdout ?? "";
+        const scoreLine = stdout.split("\n").find((l) => l.includes("Score:")) ?? "";
+        const score = parseFloat(scoreLine.split(":")[1] ?? "0");
+        assert(score >= 0.95, `bundled react score should be >= 0.95, got ${score}\n${stdout}`);
+        assert(stdout.includes("Visual verdict"), "run should print the visual verdict");
+        assert(!stdout.includes("Visual verdict: no measured score"),
+          "bundled react must have a measured verdict");
+        assert(stdout.includes("Verification: PASSED"),
+          `expected a PASSED verification line, got:\n${stdout}`);
+
+        const runs = fs.readdirSync(outDir).filter((f) => f.startsWith("run-"));
+        assertEqual(runs.length, 1, "expected exactly one run dir");
+        const runDir = path.join(outDir, runs[0]);
+        const manifest = JSON.parse(
+          fs.readFileSync(path.join(runDir, "manifest.json"), "utf-8"),
+        );
+        assert(manifest.artifacts.length >= 11,
+          `expected >= 11 artifacts, got ${manifest.artifacts.length}`);
+        // The render stage's rows are the bundle screenshots, not html globs.
+        const renderArtifact = manifest.artifacts.find(
+          (a: { kind: string }) => a.kind === "screenshot",
+        );
+        assert(renderArtifact !== undefined, "expected a screenshot artifact");
+        const render = JSON.parse(
+          fs.readFileSync(path.join(runDir, "artifacts", renderArtifact.path), "utf-8"),
+        );
+        assert(render.screenshots !== undefined && render.screenshots.length >= 1,
+          `bundle render should have screenshots, got ${JSON.stringify(render)}`);
+        assert(render.screenshots.every(
+          (s: { screenshot?: string; html?: string }) =>
+            typeof s.screenshot === "string" && s.screenshot.endsWith(".png"),
+        ), "each bundled screen must carry a png screenshot path");
+      });
+
+      await it("run --target=vue+scoped_css bundles and measures a real PASSED score", async () => {
+        const outDir = path.join(dir, "run-vue");
+        const res = runCli([
+          "run", `--file=${FIXTURE}`, "--target=vue+scoped_css", "--no-approval",
+          `--output-dir=${outDir}`,
+        ], 480_000);
+        assertEqual(res.status, 0, `run exited ${res.status}: ${res.stderr ?? ""}`);
+        const stdout = res.stdout ?? "";
+        const scoreLine = stdout.split("\n").find((l) => l.includes("Score:")) ?? "";
+        const score = parseFloat(scoreLine.split(":")[1] ?? "0");
+        assert(score >= 0.95, `bundled vue score should be >= 0.95, got ${score}\n${stdout}`);
+        assert(!stdout.includes("Visual verdict: no measured score"),
+          "bundled vue must have a measured verdict");
+        assert(stdout.includes("Verification: PASSED"),
+          `expected a PASSED verification line, got:\n${stdout}`);
+      });
+
+      await it("run --target=react+tailwind --no-bundle degrades honestly", async () => {
+        const outDir = path.join(dir, "run-nobundle");
+        const res = runCli([
+          "run", `--file=${FIXTURE}`, "--target=react+tailwind", "--no-approval",
+          "--no-bundle", `--output-dir=${outDir}`,
+        ], 240_000);
+        assertEqual(res.status, 0, `run exited ${res.status}: ${res.stderr ?? ""}`);
+        const stdout = res.stdout ?? "";
+        assert(stdout.includes("Visual verdict: no measured score"),
+          `expected the honest degrade verdict, got:\n${stdout}`);
+        assert(stdout.includes("Verification: cannot verify"),
+          `expected cannot-verify, got:\n${stdout}`);
+      });
+
+      await it("run --target=flutter+flutter_widgets degrades honestly (no measured score)", async () => {
+        const outDir = path.join(dir, "run-flutter");
+        const res = runCli([
+          "run", `--file=${FIXTURE}`, "--target=flutter+flutter_widgets", "--no-approval",
+          `--output-dir=${outDir}`,
+        ], 240_000);
+        assertEqual(res.status, 0, `run exited ${res.status}: ${res.stderr ?? ""}`);
+        const stdout = res.stdout ?? "";
+        assert(stdout.includes("Visual verdict: no measured score"),
+          `expected the honest degrade verdict, got:\n${stdout}`);
+        assert(stdout.includes("Verification: cannot verify"),
+          `expected cannot-verify, got:\n${stdout}`);
+      });
+    } finally {
+      cleanDir(dir);
+    }
+  }));
+
   // 14. Backend code generation (Part 15) — real Python backends through the pipeline
   results.push(...await runBackendCodegenTests());
 

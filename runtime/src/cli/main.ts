@@ -122,6 +122,8 @@ Options:
                            --file-key and the FIGMA_TOKEN env var)
   --no-repair              Skip the auto-repair stage (repair short-circuits;
                            verify still reports the final gate)
+  --no-bundle              Skip bundling react/vue/svelte renders (honest
+                           no-measured-score degrade instead of a real build)
   --similarity-threshold=<0.0-1.0>  Repair/verify similarity gate (alias of
                            --threshold; default: 0.95)
   --no-approval            Skip approval gates
@@ -280,6 +282,7 @@ async function cmdRun(args: CliArgs): Promise<void> {
   if (args.flags["no-repair"] === "true") {
     pipeline.setShared("noRepair", true);
   }
+  const noBundle = args.flags["no-bundle"] === "true";
   pipeline.onStage("ingest", createIngestStageHandler());
   pipeline.onStage("normalize", createNormalizeStageHandler());
   pipeline.onStage("resolve", createResolveStageHandler());
@@ -288,7 +291,7 @@ async function cmdRun(args: CliArgs): Promise<void> {
   pipeline.onStage("generate", createGenerateStageHandler());
   // NOTE: PIPELINE_STAGES runs assets before generate (Part 18) so the
   // assets-stage manifest can thread resolved paths into generated code.
-  pipeline.onStage("render", createRenderStageHandler());
+  pipeline.onStage("render", createRenderStageHandler({ noBundle }));
   pipeline.onStage("compare", createCompareStageHandler());
   pipeline.onStage("repair", createRepairStageHandler());
   pipeline.onStage("verify", createVerifyStageHandler());
