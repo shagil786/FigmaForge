@@ -9,8 +9,9 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { spawnSync } from "node:child_process";
 
-import { describe, it, assert, assertEqual, assertThrows, assertGreaterThan } from "./test_framework.js";
+import { describe, it, assert, assertEqual, assertThrows, assertGreaterThan, assertIncludes } from "./test_framework.js";
 import type { SuiteResult } from "./test_framework.js";
 import { PRESET_TARGETS, targetKey } from "../src/core/types.js";
 import type { RuntimeConfig } from "../src/core/types.js";
@@ -184,6 +185,60 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
           "manifest should name the flutter file");
         assertGreaterThan(manifest.manifest.fidelity_losses.length, 0,
           "fidelity losses should be present in the manifest");
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("demo command generates all six backends from a local fixture", async () => {
+      const dir = tmpDir();
+      try {
+        const cli = path.resolve("dist/runtime/src/cli/main.js");
+        const res = spawnSync(process.execPath, [cli, "demo", `--file=${FIXTURE}`, `--out=${dir}`], {
+          cwd: path.resolve("."),
+          env: { ...process.env, PYTHON_BIN },
+          encoding: "utf-8",
+          timeout: 120_000,
+        });
+        assertEqual(res.status, 0, `demo exited ${res.status}: ${res.stderr ?? ""}`);
+
+        // One output directory per backend, each with generated files.
+        for (const backend of REAL_BACKENDS) {
+          const backendDir = path.join(dir, backend);
+          assert(fs.existsSync(backendDir), `missing demo output dir for ${backend}`);
+          assertGreaterThan(fs.readdirSync(backendDir).length, 0,
+            `no files generated for ${backend}`);
+        }
+
+        // Summary table with per-backend file and loss counts.
+        const stdout = res.stdout ?? "";
+        assertIncludes(stdout, "files", "table should have a files column");
+        assertIncludes(stdout, "losses", "table should have a losses column");
+        for (const backend of REAL_BACKENDS) {
+          assertIncludes(stdout, backend, `table should list ${backend}`);
+        }
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("demo falls back to the offline fixture without a token or file", async () => {
+      const dir = tmpDir();
+      try {
+        const cli = path.resolve("dist/runtime/src/cli/main.js");
+        const env: Record<string, string> = { ...process.env, PYTHON_BIN };
+        delete env.FIGMA_TOKEN;
+        const res = spawnSync(process.execPath, [cli, "demo", `--out=${dir}`], {
+          cwd: path.resolve("."),
+          env,
+          encoding: "utf-8",
+          timeout: 120_000,
+        });
+        assertEqual(res.status, 0, `demo exited ${res.status}: ${res.stderr ?? ""}`);
+        assertIncludes(res.stdout ?? "", "offline fixture",
+          "demo should announce the offline fixture path");
+        assert(fs.existsSync(path.join(dir, "html_css")),
+          "offline demo should generate html_css");
       } finally {
         cleanDir(dir);
       }

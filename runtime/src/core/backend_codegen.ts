@@ -200,6 +200,44 @@ export async function invokeBackendGenerator(
 // Stage handlers
 // ---------------------------------------------------------------------------
 
+export interface IngestSource {
+  /** Local Figma file JSON path (offline ingest). */
+  file?: string;
+  /** Live Figma file key (requires FIGMA_TOKEN). */
+  fileKey?: string;
+}
+
+/**
+ * Ingest a Figma file via ``scripts/pipeline.py`` — from a local file or the
+ * live API — and return the normalized file JSON plus its file key.
+ */
+export async function invokeIngest(
+  cfg: { pythonBin: string; pluginDir: string },
+  source: IngestSource,
+): Promise<{ fileKey: string; fileJson: Record<string, unknown> }> {
+  const args = source.file
+    ? ["ingest", "--file", source.file]
+    : ["ingest", "--file-key", source.fileKey ?? ""];
+  const result = await spawnPython(
+    cfg.pythonBin,
+    path.join(cfg.pluginDir, "scripts", "pipeline.py"),
+    args,
+    cfg.pluginDir,
+  );
+  if (result.exitCode !== 0) {
+    const detail = result.stderr.trim() || result.stdout.trim();
+    throw new Error(
+      `pipeline.py ingest exited ${result.exitCode}: ${detail}`,
+    );
+  }
+  const lines = result.stdout.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  const fileJson = JSON.parse(lines[lines.length - 1] ?? "{}") as Record<string, unknown>;
+  return {
+    fileKey: String(fileJson.file_key ?? source.fileKey ?? ""),
+    fileJson,
+  };
+}
+
 /**
  * Ingest stage handler — fetches a Figma file (live, via ``--file-key``) or
  * reads a local fixture (via ``ctx.shared["filePath"]``), then stores the
@@ -209,31 +247,12 @@ export function createIngestStageHandler(): StageHandler {
   return async (ctx: PipelineContext, input: Record<string, unknown>) => {
     const filePath = ctx.shared.get("filePath");
     const fileKey = String(input.fileKey ?? ctx.config.fileKey ?? "");
-    const args = filePath
-      ? ["ingest", "--file", String(filePath)]
-      : ["ingest", "--file-key", fileKey];
-
-    const result = await spawnPython(
-      ctx.toolCtx.pythonBin,
-      path.join(ctx.config.pluginDir, "scripts", "pipeline.py"),
-      args,
-      ctx.config.pluginDir,
+    const result = await invokeIngest(
+      { pythonBin: ctx.toolCtx.pythonBin, pluginDir: ctx.config.pluginDir },
+      filePath ? { file: String(filePath) } : { fileKey },
     );
-    if (result.exitCode !== 0) {
-      const detail = result.stderr.trim() || result.stdout.trim();
-      throw new Error(
-        `pipeline.py ingest exited ${result.exitCode}: ${detail}`,
-      );
-    }
-
-    const fileJson = JSON.parse(
-      result.stdout.split(/\r?\n/).filter((l) => l.trim().length > 0).slice(-1)[0] ?? "{}",
-    ) as Record<string, unknown>;
-    ctx.shared.set("fileJson", fileJson);
-    return {
-      fileKey: String(fileJson.file_key ?? fileKey),
-      fileJson,
-    };
+    ctx.shared.set("fileJson", result.fileJson);
+    return { fileKey: result.fileKey, fileJson: result.fileJson };
   };
 }
 
