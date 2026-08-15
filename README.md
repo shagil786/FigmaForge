@@ -1,7 +1,7 @@
 # FigmaForge Universal Adaptive Platform
 
 **Version:** 0.0.2-dev  
-**Status:** Parts 1–17 complete — full pixel-diff pipeline (Part 12), perceptual SSIM gating and baseline auto-refresh (Part 13), all six backend adapters implemented (Part 14: react+tailwind, vue, svelte, swiftui, flutter) with capability-vs-output honesty audits, the real-Figma end-to-end demo wired through the TS runtime (Part 15: Python pipeline CLI + ingest/generate stage handlers + `figmaforge demo`), the full front half wired (Part 16: IR/layout JSON round-trip loaders, normalize/resolve/layout subcommands, staged generate, five-stage `figmaforge run`), and the assets stage wired (Part 17: asset-reference collector, `assets` subcommand, content-addressed image/SVG store, six-stage `figmaforge run`); validation gate green (515 Python / 131 TS tests)
+**Status:** Parts 1–18 complete — full pixel-diff pipeline (Part 12), perceptual SSIM gating and baseline auto-refresh (Part 13), all six backend adapters implemented (Part 14: react+tailwind, vue, svelte, swiftui, flutter) with capability-vs-output honesty audits, the real-Figma end-to-end demo wired through the TS runtime (Part 15: Python pipeline CLI + ingest/generate stage handlers + `figmaforge demo`), the full front half wired (Part 16: IR/layout JSON round-trip loaders, normalize/resolve/layout subcommands, staged generate, five-stage `figmaforge run`), the assets stage wired (Part 17: asset-reference collector, `assets` subcommand, content-addressed image/SVG store, six-stage `figmaforge run`), and resolved assets threaded into generated web code (Part 18: `generate --assets`, real `background-image`/`bg-[url(...)]` references, `FILLS_IMAGE` lifted to supported with the honesty audit locked); validation gate green (526 Python / 133 TS tests)
 
 A technology-agnostic, adaptive, full-lifecycle Claude Code engineering platform that enables any software project type by detecting stack-specific signals and routing to appropriate capabilities. FigmaForge also converts normalized Figma design IR into framework-neutral layout plans and generates production-quality React/CSS output.
 
@@ -315,8 +315,12 @@ Md Shagil Nizami
 - ✅ **Part 17** Asset-reference collector (`core/asset_collector.py`) + public `figma_assets` fetch helpers
 - ✅ **Part 17** pipeline `assets` subcommand — download + content-address image/SVG refs via `AssetManager` (SVG-validated, deterministic manifest, exit codes 3/4)
 - ✅ **Part 17** TS assets stage handler — `figmaforge run` exercises **6 real stages** (ingest → normalize → resolve → layout → assets → generate, 6 artifact kinds + content-addressed store)
-- ✅ Full validation suite green (515 Python + 131 TS tests, zero skips)
-- ✅ CLAUDE.md + docs updated through Part 17
+- ✅ **Part 18** `generate --assets` — the assets-stage manifest threads resolved image paths into generated code (`options["assets"]`)
+- ✅ **Part 18** Real image references in all four web backends — `background-image: url(...)` (html_css/vue/svelte) and `bg-[url(...)] bg-cover bg-center` (react_tailwind); unresolved fills keep the honest marked fallback
+- ✅ **Part 18** `FILLS_IMAGE` lifted partial → supported for the web backends + honesty audit locked (canonical image node, signals, audit options)
+- ✅ **Part 18** TS wiring — `PIPELINE_STAGES` reordered so assets runs before generate; the generate stage threads `assetManifest`
+- ✅ Full validation suite green (526 Python + 133 TS tests, zero skips)
+- ✅ CLAUDE.md + docs updated through Part 18
 
 ---
 
@@ -325,4 +329,5 @@ Md Shagil Nizami
 1. Test with real repositories
 2. Document the rollback procedure
 3. Wire the remaining TS pipeline stages (render/compare/repair/verify) into the runtime
-4. Diff heatmap output + extended PNG formats (deferred non-goals from Parts 12–13)
+4. Image-fill fit modes beyond cover/center + asset bundling for deployment
+5. Diff heatmap output + extended PNG formats (deferred non-goals from Parts 12–13)

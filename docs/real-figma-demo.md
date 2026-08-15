@@ -157,6 +157,22 @@ manifest; a live run whose IR still has unresolved `image_ref`s needs
 `FIGMA_TOKEN` (exit 3, same as `ingest --file-key`) to resolve them via the
 Figma images API.
 
+**Assets flow into the generated code (Part 18).** The assets stage runs
+*before* generate, and the generate stage threads its manifest through as
+`--assets` (`pipeline.py generate --assets <manifest.json>`), so a resolved
+image fill becomes a **real image reference** instead of a solid fallback:
+
+- html_css → `background-image: url(<content-addressed path>)` with
+  `background-size: cover` / `background-position: center` (Figma's default fit)
+- react_tailwind → `bg-[url(<path>)] bg-cover bg-center`
+- vue / svelte → the same `background-image` inside their scoped `<style>` blocks
+
+An image fill whose asset **wasn't** resolved (assets stage skipped, URL
+unresolved without a token) keeps the honest `fills_image approximated`
+marker + solid fallback — never silently dropped. The referenced paths are
+machine/run-local (content-addressed store); packaging assets with generated
+output for deployment is a separate concern.
+
 Valid `--target` keys (those with Python backends): `html+css`,
 `react+tailwind`, `vue+scoped_css`, `svelte+scoped_css`,
 `swiftui+swiftui_modifiers`, `flutter+flutter_widgets`. Targets without a
@@ -182,5 +198,5 @@ The demo's verification is **structural** by design (repo rule): generated
 code is never compiled (no swiftc/dart/tsc) and generated apps are never
 executed. The gate is: all six backends generate cleanly, the manifests and
 loss counts match each backend's declarations, and the Python
-(`python3.14 -m unittest discover -s tests`, 515 tests) + TS
-(`node dist/runtime/tests/run_all.js`, 131 tests) suites are green.
+(`python3.14 -m unittest discover -s tests`, 526 tests) + TS
+(`node dist/runtime/tests/run_all.js`, 133 tests) suites are green.
