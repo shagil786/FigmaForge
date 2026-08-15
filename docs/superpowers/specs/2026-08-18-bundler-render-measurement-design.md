@@ -24,7 +24,23 @@ The fix: a **real Vite bundler harness** — scaffold a minimal per-framework Vi
 7. **The render harness loads via `file://`** (`page.goto(html_path.as_uri())`). Built SPA output over `file://` is fragile (ES module scripts, fetch/CORS on assets). **Serve instead:** `vite preview` on an ephemeral port, harness pointed at `http://127.0.0.1:<port>/`. Port chosen at serve time (never hardcoded; probe for readiness).
 8. **Repair regeneration stays html_css-scoped** (Part 20 contract: `styles_override` seam exists on html_css only). For bundler targets, repair short-circuits with the existing honest note. Per-backend repair regeneration for the web frameworks is a concrete follow-up (sketched in Scope), not Part 21.
 
+## Task-0 spike findings (real toolchain, verified in chromium — not assumed)
+
+Ran the actual spike (Task 0): generated the canonical honesty-audit fixture through the **real** `ReactTailwindBackend`, built it with a real Vite 5 + **Tailwind v3.4.14** + PostCSS project, served it, and rendered it in real headless chromium with computed-style probes.
+
+1. **S1 — Toolchain CONFIRMED: Tailwind v3.4 compiles and applies the full generated class surface.** Arbitrary values (`bg-[#3366cc]` → `rgb(51,102,204)`, `gap-[16px]`, `w-[400px]`, `w-[50%]` percent, `w-[fit-content]` hug, `min-w-[100px]`/`max-w-[200px]`), arbitrary shadow `shadow-[0px_4px_8px_rgba(0,0,0,0.25)]`, `blur-[4px]`, `rounded-[8px]`, per-corner `rounded-tl-[8px] rounded-tr-[0px] …` → `border-radius: 8px 0 0 8px`, fractional `border-[2px]` + `border-[#111111]`, `opacity-[0.5]`, `bg-gradient-to-b from-[#ff0000] to-[#0000ff]` → `linear-gradient(rgb(255,0,0), rgb(0,0,255))`, quoted `font-['Inter']` → `font-family: Inter`, `text-[32px] font-bold leading-[40px] tracking-[0.5px]`, `overflow-hidden`/`overflow-auto`, and **arbitrary breakpoint variants `max-[768px]:flex-row max-[768px]:w-[350px]`** (verified: at a 700px viewport the root flips to `flex-direction: row; width: 350px`). Zero console/page errors. **The v3.4 + PostCSS pin is confirmed; no v4 fallback needed.**
+2. **S2 — FINDING (all three web backends): component/instance references are unresolved → the canonical react output crashes at runtime with a blank page.** `comp:1`/`inst:1` are plain IR nodes with **no component definitions**; the resolution report maps them to names (`ButtonCard`/`PrimaryButton`) and `VNodeBuilder` emits `<ButtonCard>` tags. `vite build` succeeds silently (JSX element names compile to runtime `jsx(ButtonCard, …)` calls), then chromium reports `ReferenceError: ButtonCard is not defined` and renders nothing. vue (`<template>` emits the same tags → Vue runtime resolve warning) and svelte (compiler error on the undefined component) share the latent bug — the honesty audit only checks output *substrings*, never *buildability*. **Fix (contained, Part 21 Task 1): each web backend emits a local fallback component definition per referenced name (a function/component rendering that node's own subtree) so generated output is self-contained and renders; component instances render resolved and are marked `fidelity: component_instance approximated`.** The audit gains a buildability dimension: the canonical react output must build **and** render with zero console errors.
+3. **S3 — FINDING (react token config): `tailwind.config.figmaforge.js` is invalid JavaScript when design tokens have hyphenated names.** `_generate_tailwind_config` emits `brand-blue: "#3366cc"` (unquoted) → `SyntaxError: Unexpected token '-'`. The fixture's `brand-blue`/`space-4` tokens prove it. **Fix (contained, Task 1): quote config keys (`"brand-blue": …`).**
+4. **S4 — environment note: npm 11 blocks esbuild's postinstall** (`npm approve-scripts esbuild` required before `vite build` works here). The bundler harness must detect a broken esbuild/vite binary and emit a typed error with the hint; the real-toolchain test (Task 4) approves the script first.
+
+All three findings were reproduced with the real toolchain; the plan's Task 1 absorbs S2+S3 (test-first), S4 shapes the harness's failure contract.
+
 ## Design
+
+### 0. Contained backend fixes (from the spike)
+
+- **Web backends emit self-contained component references** (S2): in `react_tailwind`/`vue`/`svelte`, every referenced component name must be defined in the emitted output — a local fallback component rendering the node's own subtree (name-collision-safe: dedupe by name). Component instances render resolved and carry a `fidelity: component_instance approximated` marker. The generated screen file must build and render with zero console errors.
+- **Tailwind token config keys quoted** (S3): `_generate_tailwind_config` quotes every key (`"brand-blue": …`) so the emitted config is always valid JS.
 
 ### 1. Bundler harness module (`plugin/figmaforge/bundler_harness.py`)
 
@@ -83,7 +99,7 @@ Auto-bundle by target (no new flag needed to opt in); `--no-bundle` to opt out. 
 
 ## Scope
 
-**In:** bundler harness module; `render --bundle` (scaffold + build + serve + screenshot); Tailwind v3.4 pin (pending spike); asset rewrite; TS render-handler bundler path + `--no-bundle`; cmdRun auto-bundling + help; docs; gate.
+**In:** the two contained backend fixes from the spike (S2 self-contained component references for react/vue/svelte, S3 token-config key quoting) + a buildability dimension in the honesty audit; bundler harness module; `render --bundle` (scaffold + build + serve + screenshot); Tailwind v3.4 pin (spike-confirmed); asset rewrite; esbuild-broken typed error (S4); TS render-handler bundler path + `--no-bundle`; cmdRun auto-bundling + help; docs; gate.
 
 **Out (non-goals, deferred):** per-backend repair regeneration for web frameworks (Part 22 sketch: extend the `styles_override` seam to vue/svelte scoped CSS and react inline-style/arbitrary-class overrides, then enable the repair stage's regeneration path for bundler targets); native simulator rendering (xcode/flutter — needs real SDKs); live Figma E2E automation; optimizing build time beyond caching.
 
@@ -95,3 +111,4 @@ Auto-bundle by target (no new flag needed to opt in); `--no-bundle` to opt out. 
 - A broken generated class (spike-injected) → explicit stage failure carrying vite's error text, no screenshot.
 - Native targets unchanged (honest no-measured-score).
 - Gate: **~575 Python** (565 + ~10) / **~162 TS** (155 + ~7), `claude plugin validate --strict` ✔, real-chromium + real-vite smoke at the gate.
+- **Spike regression locked:** the canonical honesty-audit fixture's react output must build **and** render with zero console errors (S2), and its emitted `tailwind.config.figmaforge.js` must load in node (S3).

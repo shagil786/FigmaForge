@@ -4,13 +4,31 @@
 > **Gate baseline:** Python **565 OK** (44 files) · TS **155 passing**, tsc clean · `claude plugin validate --strict` ✔. Expected after: **~575 / ~162**.
 > **Conventions:** test-first, one commit per task after the full suite goes green, commits on `feat/part-21-bundler-render`, PR against main (no merge, repo convention). Browser tests only where deterministic; unit tests inject a fake builder/harness (Part 19/20 render-test convention). Bundler tests skippable without node_modules/chromium.
 
-## Task 0 — Tailwind toolchain spike (no commit)
+## Task 0 — Tailwind toolchain spike ✅ DONE (no commit)
 
-Before writing code, settle the one real build risk: create a throwaway Vite project (tailwind v3.4 + postcss) with a hand-written TSX exercising the same arbitrary-value classes the backend emits (`bg-[#ff0000]`, `max-[768px]:…`, `bg-[url(...)]`), run `npm run build`, and load the output in the real `RenderHarness` to confirm it renders. Record the outcome in the spec + plan (if v3.4 works — expected — the plan proceeds unchanged; if not, switch the react scaffold to v4 + CSS `@theme` token translation and amend the spec).
+Ran the spike with the **real** `ReactTailwindBackend` on the canonical honesty-audit fixture, built with Vite 5 + tailwind v3.4.14 + PostCSS, and rendered in real chromium with computed-style probes. Verdict recorded in the spec (findings S1–S4):
 
-**Commit:** none (spike only). Findings documented.
+- **S1 — v3.4 CONFIRMED.** The full class surface compiles and applies: arbitrary values, `shadow-[0px_4px_8px_rgba(0,0,0,0.25)]`, per-corner radii, gradient stops, quoted `font-['Inter']`, percent/hug sizing, overflow, and `max-[768px]:…` variants (verified at 700px: root → `flex-direction: row; width: 350px`). Zero errors. **No v4 fallback needed.**
+- **S2 — FINDING:** the canonical fixture's react output crashes at runtime (`ReferenceError: ButtonCard is not defined`, blank page) — build succeeds silently. vue/svelte share the latent unresolved-component bug. Fix is now **Task 1** below.
+- **S3 — FINDING:** emitted `tailwind.config.figmaforge.js` is invalid JS for hyphenated token keys (`brand-blue:` → SyntaxError). Fix is Task 1.
+- **S4 — env note:** npm 11 requires `npm approve-scripts esbuild` before vite build works here; the harness must emit a typed error when esbuild is broken, and the Task-4 money test approves the script first.
 
-## Task 1 — Bundler harness module (Python, test-first)
+**Commit:** none (spike only).
+
+## Task 1 — Contained backend fixes from the spike (Python, test-first)
+
+**Tests (red):**
+- `react_tailwind`: canonical fixture (components + instances resolved) → every referenced component name has a **local definition** in the emitted TSX (function rendering that node's own subtree; `ButtonCard`/`PrimaryButton` are now defined), instances carry a `fidelity: component_instance approximated` marker; the file is self-contained (no undefined identifiers). Name collision → one deduped definition.
+- `vue` / `svelte`: same self-contained guarantee for their templates (vue: local component registered in `script setup`; svelte: local component declared in the module/script).
+- `_generate_tailwind_config` with hyphenated tokens (`brand-blue`, `space-4`) → emitted JS loads in node (quoted keys) and extends cleanly.
+- **Buildability lock (audit dimension):** the canonical react output must build with the real toolchain and render with zero console errors — add this as a skippable audit test (node_modules + chromium gated), so S2 can never regress silently again.
+
+**Implement**: `backends/react_tailwind/__init__.py`, `backends/vue/__init__.py`, `backends/svelte/__init__.py` (self-contained component references), `_generate_tailwind_config` key quoting, `tests/test_backend_honesty_audit.py` (buildability check).
+
+**Verify**: new tests green; full Python suite **565 + N OK**; existing golden/snapshot tests unchanged.
+**Commit**: `fix(backends): self-contained component references + quoted tailwind token keys (spike findings S2/S3)`.
+
+## Task 2 — Bundler harness module (Python, test-first)
 
 **Tests (red)** in `tests/test_bundler_harness.py` (pure Python, no browser, no real npm):
 - `scaffold` for `react_tailwind` writes: `package.json` (valid JSON, exact pins, `build` script), `vite.config.ts` (plugin-react, `base: "./"`), `index.html`, `src/main.tsx` that imports the generated component by name from the manifest.
@@ -25,7 +43,7 @@ Before writing code, settle the one real build risk: create a throwaway Vite pro
 **Verify**: new tests green; full Python suite **565 + N OK**.
 **Commit**: `feat(bundler): per-framework Vite scaffold - entry, config, pinned deps, asset rewrite`.
 
-## Task 2 — `pipeline.py render --bundle` (Python, test-first)
+## Task 3 — `pipeline.py render --bundle` (Python, test-first)
 
 **Tests (red)** in `tests/test_pipeline_render_bundle.py` (injected fake builder + fake harness):
 - `render --bundle --backend react_tailwind --dir <fake generated>` (fake builder returns success) → one JSON line with `ok:true`, `screens` with one entry per generated component, `build_ok:true`.
@@ -39,14 +57,14 @@ Before writing code, settle the one real build risk: create a throwaway Vite pro
 **Verify**: new tests green; full Python suite.
 **Commit**: `feat(pipeline): render --bundle - scaffold, build, serve, screenshot in one unit`.
 
-## Task 3 — Real toolchain money test (Python, real npm + real chromium)
+## Task 4 — Real toolchain money test (Python, real npm + real chromium)
 
-One real test (skippable without node_modules/chromium, render-test convention): scaffold the checked-in golden fixture's react_tailwind output, real `npm run build`, real `RenderHarness` against `vite preview` on an ephemeral port → PNG produced, non-trivial size. Also prove the port is never fixed (two sequential serves get different ports).
+One real test (skippable without node_modules/chromium, render-test convention): scaffold the **canonical** honesty-audit fixture's react_tailwind output (the S2 fix makes it build + render), real `npm run build` (approve esbuild first — S4), real `RenderHarness` against `vite preview` on an ephemeral port → PNG produced, non-trivial size, zero console errors. Also prove the port is never fixed (two sequential serves get different ports).
 
 **Verify**: the test passes locally; suite green.
 **Commit**: `test(bundler): real vite build + preview + chromium screenshot on an ephemeral port`.
 
-## Task 4 — TS render handler bundler path (TS, test-first)
+## Task 5 — TS render handler bundler path (TS, test-first)
 
 **Tests (red)** in `runtime/tests/backend_codegen.test.ts`:
 - `createRenderStageHandler` with a bundler-backed target (react+tailwind) and generated `.tsx` files → spawns the bundle path (assert via a seeded fake: `invokeBundleRender` is called with the generated dir + viewport), `renderOutputs` shared with real rows.
@@ -59,7 +77,7 @@ One real test (skippable without node_modules/chromium, render-test convention):
 **Verify**: new tests green; TS suite **~160 passing**, tsc clean; Python unchanged.
 **Commit**: `feat(runtime): render stage bundles react/vue/svelte through the real harness`.
 
-## Task 5 — cmdRun wiring + CLI tests (TS, test-first)
+## Task 6 — cmdRun wiring + CLI tests (TS, test-first)
 
 **Tests (red)** in `runtime/tests/test_all.ts` (CLI level):
 - `run --target=react+tailwind` (fixture, real npm + chromium) → exit 0, **≥ 11 artifacts**, `Score` ≥ 0.95, `Visual verdict` present with a real number, `Verification: PASSED`.
@@ -72,7 +90,7 @@ One real test (skippable without node_modules/chromium, render-test convention):
 **Verify**: new tests green; TS suite **~162 passing**, tsc clean.
 **Commit**: `feat(cli): auto-bundle react/vue/svelte renders in figmaforge run - measured scores, --no-bundle escape`.
 
-## Task 6 — Docs (README, CLAUDE.md, real-figma-demo.md, architecture.md, DEVELOPMENT_LOG)
+## Task 7 — Docs (README, CLAUDE.md, real-figma-demo.md, architecture.md, DEVELOPMENT_LOG)
 
 - `docs/real-figma-demo.md` — render section: html_css + **bundler-rendered react/vue/svelte** all measured; `--no-bundle`; counts → fill from actual gate.
 - `docs/DEVELOPMENT_LOG.md` — Part 21 entry: bundler harness, `render --bundle`, TS bundle path, measured scores for all four browser targets, honesty contract (build failure is an error, never a fake screenshot), counts.
@@ -81,9 +99,9 @@ One real test (skippable without node_modules/chromium, render-test convention):
 - `docs/architecture.md` — `pipeline.py` bullet (+bundle mode), `bundler_harness.py` module bullet, status paragraph (all four browser targets measured).
 **Commit**: `docs: document Part 21 bundler-rendered measurement`.
 
-## Task 7 — Final gate, push, PR (no merge)
+## Task 8 — Final gate, push, PR (no merge)
 
-1. Python suite (~575 OK) + `claude plugin validate --strict` in parallel.
+1. Python suite (~580 OK) + `claude plugin validate --strict` in parallel.
 2. `npx tsc` + TS suite (~162 passing).
 3. Real CLI smoke ×3: react+tailwind run (measured Score + Verification), vue run, `--no-bundle` degrade.
 4. Fill the DEVELOPMENT_LOG counts with the actual gate numbers (amend or follow-up commit if drifted).
