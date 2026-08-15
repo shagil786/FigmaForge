@@ -553,6 +553,14 @@ class ScopedCssGenerator:
         extend_ir_style(style, plan_node, ir)
 
 
+# Breakpoint props whose ``after`` value is a length in px (not a keyword
+# like ``row``/``column``) and so must carry a unit in emitted CSS.
+_PX_BP_PROPS = frozenset({
+    "gap", "width", "height",
+    "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+})
+
+
 def bp_to_css_prop(bp: Any) -> Optional[Tuple[str, str]]:
     """Map a LayoutPlan breakpoint change to ``(camelCase css prop, value)``.
 
@@ -571,9 +579,12 @@ def bp_to_css_prop(bp: Any) -> Optional[Tuple[str, str]]:
         "paddingLeft": "paddingLeft",
     }
     css_prop = prop_map.get(getattr(bp, "property", ""))
-    if css_prop is None or getattr(bp, "after", None) is None:
+    after = getattr(bp, "after", None)
+    if css_prop is None or after is None:
         return None
-    return (css_prop, str(bp.after))
+    if css_prop in _PX_BP_PROPS and isinstance(after, (int, float)):
+        return (css_prop, f"{_fmt_num(after)}px")
+    return (css_prop, str(after))
 
 
 def escape_html(s: str) -> str:

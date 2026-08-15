@@ -45,9 +45,6 @@ _FLUTTER_SUPPORTED = frozenset({
     Feature.ABSOLUTE_POSITIONING,  # Stack + Positioned
     Feature.AUTO_LAYOUT,  # Row/Column/Wrap
     Feature.FIXED_SIZE,
-    Feature.FILL_SIZE,  # Expanded
-    Feature.HUG_SIZE,  # IntrinsicWidth/Height
-    Feature.PERCENT_SIZE,  # FractionallySizedBox
     Feature.PADDING,
     Feature.GAP,  # SizedBox between children
     Feature.JUSTIFY,  # MainAxisAlignment
@@ -71,6 +68,9 @@ _FLUTTER_SUPPORTED = frozenset({
 })
 
 _FLUTTER_PARTIAL = frozenset({
+    Feature.FILL_SIZE,  # lowered as computed box size, not Expanded
+    Feature.HUG_SIZE,  # intrinsic by default for text; no IntrinsicWidth emitted
+    Feature.PERCENT_SIZE,  # lowered as computed box size, not FractionallySizedBox
     Feature.GRID,  # GridView exists but different semantics
     Feature.FILLS_GRADIENT,  # LinearGradient exists
     Feature.FILLS_IMAGE,  # DecorationImage
@@ -352,6 +352,8 @@ class {name}Screen extends StatelessWidget {{
         lines.append(f"  '{_escape_dart(text)}',")
         style_args: List[str] = []
         if typo is not None:
+            if typo.font_family:
+                style_args.append(f"fontFamily: '{typo.font_family}',")
             if typo.font_size is not None:
                 style_args.append(f"fontSize: {_fmt_num(typo.font_size)},")
             if typo.font_weight is not None:

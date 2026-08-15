@@ -50,7 +50,6 @@ _SWIFTUI_SUPPORTED = frozenset({
     Feature.HUG_SIZE,
     Feature.PADDING,
     Feature.GAP,  # spacing parameter
-    Feature.JUSTIFY,  # alignment on stacks
     Feature.ALIGN_ITEMS,
     Feature.FILLS_SOLID,  # .background(Color)
     Feature.BORDERS,  # .border() / .overlay
@@ -69,6 +68,7 @@ _SWIFTUI_SUPPORTED = frozenset({
 })
 
 _SWIFTUI_PARTIAL = frozenset({
+    Feature.JUSTIFY,  # no main-axis justification in SwiftUI stacks (Spacer idiom)
     Feature.GRID,  # LazyVGrid exists but different semantics
     Feature.FILLS_GRADIENT,  # LinearGradient exists but limited
     Feature.PER_CORNER_RADIUS,  # UnevenRoundedCornerShape (iOS 16+)

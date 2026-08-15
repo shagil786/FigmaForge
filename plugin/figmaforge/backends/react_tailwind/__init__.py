@@ -55,24 +55,6 @@ _REACT_TW_UNSUPPORTED = frozenset({
     Feature.AUTO_LAYOUT,  # React components, not a Tailwind concept
 })
 
-_REACT_TW_SUPPORTED = (WEB_COMMON_FEATURES - _REACT_TW_UNSUPPORTED) | frozenset({
-    Feature.GRID,
-    Feature.FILLS_GRADIENT,
-    Feature.SHADOWS,
-    Feature.CORNER_RADIUS,
-    Feature.OPACITY,
-    Feature.TEXT_DECORATION,
-    Feature.TEXT_WRAP,
-    Feature.OVERFLOW_CLIP,
-    Feature.OVERFLOW_SCROLL,
-    Feature.DESIGN_TOKENS,
-    Feature.TOKEN_REFERENCES,
-    Feature.COMPONENTS,
-    Feature.COMPONENT_INSTANCES,
-    Feature.BREAKPOINTS,
-    Feature.RESPONSIVE_CONSTRAINTS,
-})
-
 # Tailwind doesn't support some CSS features natively
 _REACT_TW_PARTIAL = frozenset({
     Feature.PER_CORNER_RADIUS,  # Tailwind supports via arbitrary values
@@ -89,6 +71,26 @@ _REACT_TW_PARTIAL = frozenset({
     Feature.IMAGE_ASSETS,  # Outside the common IR surface (spec non-goal)
     Feature.SVG_ASSETS,  # Outside the common IR surface (spec non-goal)
     Feature.PROTOTYPE_LINKS,  # Requires router wiring (spec non-goal)
+})
+
+_REACT_TW_SUPPORTED = (
+    WEB_COMMON_FEATURES - _REACT_TW_UNSUPPORTED - _REACT_TW_PARTIAL
+) | frozenset({
+    Feature.GRID,
+    Feature.FILLS_GRADIENT,
+    Feature.SHADOWS,
+    Feature.CORNER_RADIUS,
+    Feature.OPACITY,
+    Feature.TEXT_DECORATION,
+    Feature.TEXT_WRAP,
+    Feature.OVERFLOW_CLIP,
+    Feature.OVERFLOW_SCROLL,
+    Feature.DESIGN_TOKENS,
+    Feature.TOKEN_REFERENCES,
+    Feature.COMPONENTS,
+    Feature.COMPONENT_INSTANCES,
+    Feature.BREAKPOINTS,
+    Feature.RESPONSIVE_CONSTRAINTS,
 })
 
 

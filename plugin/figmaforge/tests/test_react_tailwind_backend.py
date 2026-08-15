@@ -439,7 +439,8 @@ class TestReactTailwindBackend(unittest.TestCase):
         self.assertIn("absolute_positioning", caps.unsupported_features)
         # Declared partial, never supported: image fills, assets, prototype
         # links — each has a named fallback or inline marker.
-        for feature in ("fills_image", "prototype_links", "svg_assets"):
+        for feature in ("fills_image", "prototype_links", "svg_assets",
+                        "image_assets"):
             self.assertIn(feature, caps.partial_features)
             self.assertNotIn(feature, caps.supported_features)
 

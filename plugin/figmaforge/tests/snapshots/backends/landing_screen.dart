@@ -24,6 +24,7 @@ class LandingScreen extends StatelessWidget {
                 child: Text(
                     'Welcome',
                     style: TextStyle(
+                      fontFamily: 'Inter',
                       fontSize: 32,
                       fontWeight: FontWeight.w700,
                       color: Color(0xFF141F3D),
@@ -44,6 +45,7 @@ class LandingScreen extends StatelessWidget {
                     Text(
                       'Click me',
                       style: TextStyle(
+                        fontFamily: 'Inter',
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
                         height: 1.5,
