@@ -1,18 +1,18 @@
 # Web-Backend Repair Regeneration through the Bundler Harness — Implementation Plan (Part 22)
 
-> **Branch:** `feat/part-22-web-backend-repair` (from main @ `a618e15`). See the [design spec](./2026-08-19-web-backend-repair-design.md) for the verified findings and the hardcoded-html_css problem.
+> **Branch:** `feat/part-22-web-backend-repair` (from main @ `a618e15`). See the [design spec](./2026-08-19-web-backend-repair-design.md) for the verified findings, the hardcoded-html_css problem, and the critical review (findings F1–F8, code-verified before implementation).
 > **Gate baseline:** Python **605 OK** (51 files) · TS **162 passing**, tsc clean · `claude plugin validate --strict` ✔. Expected after: **~620 / ~168**.
 > **Conventions:** test-first, one commit per task after the full suite goes green, commits on `feat/part-22-web-backend-repair`, PR against main (no merge, repo convention). Browser tests only where deterministic; unit tests inject a fake harness/builder/invoker (Parts 19–21 test convention). Bundler tests skippable without node_modules/chromium.
 
 ## Task 1 — `styles_override` seams for vue/svelte/react (Python, test-first)
 
-**Tests (red)** in a new `tests/test_styles_override_web.py`:
-- `vue`: generate a screen with per-node overrides `{node_id: {base: {background: "#00ff00"}, breakpoints: {}}}` → the scoped `<style>` contains `.n-<id> { … background: #00ff00 … }`; absent/empty override → byte-identical to today (determinism pair).
+**Tests (red)** in a new `tests/test_styles_override_web.py` (per the design review, F2/F3/F5/F6):
+- `vue`: generate a screen with per-node overrides `{node_id: {base: {background: "#00ff00"}, breakpoints: {}}}` → the scoped `<style>` contains `.n-<id> { … background: #00ff00 … }`; absent/empty override → byte-identical to today (determinism pair); an **absolute-positioned node's** override must NOT re-add `position: absolute` (override applied before the pop, F6).
 - `svelte`: same override → its scoped style block carries the repaired `background`.
-- `react`: override `background` on a solid-fill node → exactly one `bg-[<color>]` class with the override value (IR fill class suppressed); override `background` on a node with no fill → `bg-[…]` appears; override `paddingTop` → `pt-[…]` appears; absent/empty → byte-identical; a breakpoint override → `max-[…]:…` variant appears.
+- `react`: override `background` on a solid-fill node → exactly one `bg-[<color>]` class with the override value (IR fill suppressed); on an **image-fill node** → the `bg-[url(...)] bg-cover bg-center` classes are replaced by the override `bg-[#…]` (F3); on a node with no fill → `bg-[…]` appears; override `paddingTop` → `pt-[…]` (via the union-then-map design, F2); override `fontSize` → `text-[…]px`; override `color` → `text-[…]`; a breakpoint override → `max-[…]:…` variant; absent/empty → byte-identical.
 - html_css regression pair (already covered by Part 20 tests — re-run them).
 
-**Implement**: `backends/web_common.py` (`ScopedCssGenerator` `overrides=` param + union in `_node`), `backends/vue/__init__.py` + `backends/svelte/__init__.py` (thread `opts["styles_override"]`), `backends/react_tailwind/__init__.py` (thread overrides through `_render_component`/`_render_node` into `_classes_for`; add `background` → `bg-[…]` mapping + precedence).
+**Implement**: `backends/web_common.py` (`ScopedCssGenerator` `overrides=` param + union in `_node` after `_extend`, before the absolute pop), `backends/vue/__init__.py` + `backends/svelte/__init__.py` (thread `opts["styles_override"]`), `backends/react_tailwind/__init__.py` (thread overrides through `_render_component`/`_render_node` into `_classes_for`; apply `override.base` into the computed style first, then add `background` → `bg-[…]`, `color` → `text-[…]`, `fontSize` → `text-[…]px` mappings + fill suppression incl. image fills; breakpoint overrides synthesize `max-[{width}px]:{_css_class(prop, value)}`).
 
 **Verify**: new tests green; full Python suite **605 + N OK**; golden/snapshot tests unchanged.
 **Commit**: `feat(backends): styles_override seam for vue/svelte/react - repaired styles reach all web backends (byte-identical when absent)`.
@@ -22,12 +22,13 @@
 **Tests (red)** in `tests/test_pipeline_repair.py` (extend; fake harness):
 - `repair --backend react_tailwind` (fake harness converging) → payload `generated.backend == "react_tailwind"`, files under `out/generated/react_tailwind/` with the override applied (spot-check a `bg-[…]` class), `styles.repaired.json` written.
 - Same for `vue` and `svelte` (scoped CSS override present).
+- `--resolution <report>` → the regenerated react output keeps component refs + Part-21 fallback definitions and `component_instance approximated` markers (F1 — without it the fallback machinery vanishes); unreadable → exit 4. html_css regeneration is unaffected by a resolution arg.
 - `--backend flutter` / `swiftui` / unknown → exit 2 with the honest no-browser-harness reason.
 - Default (`--backend` omitted) → html_css exactly as today (byte-identical regression).
 - `--assets <manifest>` → image-fill nodes emit real `background-image`/`bg-[url(...)]` in the regenerated files (Part 18 contract); unreadable manifest → exit 4.
 - Exit-code contract unchanged (2/4/1); `iterations_run == 0` → `generated: null` (no regeneration).
 
-**Implement**: `scripts/pipeline.py` `_run_repair` — registry lookup, allowed backend set, `--assets` parser flag, `options={"styles_override", "assets"}`, files under `out/generated/<backend>/`, payload backend from the registry.
+**Implement**: `scripts/pipeline.py` `_run_repair` — registry lookup, allowed backend set, `--resolution` + `--assets` parser flags, `options={"styles_override", "assets"}`, `resolution=<loaded report>`, files under `out/generated/<backend>/`, payload backend from the registry.
 
 **Verify**: new tests green; full Python suite **N + OK**; the Part 20 repair CLI tests still pass (html_css default unchanged).
 **Commit**: `feat(pipeline): repair --backend regenerates react/vue/svelte with styles_override + --assets (native rejected honestly)`.
@@ -35,13 +36,13 @@
 ## Task 3 — TS repair/verify backend threading (TS, test-first)
 
 **Tests (red)** in `runtime/tests/backend_codegen.test.ts`:
-- `invokeRepair` with a backend → the spawn includes `--backend <name>` (mock spawn arg capture).
-- `createRepairStageHandler` (real Python front half, faked spawn or real `invokeRepair` with a fake harness via the pipeline's seam): a failing external-baseline run for `react_tailwind` → the regenerated manifest's backend is `react_tailwind` (not html_css).
-- `createVerifyStageHandler` post-repair: generated backend `react_tailwind` → re-renders through the **bundler invoker** (faked) with the regenerated dir + shared asset manifest + viewport, compares each screenshot against the same baseline, `source: "re-rendered"`, score beats the pre-repair score, metrics updated.
+- `invokeRepair` with a backend → the spawn includes `--backend <name>` (mock spawn arg capture); with a resolutionJson → the spawn also includes `--resolution <staged path>` (F1).
+- `createRepairStageHandler` (real Python front half, faked spawn or real `invokeRepair` with a fake harness via the pipeline's seam): a failing external-baseline run for `react_tailwind` → the regenerated manifest's backend is `react_tailwind` (not html_css); missing `generatedManifest` → html_css default with a note, no crash (F7).
+- `createVerifyStageHandler` post-repair: generated backend `react_tailwind` → re-renders through the **bundler invoker** (faked) with the regenerated dir + shared asset manifest + viewport, compares each screenshot against the same baseline, `source: "re-rendered"`, a real re-measured score, metrics updated.
 - html_css post-repair → still the per-file `invokeRender` path (regression guard).
 - Non-browser regenerated backend (guard) → inert note, no spawn.
 
-**Implement**: `runtime/src/core/backend_codegen.ts` — `invokeRepair(…, backend)`, `createRepairStageHandler` reads `generatedManifest.backend`, `createVerifyStageHandler` bundler branch (injectable `bundleInvoker`).
+**Implement**: `runtime/src/core/backend_codegen.ts` — `invokeRepair(…, backend, resolutionJson)`, `createRepairStageHandler` reads `generatedManifest.backend` (+ stages `resolutionJson`), `createVerifyStageHandler` bundler branch (injectable `bundleInvoker`).
 
 **Verify**: new tests green; TS suite **162 + N passing**, tsc clean.
 **Commit**: `feat(runtime): repair regenerates the run's backend; verify re-bundles web-backend repair output against the same baseline`.
@@ -49,7 +50,7 @@
 ## Task 4 — Money test: end-to-end red-baseline web repair (skippable)
 
 **Tests** in `runtime/tests/test_all.ts` (CLI level, mirror the Part 20 red-baseline test):
-- `run --target=react+tailwind --baseline <red>` (real npm + chromium, generous timeout) → exit 0, `Repairs:` ≥ 1, regenerated **react** files under `<run>/repair/generated/react_tailwind/` (`.tsx` present), verify artifact `source: "re-rendered"` with a real score, `Verification:` line printed.
+- `run --target=react+tailwind --baseline <red>` (real npm + chromium, generous timeout) → exit 0, `Repairs:` ≥ 1, regenerated **react** files under `<run>/repair/generated/react_tailwind/` (`.tsx` present), verify artifact `source: "re-rendered"` with a real score, `Verification:` line printed. Per F4: **no monotonic-improvement assertion** — a FAILED verification is still valid output.
 - Skip cleanly without chromium/npm (env gate).
 
 **Verify**: money test green locally; TS suite green.
