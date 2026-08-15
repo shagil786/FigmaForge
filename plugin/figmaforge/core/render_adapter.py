@@ -30,6 +30,7 @@ class RenderHarnessLike(Protocol):
         content_html: str,
         viewport_spec: Dict[str, int],
         build_id: str,
+        full_page: bool = True,
     ) -> RenderResult: ...
 
 
@@ -61,7 +62,8 @@ def make_render_callable(
         viewport = {"width": width, "height": int(default_height)}
         content_html = generate_render_html(document, styles, viewport)
         result = harness.render(
-            content_html, viewport, build_id=f"repair-iter-{iteration}"
+            content_html, viewport, build_id=f"repair-iter-{iteration}",
+            full_page=False,
         )
         return result.layout_metadata, str(result.screenshot_path)
 

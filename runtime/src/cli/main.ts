@@ -21,6 +21,7 @@ import { ArtifactStore } from "../core/artifacts.js";
 import { ToolRegistry } from "../core/tools.js";
 import { BudgetTracker } from "../core/budget.js";
 import { PipelineCoordinator } from "../core/pipeline.js";
+import { ScreenshotComparator } from "../core/screenshot_compare.js";
 
 // ---------------------------------------------------------------------------
 // Argument parsing
@@ -428,9 +429,31 @@ async function cmdCompare(args: CliArgs): Promise<void> {
 
   // Look for screenshots to compare
   const screenshotPath = path.join(rendersDir, "screenshot.png");
+  const baselineFlag = args.flags["baseline"];
   if (fs.existsSync(screenshotPath)) {
-    console.log(`  Screenshot found at ${screenshotPath}`);
-    console.log(`  No reference image to compare against. Use 'figmaforge run' for full comparison.`);
+    if (!baselineFlag) {
+      console.log(`  Screenshot found at ${screenshotPath}`);
+      console.log(`  No baseline provided — pass --baseline <path.png> to pixel-diff.`);
+      return;
+    }
+    const baselinePath = path.resolve(baselineFlag);
+    if (!fs.existsSync(baselinePath)) {
+      console.log(`  Baseline not found at ${baselinePath}`);
+      return;
+    }
+    const comparator = new ScreenshotComparator(
+      { colorThreshold: 16 },
+      { pythonBin: config.pythonBin, pluginDir: config.pluginDir },
+    );
+    const result = comparator.compare(screenshotPath, baselinePath);
+    if (result.identical) {
+      console.log("  Screenshots are identical.");
+    } else if (result.diffPixelCount < 0) {
+      console.log("  Pixel diff failed (decode or size error); images are not identical.");
+    } else {
+      console.log(`  Similarity: ${result.similarity.toFixed(4)}`);
+      console.log(`  Diff pixels: ${result.diffPixelCount} / ${result.totalPixels} (${(result.diffPercentage * 100).toFixed(2)}%)`);
+    }
   } else {
     console.log("  No diff report or screenshots found. Run the pipeline first.");
   }

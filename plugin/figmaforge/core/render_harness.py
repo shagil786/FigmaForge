@@ -79,7 +79,13 @@ class RenderHarness:
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-    def render(self, content_html: str, viewport_spec: Dict[str, int], build_id: str) -> RenderResult:
+    def render(
+        self,
+        content_html: str,
+        viewport_spec: Dict[str, int],
+        build_id: str,
+        full_page: bool = True,
+    ) -> RenderResult:
         """
         Renders the provided HTML to a screenshot and extracts layout metadata.
 
@@ -114,10 +120,16 @@ class RenderHarness:
             with sync_playwright() as p:
                 browser = p.chromium.launch()
                 try:
-                    page = browser.new_page(viewport=viewport)
+                    page = browser.new_page(
+                        viewport=viewport, device_scale_factor=1
+                    )
                     page.goto(html_path.as_uri(), timeout=15_000)
                     page.wait_for_load_state("networkidle", timeout=15_000)
-                    page.screenshot(path=str(screenshot_path), full_page=True)
+                    # Deterministic capture: wait for fonts before shooting.
+                    page.evaluate("document.fonts.ready")
+                    page.screenshot(
+                        path=str(screenshot_path), full_page=full_page
+                    )
                     meta = page.evaluate("window.__figmaforge_meta || {}")
                 finally:
                     try:

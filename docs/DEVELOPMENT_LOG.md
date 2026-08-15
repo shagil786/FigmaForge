@@ -264,11 +264,12 @@ Addressed all four remaining limitations from the initial Part 9 implementation.
   - XSS prevention via HTML entity escaping in text and attributes
   - CSS-in-JS conversion (camelCase → kebab-case)
 
-#### 3. Pixel-Level Screenshot Comparison
+#### 3. Screenshot Comparison (scaffold)
 - **`screenshot_compare.ts`** (231 lines): `ScreenshotComparator` class with:
   - SHA-256 content hashing for fast identical-image detection
-  - Structural comparison using buffer size analysis
-  - `compare()`: Full comparison returning similarity score, diff pixel count, dimensions, hashes
+  - A buffer-size heuristic standing in for real comparison (superseded by the
+    real pixel diff in Part 12 — this Part 10 version did NOT decode pixels)
+  - `compare()`: Comparison returning similarity score, diff pixel count, dimensions, hashes
   - `passesThreshold()`: Boolean check against configurable threshold
   - `generateDiffReport()`: Severity-classified diff report with region detection
   - File and buffer comparison modes
@@ -408,4 +409,53 @@ Replaced every synthetic render path with real headless-chromium rendering via P
 
 ### Non-goals (deferred)
 Pixel/perceptual diffing (`_diff_raster`), real PNG decode in `screenshot_compare.ts`, Figma baseline download, stub backend implementations.
+
+---
+
+## Part 12 — Pixel Diffing + Figma Baseline Download
+
+Real pixel-level comparison: a stdlib-only PNG codec feeds a per-pixel diff with region
+detection and node attribution; Figma baseline PNGs download into the content-addressed
+asset store; the repair loop scores renders with a capped pixel weight. The IR remains the
+immutable source of truth — the baseline is a supplementary signal.
+
+### What Changed
+1. **`core/png_codec.py`** — new: stdlib `zlib`+`struct` PNG decode (8-bit RGB/RGBA, color
+   types 2/6, non-interlaced, filters 0–4 incl. Paeth) + minimal filter-0 `encode_png`;
+   typed `PngError` for everything unsupported.
+2. **`core/pixel_diff.py`** — new: per-pixel comparison (`color_threshold`, diffRatio, MAE),
+   contiguous-region detection (`min_region_area`), bbox-intersection node attribution, and
+   the `python3 -m core.pixel_diff` CLI (one JSON line; clean error sentinel).
+3. **`core/figma_assets.py`** — new: `download_baselines()` over `FigmaClient.get_images`
+   with injectable transport, bounded retry, expiry detection, content-addressed dedup,
+   optional `AssetHandler.mark_downloaded`; typed `FigmaAssetError` hierarchy.
+4. **`core/diff_engine.py`** — real `_diff_raster`; `diff()` gains optional
+   `render_screenshot`/`baseline_png`/`raster_options` (fully backward compatible);
+   `DiffReport.raster_stats`; overall score composes
+   `(1 − pixel_weight)·structural + pixel_weight·pixels` only when a raster diff ran.
+5. **`core/repair_loop.py`** — `RepairConfig` knobs (`baseline_png`, `color_threshold=16`,
+   `noise_floor=0.01`, `min_region_area=8`, `pixel_weight=0.15`); both diff call sites pass
+   the screenshot the loop already receives; zero control-flow changes.
+6. **Deterministic capture** — `RenderHarness.render(..., full_page=True)` optional param;
+   `device_scale_factor=1`; `document.fonts.ready` wait; animations/transitions killed in
+   `render_html.py`; the repair adapter passes `full_page=False`.
+7. **`core/repair_classifier.py`** — `pixel_mismatch` registered → `color` category.
+8. **`runtime/src/core/screenshot_compare.ts`** — real shell-out to `core.pixel_diff`
+   (hash fast-path kept, `ScreenshotComparison` interface preserved, clean typed failure on
+   garbage/missing python); `cmdCompare` accepts `--baseline`.
+9. **Docs** — `docs/repair-loop.md` pixel-diff section; Part 10 overclaim corrected; this
+   entry.
+
+### Testing
+- Python: 56 new tests (png codec 17, pixel diff 15, figma assets 7, diff engine 8,
+  repair-loop raster 3, deterministic capture 4 — chromium-gated tests RUN and pass —
+  classifier 2). Full gate: **370** Python tests OK, zero
+  skips.
+- TS: comparator suite replaced with real-PNG shell-out tests (11 tests, was 7). Full gate:
+  **113** runtime tests passing.
+- `claude plugin validate --strict` clean.
+
+### Non-goals (deferred)
+SSIM/perceptual metrics, image resampling, diff heatmap output, baseline auto-refresh,
+native TS pixel diffing, grayscale/palette/16-bit PNG support.
 

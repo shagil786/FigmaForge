@@ -122,7 +122,7 @@ class TestRenderHarnessContract(unittest.TestCase):
 
         fake.p.chromium.launch.assert_called_once_with()
         fake.browser.new_page.assert_called_once_with(
-            viewport={"width": 1440, "height": 900}
+            viewport={"width": 1440, "height": 900}, device_scale_factor=1
         )
         fake.page.goto.assert_called_once_with(
             (self.out_dir / "build1.html").as_uri(), timeout=15_000
@@ -133,7 +133,8 @@ class TestRenderHarnessContract(unittest.TestCase):
         fake.page.screenshot.assert_called_once_with(
             path=str(self.out_dir / "build1.png"), full_page=True
         )
-        fake.page.evaluate.assert_called_once_with("window.__figmaforge_meta || {}")
+        fake.page.evaluate.assert_any_call("document.fonts.ready")
+        fake.page.evaluate.assert_any_call("window.__figmaforge_meta || {}")
         fake.browser.close.assert_called_once_with()
 
         self.assertEqual(result.screenshot_path, self.out_dir / "build1.png")
@@ -153,7 +154,7 @@ class TestRenderHarnessContract(unittest.TestCase):
         fake.install(self)
         self.harness.render("<html></html>", {"width": 390, "height": 844}, "mobile")
         fake.browser.new_page.assert_called_once_with(
-            viewport={"width": 390, "height": 844}
+            viewport={"width": 390, "height": 844}, device_scale_factor=1
         )
 
     def test_render_non_dict_meta_coerced_to_empty(self):
@@ -194,6 +195,16 @@ class TestRenderHarnessContract(unittest.TestCase):
         fake.install(self)
         with self.assertRaises(ValueError):
             self.harness.render("<html></html>", {"w": 800, "h": 600}, "../evil")
+
+    def test_full_page_false_passed_to_screenshot(self):
+        fake = _FakePlaywright({})
+        fake.install(self)
+        self.harness.render(
+            "<html></html>", {"w": 800, "h": 600}, "fixed", full_page=False
+        )
+        fake.page.screenshot.assert_called_once_with(
+            path=str(self.out_dir / "fixed.png"), full_page=False
+        )
 
 
 if __name__ == "__main__":

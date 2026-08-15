@@ -59,6 +59,7 @@ _MISMATCH_TYPE_TO_CATEGORY: Dict[str, str] = {
     "extra_in_render": CATEGORY_EXTRA_ELEMENT,
     "spacing_mismatch": CATEGORY_SPACING,
     "color_mismatch": CATEGORY_COLOR,
+    "pixel_mismatch": CATEGORY_COLOR,
     "token_mismatch": CATEGORY_TOKEN,
     "asset_mismatch": CATEGORY_ASSET,
     "responsive_mismatch": CATEGORY_RESPONSIVE,

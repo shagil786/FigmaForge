@@ -70,8 +70,31 @@ pip install playwright && playwright install chromium
 ```
 
 When chromium is unavailable, `RenderHarness.render` raises `RenderHarnessError` naming
-the install command, and browser-dependent tests skip. Pixel diffing (`_diff_raster`)
-remains a placeholder.
+the install command, and browser-dependent tests skip.
+
+## Pixel Diffing (Part 12)
+
+`DiffEngine.diff(plan, render_meta, render_screenshot, baseline_png)` additionally runs a
+real raster comparison when BOTH a rendered screenshot and a Figma baseline PNG are
+supplied. The baseline PNG is a **supplementary reference**: the IR remains the immutable
+source of truth for repair decisions, and the raster signal can move the overall similarity
+by at most `pixel_weight` (default 0.15). When either file is missing or undecodable the
+loop silently degrades to structural-only diffing.
+
+Config knobs (`RepairConfig`, all optional):
+
+| Knob | Default | Meaning |
+|------|---------|---------|
+| `baseline_png` | `None` | Path to the Figma baseline PNG; `None` disables raster diffing |
+| `color_threshold` | `16` | Max per-channel delta treated as identical |
+| `noise_floor` | `0.01` | diffRatio at or below this counts as a clean render |
+| `min_region_area` | `8` | Contiguous diff regions below 8px are ignored (AA noise) |
+| `pixel_weight` | `0.15` | Capped raster weight: `(1 − w)·structural + w·pixels` |
+
+`pixel_mismatch` candidates are classified into the `color` category; the diff report
+carries `raster_stats` (`mae`, `diff_percentage`, `region_count`) whenever a raster diff
+ran. Baselines are downloaded via `core.figma_assets.download_baselines` into the
+content-addressed asset store.
 
 ## Repair Candidate Categories
 

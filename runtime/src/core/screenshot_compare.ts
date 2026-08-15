@@ -1,15 +1,18 @@
 /**
- * Pixel-level screenshot comparison.
+ * Pixel-level screenshot comparison (Part 12).
  *
- * Compares two PNG screenshots using structural similarity analysis.
- * Implements a lightweight SSIM-inspired algorithm without external
- * dependencies — operates on raw pixel data.
- *
- * Also provides a simpler pixel-diff approach for quick comparisons.
+ * One real implementation, two entry points: the pixel math lives in Python
+ * (`core.pixel_diff`); this module shells out to it for non-identical
+ * buffers. The SHA-256 hash fast-path detects identical images without
+ * spawning anything. Garbage output or a missing python interpreter produce
+ * a clean typed failure (similarity 0, −1 sentinels) — never a throw.
  */
 
 import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import * as crypto from "node:crypto";
+import { spawnSync } from "node:child_process";
 
 // ---------------------------------------------------------------------------
 // Comparison result
@@ -43,47 +46,78 @@ export interface ComparisonOptions {
   resize?: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// PNG decoder (minimal, for comparison purposes)
-// ---------------------------------------------------------------------------
-
-interface RawImage {
+/** Fields parsed from the python CLI's JSON line. */
+export interface PixelDiffResult {
+  similarity: number;
+  diffPixelCount: number;
+  diffPercentage: number;
+  totalPixels: number;
   width: number;
   height: number;
-  data: Uint8Array;  // RGBA pixel data
+  identical: boolean;
+  meanAbsoluteError: { r: number; g: number; b: number };
 }
 
+const DEFAULT_PLUGIN_DIR = "./plugin/figmaforge";
+
+// ---------------------------------------------------------------------------
+// Python CLI output parsing (exported for tests)
+// ---------------------------------------------------------------------------
+
 /**
- * Decode a PNG file to raw RGBA pixels.
- * Uses Node.js built-in capabilities — no external dependencies.
- *
- * For environments without canvas support, we use a minimal PNG decoder
- * that handles uncompressed PNGs. For compressed PNGs, we fall back to
- * hash-based comparison.
+ * Parse the last non-empty line of `core.pixel_diff` stdout as the result
+ * JSON. Returns null for garbage, empty output, or error payloads
+ * (`{"error": ...}` lacks the required numeric fields).
  */
-function decodePng(buffer: Buffer): RawImage | null {
-  // Check PNG signature
-  const PNG_SIG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-  if (!buffer.subarray(0, 8).equals(PNG_SIG)) {
-    return null;
+export function parsePixelDiffOutput(stdout: string): PixelDiffResult | null {
+  const lines = stdout.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+  if (lines.length === 0) return null;
+  const last = lines[lines.length - 1];
+  try {
+    const obj = JSON.parse(last);
+    if (
+      obj && typeof obj === "object"
+      && typeof obj.similarity === "number"
+      && typeof obj.diffPixelCount === "number"
+      && typeof obj.diffPercentage === "number"
+      && typeof obj.totalPixels === "number"
+      && typeof obj.width === "number"
+      && typeof obj.height === "number"
+      && typeof obj.identical === "boolean"
+      && obj.meanAbsoluteError
+      && typeof obj.meanAbsoluteError.r === "number"
+      && typeof obj.meanAbsoluteError.g === "number"
+      && typeof obj.meanAbsoluteError.b === "number"
+    ) {
+      return {
+        similarity: obj.similarity,
+        diffPixelCount: obj.diffPixelCount,
+        diffPercentage: obj.diffPercentage,
+        totalPixels: obj.totalPixels,
+        width: obj.width,
+        height: obj.height,
+        identical: obj.identical,
+        meanAbsoluteError: {
+          r: obj.meanAbsoluteError.r,
+          g: obj.meanAbsoluteError.g,
+          b: obj.meanAbsoluteError.b,
+        },
+      };
+    }
+  } catch {
+    // not JSON — fall through
   }
+  return null;
+}
 
-  // For a full implementation, we'd need to parse IHDR, IDAT, IEND chunks
-  // and decompress with zlib. Since we're stdlib-only, we'll use a
-  // hash-based approach for actual comparison and provide the framework
-  // for when a real decoder is available.
+// ---------------------------------------------------------------------------
+// PNG dimension probe (IHDR only — full decode lives in Python)
+// ---------------------------------------------------------------------------
 
-  // Extract dimensions from IHDR chunk
-  if (buffer.length < 24) return null;
-
-  const width = buffer.readUInt32BE(16);
-  const height = buffer.readUInt32BE(20);
-
-  return {
-    width,
-    height,
-    data: new Uint8Array(buffer),  // Store raw buffer for hashing
-  };
+function pngDimensions(buffer: Buffer): { width: number; height: number } | null {
+  const PNG_SIG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  if (buffer.length < 24 || !buffer.subarray(0, 8).equals(PNG_SIG)) return null;
+  return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
 }
 
 // ---------------------------------------------------------------------------
@@ -92,12 +126,20 @@ function decodePng(buffer: Buffer): RawImage | null {
 
 export class ScreenshotComparator {
   private options: Required<ComparisonOptions>;
+  private pythonBin: string;
+  private pluginDir: string;
 
-  constructor(options?: ComparisonOptions) {
+  constructor(
+    options?: ComparisonOptions,
+    runtime?: { pythonBin?: string; pluginDir?: string },
+  ) {
     this.options = {
       colorThreshold: options?.colorThreshold ?? 16,
       resize: options?.resize ?? false,
     };
+    // Same resolution pattern as ctx_pythonBin() in render_handler.ts.
+    this.pythonBin = runtime?.pythonBin ?? (process.env.PYTHON_BIN ?? "python3");
+    this.pluginDir = runtime?.pluginDir ?? DEFAULT_PLUGIN_DIR;
   }
 
   /**
@@ -118,16 +160,16 @@ export class ScreenshotComparator {
     const hashA = crypto.createHash("sha256").update(bufA).digest("hex").slice(0, 16);
     const hashB = crypto.createHash("sha256").update(bufB).digest("hex").slice(0, 16);
 
-    // Fast path: identical content
+    // Fast path: identical content — no python spawn needed.
     if (hashA === hashB) {
-      const img = decodePng(bufA);
+      const dims = pngDimensions(bufA);
       return {
         similarity: 1.0,
         diffPixelCount: 0,
         diffPercentage: 0,
-        totalPixels: img ? img.width * img.height : 0,
-        width: img?.width ?? 0,
-        height: img?.height ?? 0,
+        totalPixels: dims ? dims.width * dims.height : 0,
+        width: dims?.width ?? 0,
+        height: dims?.height ?? 0,
         hashA,
         hashB,
         identical: true,
@@ -135,57 +177,57 @@ export class ScreenshotComparator {
       };
     }
 
-    // Decode both images
-    const imgA = decodePng(bufA);
-    const imgB = decodePng(bufB);
-
-    if (!imgA || !imgB) {
-      // Can't decode — fall back to hash comparison
-      return {
-        similarity: 0.0,
-        diffPixelCount: -1,
-        diffPercentage: -1,
-        totalPixels: 0,
-        width: 0,
-        height: 0,
-        hashA,
-        hashB,
-        identical: false,
-        meanAbsoluteError: { r: -1, g: -1, b: -1 },
-      };
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "figmaforge-diff-"));
+    const fileA = path.join(dir, "a.png");
+    const fileB = path.join(dir, "b.png");
+    try {
+      fs.writeFileSync(fileA, bufA);
+      fs.writeFileSync(fileB, bufB);
+      return this.diffViaPython(fileA, fileB, hashA, hashB);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
     }
+  }
 
-    // Compare dimensions
-    const width = Math.max(imgA.width, imgB.width);
-    const height = Math.max(imgA.height, imgB.height);
-    const totalPixels = width * height;
-
-    // For raw buffer comparison (since we can't fully decode PNGs without zlib),
-    // we compare the compressed data structurally
-    const sizeDiff = Math.abs(bufA.length - bufB.length) / Math.max(bufA.length, bufB.length);
-    const dataSimilarity = 1.0 - Math.min(1.0, sizeDiff);
-
-    // Estimate pixel-level diff from structural differences
-    const diffPixelCount = Math.round(totalPixels * (1.0 - dataSimilarity));
-    const diffPercentage = diffPixelCount / totalPixels;
-    const similarity = dataSimilarity;
-
-    return {
-      similarity,
-      diffPixelCount,
-      diffPercentage,
-      totalPixels,
-      width,
-      height,
+  private diffViaPython(
+    fileA: string,
+    fileB: string,
+    hashA: string,
+    hashB: string,
+  ): ScreenshotComparison {
+    const failure: ScreenshotComparison = {
+      similarity: 0.0,
+      diffPixelCount: -1,
+      diffPercentage: -1,
+      totalPixels: 0,
+      width: 0,
+      height: 0,
       hashA,
       hashB,
       identical: false,
-      meanAbsoluteError: {
-        r: (1.0 - dataSimilarity) * 255,
-        g: (1.0 - dataSimilarity) * 255,
-        b: (1.0 - dataSimilarity) * 255,
-      },
+      meanAbsoluteError: { r: -1, g: -1, b: -1 },
     };
+
+    try {
+      const result = spawnSync(
+        this.pythonBin,
+        [
+          "-m", "core.pixel_diff",
+          "--a", fileA,
+          "--b", fileB,
+          "--threshold", String(this.options.colorThreshold),
+        ],
+        { cwd: this.pluginDir, encoding: "utf-8", timeout: 30_000 },
+      );
+      if (result.error || result.status !== 0) return failure;
+
+      const parsed = parsePixelDiffOutput(result.stdout ?? "");
+      if (!parsed) return failure;
+
+      return { ...parsed, hashA, hashB };
+    } catch {
+      return failure;
+    }
   }
 
   /**

@@ -101,6 +101,7 @@ def generate_render_html(
   <title>{_html.escape(title)}</title>
   <style>
     * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+    * {{ animation: none !important; transition: none !important; caret-color: transparent; }}
     body {{
       width: {width}px;
       height: {height}px;
