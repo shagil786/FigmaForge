@@ -130,21 +130,32 @@ PYTHON_BIN=/opt/homebrew/bin/python3.14 node dist/runtime/src/cli/main.js run \
   --no-approval --output-dir=./figmaforge-output
 ```
 
-The `run` command exercises the **full front half** of the pipeline: ingest →
-normalize → resolve → layout → generate, each a real stage that shells out to
-`scripts/pipeline.py` and stores its own artifact. Artifacts land under
-`./figmaforge-output/<run-id>/artifacts/`:
+The `run` command exercises the **full six-stage front half** of the pipeline:
+ingest → normalize → resolve → layout → assets → generate, each a real stage
+that shells out to `scripts/pipeline.py` and stores its own artifact.
+Artifacts land under `./figmaforge-output/<run-id>/artifacts/`:
 
 - `ingest_output_*.json` — the normalized Figma file (`figma_raw`)
 - `normalize_output_*.json` — the design IR (`design_ir`)
 - `resolve_output_*.json` — the component/token resolution report (`resolution_report`)
 - `layout_output_*.json` — the inferred layout plan (`layout_plan`)
+- `assets_output_*.json` — the asset manifest (`asset_manifest`); downloaded
+  assets are content-addressed (SHA-256, two-level store) under
+  `./figmaforge-output/<run-id>/assets/`
 - `generate_output_*.json` — the backend manifest (`generated_code`); the generated
   files are under `./figmaforge-output/<run-id>/generated/<backend>/`
 
 Each stage consumes the previous stage's JSON artifact directly (the IR and
 layout-plan JSON round-trip loaders make this lossless), and `generate` lowers
 the staged artifacts rather than recomputing.
+
+The assets stage collects the image/SVG references the IR carries (node `asset`
+refs, the document `assets` map, image fills), downloads them through the
+`figma_assets` retry/cap transport, and validates SVG bodies before storing.
+Offline fixture runs carry no assets, so they produce a deterministic empty
+manifest; a live run whose IR still has unresolved `image_ref`s needs
+`FIGMA_TOKEN` (exit 3, same as `ingest --file-key`) to resolve them via the
+Figma images API.
 
 Valid `--target` keys (those with Python backends): `html+css`,
 `react+tailwind`, `vue+scoped_css`, `svelte+scoped_css`,
@@ -171,5 +182,5 @@ The demo's verification is **structural** by design (repo rule): generated
 code is never compiled (no swiftc/dart/tsc) and generated apps are never
 executed. The gate is: all six backends generate cleanly, the manifests and
 loss counts match each backend's declarations, and the Python
-(`python3.14 -m unittest discover -s tests`, 499 tests) + TS
-(`node dist/runtime/tests/run_all.js`, 128 tests) suites are green.
+(`python3.14 -m unittest discover -s tests`, 515 tests) + TS
+(`node dist/runtime/tests/run_all.js`, 131 tests) suites are green.
