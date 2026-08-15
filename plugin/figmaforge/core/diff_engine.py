@@ -13,16 +13,17 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from .pixel_diff import (
     DEFAULT_COLOR_THRESHOLD,
     DEFAULT_MIN_REGION_AREA,
+    DEFAULT_NOISE_FLOOR,
+    DEFAULT_SSIM_THRESHOLD,
     attribute_regions,
     compare_images,
     detect_regions,
+    regional_verdict,
 )
 from .png_codec import PngError, decode_png
-from .ssim import DEFAULT_WINDOW, ssim, ssim_region
+from .ssim import ssim
 
-DEFAULT_NOISE_FLOOR = 0.01
 DEFAULT_PIXEL_WEIGHT = 0.15
-DEFAULT_SSIM_THRESHOLD = 0.95
 
 
 @dataclass
@@ -227,7 +228,7 @@ class DiffEngine:
                 raster_stats["min_region_ssim"] = None
                 raster_stats["ssim_clean"] = True
             else:
-                min_region_ssim, clean = self._regional_verdict(
+                min_region_ssim, clean = regional_verdict(
                     shot, base, regions, options.ssim_threshold,
                 )
                 if not regions:
@@ -261,58 +262,6 @@ class DiffEngine:
             })
 
         return mismatches, raster_stats, diff_ratio, False
-
-    def _regional_verdict(
-        self,
-        shot: PngImage,
-        base: PngImage,
-        regions: List[Dict[str, int]],
-        ssim_threshold: float,
-        window: int = DEFAULT_WINDOW,
-    ) -> Tuple[Optional[float], bool]:
-        """Per-region SSIM verdict (Part 13, review fix F1/F3).
-
-        For each diff region: grow the bbox to exactly ``window x window``
-        (clamped to image bounds) so the window math is well-defined, then
-        score SSIM over the grown bbox at full resolution. Returns
-        ``(min_region_ssim, clean)`` where ``clean`` is True only if EVERY
-        region was measurable AND scored at or above ``ssim_threshold``.
-        A region that cannot host the window (sub-window image axis) gets
-        NO verdict and forces ``clean = False`` — the conservative
-        direction: the gate only suppresses changes it could measure.
-        With zero regions (scattered sub-min-area noise) the caller falls
-        back to the global downsampled verdict.
-        """
-        min_region_ssim: Optional[float] = None
-        clean = True
-        for region in regions:
-            rx, ry = region["x"], region["y"]
-            rw, rh = region["width"], region["height"]
-            if rw < window or rh < window:
-                gx = max(
-                    0, min(shot.width - window, rx - (window - rw) // 2)
-                )
-                gy = max(
-                    0, min(shot.height - window, ry - (window - rh) // 2)
-                )
-                gw, gh = window, window
-            else:
-                gx, gy, gw, gh = rx, ry, rw, rh
-            gw = min(gw, shot.width - gx)
-            gh = min(gh, shot.height - gy)
-            if gw < window or gh < window:
-                clean = False  # cannot measure → treat as real
-                continue
-            try:
-                value = ssim_region(shot, base, gx, gy, gw, gh, window)
-            except ValueError:
-                clean = False
-                continue
-            if min_region_ssim is None or value < min_region_ssim:
-                min_region_ssim = value
-            if value < ssim_threshold:
-                clean = False
-        return min_region_ssim, clean
 
     @staticmethod
     def _root_node_id(plan: Any) -> str:

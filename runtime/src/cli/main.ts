@@ -453,6 +453,11 @@ async function cmdCompare(args: CliArgs): Promise<void> {
     } else {
       console.log(`  Similarity: ${result.similarity.toFixed(4)}`);
       console.log(`  Diff pixels: ${result.diffPixelCount} / ${result.totalPixels} (${(result.diffPercentage * 100).toFixed(2)}%)`);
+      if (result.ssimClean === true) {
+        console.log(`  Perceptually identical: ${result.diffPixelCount} diff pixels are within visual noise (SSIM ${(result.ssim ?? 0).toFixed(4)}).`);
+      } else if (result.ssimClean === false) {
+        console.log(`  Perceptual change: SSIM ${(result.ssim ?? -1).toFixed(4)}, min-region SSIM ${(result.minRegionSsim ?? -1).toFixed(4)}.`);
+      }
     }
   } else {
     console.log("  No diff report or screenshots found. Run the pipeline first.");

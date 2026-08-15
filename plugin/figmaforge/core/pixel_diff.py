@@ -28,9 +28,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from .png_codec import PngError, PngImage, decode_png
+from .ssim import DEFAULT_WINDOW, ssim, ssim_region
 
 DEFAULT_COLOR_THRESHOLD = 16
 DEFAULT_MIN_REGION_AREA = 8
+# Shared with diff_engine (kept here so the CLI and the engine use ONE rule;
+# diff_engine re-imports these rather than redefining them).
+DEFAULT_NOISE_FLOOR = 0.01
+DEFAULT_SSIM_THRESHOLD = 0.95
 
 
 class _JsonArgumentParser(argparse.ArgumentParser):
@@ -225,23 +230,111 @@ def attribute_regions(
     return attributed
 
 
+def regional_verdict(
+    shot: PngImage,
+    base: PngImage,
+    regions: List[Dict[str, int]],
+    ssim_threshold: float = DEFAULT_SSIM_THRESHOLD,
+    window: int = DEFAULT_WINDOW,
+) -> Tuple[Optional[float], bool]:
+    """Per-region SSIM verdict (Part 13, review fixes F1/F3).
+
+    Shared by ``DiffEngine._diff_raster`` and the CLI so both use ONE rule.
+    For each diff region: grow the bbox to exactly ``window x window``
+    (clamped to image bounds) so the window math is well-defined, then score
+    SSIM over the grown bbox at full resolution. Returns
+    ``(min_region_ssim, clean)`` where ``clean`` is True only if EVERY region
+    was measurable AND scored at or above ``ssim_threshold``. A region that
+    cannot host the window (sub-window image axis) gets NO verdict and forces
+    ``clean = False`` — the conservative direction: the gate only suppresses
+    changes it could measure. With zero regions the caller falls back to the
+    global downsampled verdict.
+    """
+    min_region_ssim: Optional[float] = None
+    clean = True
+    for region in regions:
+        rx, ry = region["x"], region["y"]
+        rw, rh = region["width"], region["height"]
+        if rw < window or rh < window:
+            gx = max(0, min(shot.width - window, rx - (window - rw) // 2))
+            gy = max(0, min(shot.height - window, ry - (window - rh) // 2))
+            gw, gh = window, window
+        else:
+            gx, gy, gw, gh = rx, ry, rw, rh
+        gw = min(gw, shot.width - gx)
+        gh = min(gh, shot.height - gy)
+        if gw < window or gh < window:
+            clean = False  # cannot measure → treat as real
+            continue
+        try:
+            value = ssim_region(shot, base, gx, gy, gw, gh, window)
+        except ValueError:
+            clean = False
+            continue
+        if min_region_ssim is None or value < min_region_ssim:
+            min_region_ssim = value
+        if value < ssim_threshold:
+            clean = False
+    return min_region_ssim, clean
+
+
+def _ssim_signal(
+    shot: PngImage,
+    base: PngImage,
+    mask: bytearray,
+    diff_ratio: float,
+    ssim_threshold: float,
+) -> Tuple[Optional[float], Optional[float], bool]:
+    """``(ssim, min_region_ssim, clean)`` — the same gating rule as
+    ``DiffEngine._diff_raster`` (always-compute diagnostic; clean at/below
+    the noise floor; else per-region verdict with the global fallback for
+    scattered sub-min-area noise; unmeasurable → conservative not-clean)."""
+    try:
+        ssim_value = ssim(shot, base)
+    except ValueError:
+        ssim_value = None
+    if diff_ratio <= DEFAULT_NOISE_FLOOR:
+        return ssim_value, None, True
+    regions = detect_regions(
+        mask, shot.width, shot.height, DEFAULT_MIN_REGION_AREA,
+    )
+    if not regions:
+        clean = ssim_value is not None and ssim_value >= ssim_threshold
+        return ssim_value, None, clean
+    min_region_ssim, clean = regional_verdict(
+        shot, base, regions, ssim_threshold,
+    )
+    return ssim_value, min_region_ssim, clean
+
+
 def compare_png_files(
     path_a: Any,
     path_b: Any,
     color_threshold: int = DEFAULT_COLOR_THRESHOLD,
+    ssim_threshold: float = DEFAULT_SSIM_THRESHOLD,
 ) -> Dict[str, Any]:
     """Compare two PNG files. Never raises.
 
     Success → stats dict (``ok`` plus the CLI fields). Any decode, size, or
     I/O failure → ``{"ok": False, "error": "<message>"}``.
+
+    Part 13: successful results also carry the perceptual signal
+    ``ssim``/``min_region_ssim``/``ssim_clean`` (each ``null`` when the
+    images can't support an SSIM measurement).
     """
     try:
         img_a = decode_png(Path(path_a).read_bytes())
         img_b = decode_png(Path(path_b).read_bytes())
-        stats, _mask = compare_images(img_a, img_b, color_threshold)
+        stats, mask = compare_images(img_a, img_b, color_threshold)
     except (OSError, ValueError, MemoryError, PngError) as exc:
         return {"ok": False, "error": str(exc)}
     result = stats.to_cli_dict()
+    ssim_value, min_region_ssim, clean = _ssim_signal(
+        img_a, img_b, mask, stats.diff_ratio, ssim_threshold,
+    )
+    result["ssim"] = ssim_value
+    result["min_region_ssim"] = min_region_ssim
+    result["ssim_clean"] = clean
     result["ok"] = True
     return result
 
@@ -257,6 +350,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         "--threshold", type=int, default=DEFAULT_COLOR_THRESHOLD,
         help="per-channel color threshold (default 16)",
     )
+    parser.add_argument(
+        "--ssim-threshold", type=float, default=DEFAULT_SSIM_THRESHOLD,
+        help="min region SSIM for a clean perceptual verdict (default 0.95)",
+    )
     try:
         args = parser.parse_args(argv)
     except ValueError as exc:
@@ -267,8 +364,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.threshold < 0:
         print(json.dumps({"error": "threshold must be >= 0"}))
         return 1
+    if not 0.0 <= args.ssim_threshold <= 1.0:
+        print(json.dumps({"error": "ssim-threshold must be within [0, 1]"}))
+        return 1
 
-    result = compare_png_files(args.path_a, args.path_b, args.threshold)
+    result = compare_png_files(
+        args.path_a, args.path_b, args.threshold, args.ssim_threshold,
+    )
     if not result.pop("ok"):
         print(json.dumps({"error": result["error"]}))
         return 1

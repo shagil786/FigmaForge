@@ -37,6 +37,13 @@ export interface ScreenshotComparison {
   identical: boolean;
   /** Per-channel mean absolute error. */
   meanAbsoluteError: { r: number; g: number; b: number };
+  /** Global SSIM (0–1), null when unmeasurable (Part 13). */
+  ssim?: number | null;
+  /** Lowest per-region SSIM, null when no regions/verdicts (Part 13). */
+  minRegionSsim?: number | null;
+  /** Perceptual verdict: true = clean (identical or visually identical),
+   *  false = real change, null = unavailable (Part 13). */
+  ssimClean?: boolean | null;
 }
 
 export interface ComparisonOptions {
@@ -56,6 +63,9 @@ export interface PixelDiffResult {
   height: number;
   identical: boolean;
   meanAbsoluteError: { r: number; g: number; b: number };
+  ssim?: number | null;
+  minRegionSsim?: number | null;
+  ssimClean?: boolean | null;
 }
 
 const DEFAULT_PLUGIN_DIR = "./plugin/figmaforge";
@@ -102,6 +112,11 @@ export function parsePixelDiffOutput(stdout: string): PixelDiffResult | null {
           g: obj.meanAbsoluteError.g,
           b: obj.meanAbsoluteError.b,
         },
+        // Part 13 keys are optional in old output — missing → null.
+        ssim: typeof obj.ssim === "number" ? obj.ssim : null,
+        minRegionSsim:
+          typeof obj.min_region_ssim === "number" ? obj.min_region_ssim : null,
+        ssimClean: typeof obj.ssim_clean === "boolean" ? obj.ssim_clean : null,
       };
     }
   } catch {
@@ -174,6 +189,9 @@ export class ScreenshotComparator {
         hashB,
         identical: true,
         meanAbsoluteError: { r: 0, g: 0, b: 0 },
+        ssim: 1.0,
+        minRegionSsim: null,
+        ssimClean: true,
       };
     }
 
@@ -206,6 +224,9 @@ export class ScreenshotComparator {
       hashB,
       identical: false,
       meanAbsoluteError: { r: -1, g: -1, b: -1 },
+      ssim: null,
+      minRegionSsim: null,
+      ssimClean: null,
     };
 
     try {
