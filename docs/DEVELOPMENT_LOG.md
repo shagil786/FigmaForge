@@ -905,3 +905,107 @@ reports a real `Score` and a perceptual `Visual verdict`.
 
 Wiring repair/verify into the TS runtime (Part 20); compiling or executing
 generated SwiftUI/Flutter/TSX code; Figma OAuth (token-only).
+
+## Part 20 — Repair + Verify Stages (auto-repair and the final measured gate in `figmaforge run`)
+
+Part 19 left the pipeline with a measured `Score` + `Visual verdict` but no
+way to *fix* a low score and no terminal pass/fail — `PIPELINE_STAGES` had
+declared `repair`/`verify` slots since Part 7 with no handlers. Part 20 wires
+the Python `RepairLoop` and a new verify gate into the TS runtime, so
+`figmaforge run` is now a **ten-stage** pipeline that auto-repairs toward an
+external baseline and prints a `Verification:` verdict.
+
+### What Changed
+
+1. **Pixel→color repair fix** (`core/patch_planner.py`, `core/repair_loop.py`)
+   — a real honesty bug: the Part 8 planner emitted non-color values for
+   pixel-derived color patches (`new_value` = a region dict), so color repair
+   was silently broken — the raster tests passed only because the capped
+   pixel weight crossed the default 0.95 gate before a patch ever applied.
+   `PatchPlanner` now takes an optional `baseline_png`, extracts the
+   baseline's mean RGB over the attributed region (clamped to image bounds),
+   and `_determine_property` emits `background` (the property html_css
+   actually uses for fills). No/corrupt baseline → legacy degrade, never a
+   crash. 6 tests in `test_repair_planner_color.py` incl. an end-to-end loop
+   test at `similarity_threshold=1.0` that forces the patch to apply and
+   converge.
+2. **html_css `styles_override` seam** — `generate()` applies per-node
+   overrides on top of computed styles (`base` + `breakpoints`, after
+   `extend_ir_style`), so repaired styles reach regenerated code. Absent/
+   empty → byte-identical to today (proven by the determinism/golden suite).
+   4 tests in `test_backends.py`.
+3. **`pipeline.py repair` subcommand** — one atomic CLI unit: loads +
+   validates the IR/layout, computes the shared web style layer
+   (`reference_styles_from_plan` ported into `web_common.py` for this
+   branch's Part-17 base), runs the real `RepairLoop` with an injectable
+   harness, serializes `styles.repaired.json` + `repair_history.json`, and
+   regenerates html_css with the styles_override. Exit codes 2/4/1 mirror the
+   family; `--require-approval` denies non-interactively. 11 tests in
+   `test_pipeline_repair.py`; real-chromium smoke converged `0 → 1.0` on a
+   color-shifted baseline (`--viewport` must match the baseline's dims —
+   otherwise an honest size-mismatch degrade, no convergence).
+4. **TS repair stage handler** (`backend_codegen.ts`) — `invokeRepair`
+   stages IR/layout and spawns the CLI. `createRepairStageHandler` reads the
+   compare stage's **shared** resolved baseline (`compareBaseline`/
+   `compareBaselineKind`, now shared by the compare handler) and
+   short-circuits — never spawning Python — when there is no measured score,
+   the gate is already satisfied, `baseline_kind === "reference"` (the
+   by-construction contract: the reference render IS the intended render; a
+   low score is a codegen regression verify catches), or `--no-repair`.
+   Otherwise it spawns into `<run>/repair/`, shares
+   `repairOut`/`repairManifest`/`repairStylesPath` for verify, and bumps the
+   real budget `repairIterations` by the loop's iterations so the `Repairs:`
+   line is honest (the coordinator overwrites the metric from the budget).
+5. **TS verify stage handler** — the terminal gate. When repair regenerated
+   files it re-renders each through the real harness into
+   `<run>/verify-renders/` and compares against the **same** baseline
+   (`source: "re-rendered"` — the honest post-repair measurement);
+   otherwise it reuses the compare score (`source: "compare"`).
+   `passed = score >= threshold`, stored as a `metrics`-kind artifact with
+   `ctx.updateMetrics({similarityScore})`; no measured score anywhere →
+   `{passed: null}` — never a fabricated verdict.
+6. **`cmdRun` wiring** — all **ten real stages** registered;
+   `--no-repair` and `--similarity-threshold` (alias of `--threshold`)
+   flags; `Repairs:` and `Verification: PASSED / FAILED / cannot verify`
+   lines. A failed verification does **not** fail the run (the report is
+   valid output), consistent with compare never exiting nonzero for a low
+   score.
+
+### Honesty contract (verified by construction + tests)
+
+- Repair is inert against the **reference** baseline — its first diff is 1.0
+  by definition; a low score there is a codegen regression, not something to
+  converge toward. The meaningful repair path is an **external** baseline
+  (`--baseline` / `--figma-baseline`).
+- Never a fabricated score, iteration count, or verdict: no screenshots →
+  `Repairs: 0` + null verdict; `--no-repair` → disabled note + no repair dir;
+  a red baseline with default settings → the real loop runs (Repairs ≥ 1),
+  regenerates, and verify honestly FAILS after re-measuring.
+
+### Testing
+
+- Python: **565** tests OK, zero skips (44 test files) — +21 on the merged
+  Part-19 base: +6 repair-planner color tests (Task 1), +4 styles_override
+  tests (Task 2), +11 `pipeline.py repair` CLI tests (Task 3).
+- TS: **155** runtime tests passing, `npx tsc` clean — +12 on the merged
+  Part-19 base: +5 repair-handler tests (gate-satisfied short-circuit,
+  reference contract short-circuit, no-score degrade, **real loop against a
+  red baseline** — iterations ≥ 1, regenerated html drops the original fill,
+  budget bumped; typed missing-baseline error), +4 verify-handler tests
+  (reference PASSED with checkpoint metric, **post-repair re-measure beats
+  the pre-repair score**, no-score degrade, `--no-repair` honest FAILED),
+  +3 cmdRun tests (ten-stage run: 11 artifacts + `Verification: PASSED`;
+  red baseline: Repairs ≥ 1 + FAILED + re-rendered source; `--no-repair`:
+  disabled + no repair dir + FAILED).
+- Smoke: real CLI — clean fixture run → `Score: 1`, `Repairs: 0`,
+  `Verification: PASSED (1.0000 >= 0.95)`, **11 artifacts**; red baseline →
+  `Repairs: 2`, `Score: 0.0796`, `Verification: FAILED (0.0796 < 0.95)`;
+  `--no-repair` → `Repairs: 0`, FAILED, no repair dir.
+- `claude plugin validate --strict` clean (final gate, Task 9).
+
+### Non-goals (deferred)
+
+LLM-driven/human-approval repair iterations beyond the loop's
+`--require-approval` gate; multi-backend repair (html_css only today);
+compiling or executing generated SwiftUI/Flutter/TSX code; Figma OAuth
+(token-only).
