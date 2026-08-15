@@ -959,6 +959,10 @@ export function createRepairStageHandler(): StageHandler {
       note,
     });
 
+    // Short-circuit 0: explicitly disabled (--no-repair).
+    if (ctx.shared.get("noRepair")) {
+      return inert("repair disabled (--no-repair)");
+    }
     // Short-circuit 1: no measured score — nothing to repair.
     if (!baseline || !report || report.similarity_score === null) {
       return inert("no measured score — nothing to repair");
@@ -1024,6 +1028,133 @@ export function createRepairStageHandler(): StageHandler {
     ctx.shared.set("repairStylesPath", result.repaired_styles_path);
     ctx.shared.set("repairManifest", payload);
     return result;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Verify stage (Part 20) — final measured pass/fail gate
+// ---------------------------------------------------------------------------
+
+/**
+ * Verify stage handler — the terminal gate after repair.
+ *
+ * If repair regenerated files, re-renders each regenerated file through the
+ * real harness into ``<run>/verify-renders/`` and compares it against the
+ * SAME baseline the compare stage resolved (via the shared
+ * ``compareBaseline``), giving the honest post-repair measurement.  If no
+ * repair ran, reuses the compare stage's diff-report score — the final check
+ * of the same measurement.  ``passed = score >= threshold`` (shared/config).
+ * No screenshots anywhere → ``{passed: null, note: "no measured score —
+ * cannot verify"}`` — never a fabricated pass/fail.  Writes the score into
+ * run metrics via ``ctx.updateMetrics`` so the run's final Score + a
+ * ``Verification:`` line reflect the verified result.
+ */
+export function createVerifyStageHandler(): StageHandler {
+  return async (ctx: PipelineContext) => {
+    const threshold =
+      (ctx.shared.get("similarityThreshold") as number | undefined) ??
+      ctx.config.similarityThreshold;
+    const baseline = ctx.shared.get("compareBaseline") as string | undefined;
+    const baselineKind = ctx.shared.get("compareBaselineKind") as string | null | undefined;
+    const report = ctx.shared.get("diffReport") as
+      | {
+          similarity_score: number | null;
+          screens: Array<{
+            file: string;
+            similarity: number;
+            ssim: number | null;
+            ssimClean: boolean | null;
+          }>;
+        }
+      | undefined;
+
+    if (!baseline || !report || report.similarity_score === null) {
+      return {
+        passed: null,
+        similarity_score: null,
+        threshold,
+        baseline_kind: baselineKind ?? null,
+        screens: [],
+        source: null,
+        note: "no measured score — cannot verify",
+      };
+    }
+
+    // Post-repair path: re-render the regenerated files for a fresh score.
+    const repairManifest = ctx.shared.get("repairManifest") as
+      | {
+          generated: { backend: string; files: Array<{ path: string }> } | null;
+        }
+      | undefined;
+    const generated = repairManifest?.generated;
+    if (generated && generated.files.length > 0) {
+      const cfg = { pythonBin: ctx.toolCtx.pythonBin, pluginDir: ctx.config.pluginDir };
+      const verifyDir = path.join(ctx.config.outputDir, ctx.config.runId, "verify-renders");
+      const genDir = path.join(
+        ctx.config.outputDir, ctx.config.runId,
+        "repair", "generated", generated.backend,
+      );
+      fs.mkdirSync(verifyDir, { recursive: true });
+      const comparator = new ScreenshotComparator({ colorThreshold: 16 }, cfg);
+      const screens: Array<{
+        file: string;
+        similarity: number;
+        ssim: number | null;
+        ssimClean: boolean | null;
+      }> = [];
+      let total = 0;
+      for (const f of [...generated.files].sort((a, b) => a.path.localeCompare(b.path))) {
+        const htmlPath = path.join(genDir, f.path);
+        if (!fs.existsSync(htmlPath)) continue;
+        const shot = await invokeRender(cfg, htmlPath, ctx.config.viewport, verifyDir);
+        const cmp = comparator.compare(shot.screenshot, baseline);
+        screens.push({
+          file: f.path,
+          similarity: cmp.similarity,
+          ssim: cmp.ssim ?? null,
+          ssimClean: cmp.ssimClean ?? null,
+        });
+        total += cmp.similarity;
+      }
+      if (screens.length === 0) {
+        return {
+          passed: null,
+          similarity_score: null,
+          threshold,
+          baseline_kind: baselineKind ?? null,
+          screens: [],
+          source: "re-rendered",
+          note: "no regenerated files could be re-rendered — cannot verify",
+        };
+      }
+      const score = total / screens.length;
+      const passed = score >= threshold;
+      ctx.updateMetrics({ similarityScore: score });
+      return {
+        passed,
+        similarity_score: score,
+        threshold,
+        baseline_kind: baselineKind ?? null,
+        screens,
+        source: "re-rendered",
+        note: null,
+      };
+    }
+
+    // No-repair path: reuse the compare measurement — the final check of the
+    // same screens against the same baseline.
+    const score = report.similarity_score;
+    const passed = score >= threshold;
+    ctx.updateMetrics({ similarityScore: score });
+    return {
+      passed,
+      similarity_score: score,
+      threshold,
+      baseline_kind: baselineKind ?? null,
+      screens: report.screens ?? [],
+      source: "compare",
+      note: null,
+    };
   };
 }
 
