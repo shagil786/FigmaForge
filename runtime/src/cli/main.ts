@@ -26,6 +26,9 @@ import { ScreenshotComparator } from "../core/screenshot_compare.js";
 import { buildBrowserRenderScript, parseBrowserRenderOutput } from "../core/render_handler.js";
 import {
   createIngestStageHandler,
+  createNormalizeStageHandler,
+  createResolveStageHandler,
+  createLayoutStageHandler,
   createGenerateStageHandler,
   invokeIngest,
   invokeBackendGenerator,
@@ -241,12 +244,17 @@ async function cmdRun(args: CliArgs): Promise<void> {
   });
   pipeline.setAbortSignal(ac.signal);
 
-  // Wire the real Python pipeline stages (Part 15): ingest fetches (or
-  // reads locally) the Figma file; generate lowers it through the backend.
+  // Wire the real Python pipeline stages: ingest fetches (or reads locally)
+  // the Figma file, normalize/resolve/layout run the front half through the
+  // pipeline CLI, and generate lowers the stage artifacts through the backend
+  // (Part 15: ingest+generate; Part 16: full front half).
   if (localFile) {
     pipeline.setShared("filePath", path.resolve(localFile));
   }
   pipeline.onStage("ingest", createIngestStageHandler());
+  pipeline.onStage("normalize", createNormalizeStageHandler());
+  pipeline.onStage("resolve", createResolveStageHandler());
+  pipeline.onStage("layout", createLayoutStageHandler());
   pipeline.onStage("generate", createGenerateStageHandler());
 
   const result = await pipeline.run();

@@ -520,6 +520,30 @@ class LayoutPlan:
             "diagnostics": [d.to_dict() for d in self.diagnostics],
         })
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "LayoutPlan":
+        """Rebuild a :class:`LayoutPlan` from its ``to_dict`` JSON shape.
+
+        Round-trip contract: ``from_dict(x.to_dict()).to_dict() == x.to_dict()``
+        exactly (floats are already rounded at serialization time). Absent
+        keys stay absent; the ``source`` snapshot is preserved verbatim when
+        present.
+        """
+        source = data.get("source")
+        return cls(
+            schema_version=int(data.get("schema_version", LAYOUT_PLAN_VERSION)),
+            file_key=str(data.get("file_key", "") or ""),
+            viewport=float(data.get("viewport", 0.0) or 0.0),
+            base_width=float(data.get("base_width", 0.0) or 0.0),
+            source=dict(source) if isinstance(source, dict) else None,
+            screens=[s for s in (_node_plan_from_dict(screen) for screen in data.get("screens", []) or []) if s is not None],
+            breakpoints=_breakpoint_plan_from_dict(data.get("breakpoints")),
+            constraints=_constraint_report_from_dict(data.get("constraints")),
+            counts=dict(data.get("counts", {}) or {}),
+            confidence=dict(data.get("confidence", {}) or {}),
+            diagnostics=[_diagnostic_from_dict(d) for d in data.get("diagnostics", []) or []],
+        )
+
 
 # ---------------------------------------------------------------------------
 # Serialization helpers
@@ -538,3 +562,210 @@ def plan_to_json(plan: LayoutPlan, indent: int = 2) -> str:
     reproducible across Python versions.
     """
     return json.dumps(plan.to_dict(), indent=indent, sort_keys=True)
+
+
+# ---------------------------------------------------------------------------
+# Loaders (from_dict) — JSON round-trip (Part 16)
+# ---------------------------------------------------------------------------
+# Each loader reproduces exactly what the matching ``to_dict`` emits: absent
+# keys stay absent (helpers return None for non-dict input), so
+# ``from_dict(x.to_dict()).to_dict() == x.to_dict()`` holds exactly.
+
+
+def _float_or_none(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _box_from_dict(data: Any) -> Optional[Box]:
+    if not isinstance(data, dict):
+        return None
+    return Box(
+        x=float(data.get("x", 0.0) or 0.0),
+        y=float(data.get("y", 0.0) or 0.0),
+        width=float(data.get("width", 0.0) or 0.0),
+        height=float(data.get("height", 0.0) or 0.0),
+    )
+
+
+def _axis_from_dict(data: Any) -> Optional[AxisSizing]:
+    if not isinstance(data, dict):
+        return None
+    return AxisSizing(
+        mode=data.get("mode", SIZING_FIXED),
+        value=_float_or_none(data.get("value")),
+        min=_float_or_none(data.get("min")),
+        max=_float_or_none(data.get("max")),
+        measured=_float_or_none(data.get("measured")),
+        explicit=bool(data.get("explicit", True)),
+    )
+
+
+def _sizing_from_dict(data: Any) -> Optional[SizingSpec]:
+    if not isinstance(data, dict):
+        return None
+    return SizingSpec(
+        horizontal=_axis_from_dict(data.get("horizontal")),
+        vertical=_axis_from_dict(data.get("vertical")),
+    )
+
+
+def _edges_from_dict(data: Any) -> Optional[EdgeOffsets]:
+    if not isinstance(data, dict):
+        return None
+    return EdgeOffsets(
+        top=_float_or_none(data.get("top")),
+        right=_float_or_none(data.get("right")),
+        bottom=_float_or_none(data.get("bottom")),
+        left=_float_or_none(data.get("left")),
+    )
+
+
+def _spacing_from_dict(data: Any) -> Optional[SpacingSpec]:
+    if not isinstance(data, dict):
+        return None
+    return SpacingSpec(
+        padding=_edges_from_dict(data.get("padding")),
+        margin=_edges_from_dict(data.get("margin")),
+        margin_source=data.get("margin_source"),
+        gap=_float_or_none(data.get("gap")),
+    )
+
+
+def _alignment_from_dict(data: Any) -> Optional[AlignmentSpec]:
+    if not isinstance(data, dict):
+        return None
+    return AlignmentSpec(
+        justify=data.get("justify"),
+        align=data.get("align"),
+        align_self=data.get("align_self"),
+    )
+
+
+def _anchoring_from_dict(data: Any) -> Optional[Anchoring]:
+    if not isinstance(data, dict):
+        return None
+    return Anchoring(
+        horizontal=data.get("horizontal"),
+        vertical=data.get("vertical"),
+        left=_float_or_none(data.get("left")),
+        right=_float_or_none(data.get("right")),
+        top=_float_or_none(data.get("top")),
+        bottom=_float_or_none(data.get("bottom")),
+    )
+
+
+def _overflow_from_dict(data: Any) -> Optional[OverflowSpec]:
+    if not isinstance(data, dict):
+        return None
+    return OverflowSpec(
+        x=data.get("x", OVERFLOW_VISIBLE),
+        y=data.get("y", OVERFLOW_VISIBLE),
+        wrap=data.get("wrap"),
+        clipped_content=data.get("clipped_content"),
+    )
+
+
+def _text_model_from_dict(data: Any) -> Optional[TextModel]:
+    if not isinstance(data, dict):
+        return None
+    return TextModel(
+        characters=str(data.get("characters", "") or ""),
+        font_size=_float_or_none(data.get("font_size")),
+        measured_width=_float_or_none(data.get("measured_width")),
+        measured_height=_float_or_none(data.get("measured_height")),
+        wrapped=bool(data.get("wrapped", False)),
+        lines=list(data.get("lines", []) or []),
+        approximate=bool(data.get("approximate", False)),
+    )
+
+
+def _diagnostic_from_dict(data: Any) -> Diagnostic:
+    if not isinstance(data, dict):
+        return Diagnostic()
+    return Diagnostic(
+        severity=data.get("severity", SEVERITY_INFO),
+        code=str(data.get("code", "") or ""),
+        message=str(data.get("message", "") or ""),
+        node_id=data.get("node_id"),
+    )
+
+
+def _constraint_issue_from_dict(data: Any) -> ConstraintIssue:
+    if not isinstance(data, dict):
+        return ConstraintIssue()
+    return ConstraintIssue(
+        kind=data.get("kind", ISSUE_UNDERDETERMINED),
+        axis=data.get("axis"),
+        message=str(data.get("message", "") or ""),
+    )
+
+
+def _constraint_report_from_dict(data: Any) -> Optional[ConstraintReport]:
+    if not isinstance(data, dict):
+        return None
+    return ConstraintReport(
+        total=int(data.get("total", 0)),
+        grounding=int(data.get("grounding", 0)),
+        derived=int(data.get("derived", 0)),
+        contradictions=[_constraint_issue_from_dict(i) for i in data.get("contradictions", []) or []],
+        underdetermined=[_constraint_issue_from_dict(i) for i in data.get("underdetermined", []) or []],
+        unsupported=[_constraint_issue_from_dict(i) for i in data.get("unsupported", []) or []],
+    )
+
+
+def _breakpoint_change_from_dict(data: Any) -> BreakpointChange:
+    if not isinstance(data, dict):
+        return BreakpointChange()
+    return BreakpointChange(
+        breakpoint=str(data.get("breakpoint", "") or ""),
+        width=float(data.get("width", 0.0) or 0.0),
+        node_id=data.get("node_id"),
+        property=str(data.get("property", "") or ""),
+        before=data.get("before"),
+        after=data.get("after"),
+        evidence=str(data.get("evidence", "") or ""),
+    )
+
+
+def _breakpoint_plan_from_dict(data: Any) -> Optional[BreakpointPlan]:
+    if not isinstance(data, dict):
+        return None
+    return BreakpointPlan(
+        breakpoints=[dict(b) for b in data.get("breakpoints", []) or [] if isinstance(b, dict)],
+        changes=[_breakpoint_change_from_dict(c) for c in data.get("changes", []) or []],
+        no_change=list(data.get("no_change", []) or []),
+    )
+
+
+def _node_plan_from_dict(data: Any) -> Optional[LayoutNodePlan]:
+    """Rebuild a :class:`LayoutNodePlan` subtree (children recursively)."""
+    if not isinstance(data, dict):
+        return None
+    return LayoutNodePlan(
+        node_id=str(data.get("node_id", "") or ""),
+        name=str(data.get("name", "") or ""),
+        kind=str(data.get("kind", "") or ""),
+        display=str(data.get("display", DISPLAY_NONE) or DISPLAY_NONE),
+        direction=data.get("direction"),
+        order=int(data.get("order", 0)),
+        box=_box_from_dict(data.get("box")),
+        figma_box=_box_from_dict(data.get("figma_box")),
+        bounds_delta=_float_or_none(data.get("bounds_delta")),
+        sizing=_sizing_from_dict(data.get("sizing")),
+        spacing=_spacing_from_dict(data.get("spacing")),
+        alignment=_alignment_from_dict(data.get("alignment")),
+        anchors=_anchoring_from_dict(data.get("anchors")),
+        text=_text_model_from_dict(data.get("text")),
+        overflow=_overflow_from_dict(data.get("overflow")),
+        breakpoints=[_breakpoint_change_from_dict(b) for b in data.get("breakpoints", []) or []],
+        confidence=float(data.get("confidence", 1.0)),
+        assumptions=list(data.get("assumptions", []) or []),
+        constraints=_constraint_report_from_dict(data.get("constraints")),
+        diagnostics=[_diagnostic_from_dict(d) for d in data.get("diagnostics", []) or []],
+        children=[c for c in (_node_plan_from_dict(ch) for ch in data.get("children", []) or []) if c is not None],
+    )

@@ -110,6 +110,133 @@ class TestIngest(unittest.TestCase):
         self.assertTrue(proc.stderr.strip())
 
 
+class TestFrontHalfStages(unittest.TestCase):
+    """normalize / resolve / layout subcommands + staged generate (Part 16)."""
+
+    def _normalize_to(self, tmp: str) -> str:
+        """Run normalize with --out; return the IR JSON path."""
+        out_path = Path(tmp) / "ir.json"
+        proc = _run(["normalize", "--file", str(FIXTURE), "--out", str(out_path)])
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        return str(out_path)
+
+    def test_normalize_deterministic_and_valid(self):
+        """normalize prints one JSON line IRDocument.from_dict accepts; runs
+        are byte-identical."""
+        from core.ir_types import IRDocument
+
+        first = _run(["normalize", "--file", str(FIXTURE)])
+        second = _run(["normalize", "--file", str(FIXTURE)])
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(first.stdout, second.stdout)
+
+        lines = [ln for ln in first.stdout.splitlines() if ln.strip()]
+        self.assertEqual(len(lines), 1)
+        payload = json.loads(lines[0])
+        self.assertEqual(payload["file_key"], "layout_desktop")
+        self.assertIn("root", payload)
+        doc = IRDocument.from_dict(payload)
+        self.assertTrue(doc.all_nodes())
+
+    def test_normalize_invalid_file(self):
+        """normalize with a malformed JSON file exits 4."""
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = Path(tmp) / "bad.json"
+            bad.write_text("{not json", encoding="utf-8")
+            proc = _run(["normalize", "--file", str(bad)])
+            self.assertEqual(proc.returncode, 4)
+            self.assertTrue(proc.stderr.strip())
+
+    def test_resolve_consumes_normalize_output(self):
+        """resolve accepts normalize output and emits a report-shaped JSON;
+        two runs byte-identical."""
+        with tempfile.TemporaryDirectory() as tmp:
+            ir_path = self._normalize_to(tmp)
+            first = _run(["resolve", "--file", ir_path])
+            second = _run(["resolve", "--file", ir_path])
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertEqual(first.stdout, second.stdout)
+
+            payload = json.loads(first.stdout)
+            self.assertIn("counts", payload)
+            self.assertIn("resolved", payload)
+            self.assertIn("tokens", payload)
+
+    def test_layout_consumes_normalize_output(self):
+        """layout accepts normalize output and emits a plan-shaped JSON;
+        two runs byte-identical."""
+        with tempfile.TemporaryDirectory() as tmp:
+            ir_path = self._normalize_to(tmp)
+            first = _run(["layout", "--file", ir_path])
+            second = _run(["layout", "--file", ir_path])
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertEqual(first.stdout, second.stdout)
+
+            payload = json.loads(first.stdout)
+            self.assertIn("screens", payload)
+            self.assertTrue(payload["screens"])
+
+    def test_layout_invalid_ir(self):
+        """layout with a non-IR JSON exits 4 (loader failure surfaced)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = Path(tmp) / "not_ir.json"
+            bad.write_text(json.dumps({"foo": 1}), encoding="utf-8")
+            proc = _run(["layout", "--file", str(bad)])
+            self.assertEqual(proc.returncode, 4)
+            self.assertTrue(proc.stderr.strip())
+
+    def test_generate_staged_equals_file_mode(self):
+        """generate --ir/--layout/--resolution is byte-identical to --file."""
+        for backend in ("react_tailwind", "flutter"):
+            with self.subTest(backend=backend):
+                with tempfile.TemporaryDirectory() as tmp:
+                    ir_path = self._normalize_to(tmp)
+                    layout_path = Path(tmp) / "layout.json"
+                    resolution_path = Path(tmp) / "resolution.json"
+                    proc = _run(["layout", "--file", ir_path, "--out", str(layout_path)])
+                    self.assertEqual(proc.returncode, 0, proc.stderr)
+                    proc = _run(["resolve", "--file", ir_path, "--out", str(resolution_path)])
+                    self.assertEqual(proc.returncode, 0, proc.stderr)
+
+                    out_file = Path(tmp) / "file-mode"
+                    out_staged = Path(tmp) / "staged"
+                    file_run = _run(
+                        ["generate", "--file", str(FIXTURE), "--backend", backend,
+                         "--out-dir", str(out_file)]
+                    )
+                    staged_run = _run(
+                        ["generate", "--ir", ir_path, "--layout", str(layout_path),
+                         "--resolution", str(resolution_path), "--backend", backend,
+                         "--out-dir", str(out_staged)]
+                    )
+                    self.assertEqual(file_run.returncode, 0, file_run.stderr)
+                    self.assertEqual(staged_run.returncode, 0, staged_run.stderr)
+                    self.assertEqual(file_run.stdout, staged_run.stdout)
+
+                    manifest = json.loads(file_run.stdout)
+                    for entry in manifest["files"]:
+                        p1 = (out_file / backend / entry["path"]).read_bytes()
+                        p2 = (out_staged / backend / entry["path"]).read_bytes()
+                        self.assertEqual(p1, p2, entry["path"])
+
+    def test_generate_staged_requires_both(self):
+        """--ir without --layout, or --file with --ir, exits 2."""
+        with tempfile.TemporaryDirectory() as tmp:
+            ir_path = self._normalize_to(tmp)
+            proc = _run(["generate", "--ir", ir_path, "--backend", "html_css"])
+            self.assertEqual(proc.returncode, 2)
+            self.assertIn("--layout", proc.stderr)
+
+            proc = _run(
+                ["generate", "--file", str(FIXTURE), "--ir", ir_path,
+                 "--backend", "html_css"]
+            )
+            self.assertEqual(proc.returncode, 2)
+
+
 class TestGenerate(unittest.TestCase):
     def test_generate_all_six_backends(self):
         """Every registry backend generates >=1 file with a full manifest."""

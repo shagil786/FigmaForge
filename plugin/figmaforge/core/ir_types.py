@@ -763,6 +763,32 @@ class IRDocument:
             "raw": dict(self.raw),
         })
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "IRDocument":
+        """Rebuild an :class:`IRDocument` from its ``to_dict`` JSON shape.
+
+        Round-trip contract: ``from_dict(x.to_dict()).to_dict() == x.to_dict()``
+        exactly (floats are already rounded at serialization time). Missing
+        keys fall back to dataclass defaults.
+        """
+        root = _node_from_dict(data.get("root"))
+        return cls(
+            schema_version=int(data.get("schema_version", IR_VERSION)),
+            file_key=str(data.get("file_key", "") or ""),
+            name=str(data.get("name", "") or ""),
+            source=_source_from_dict(data.get("source")) if isinstance(data.get("source"), dict) else None,
+            root=root,
+            pages=[p for p in (_node_from_dict(pg) for pg in data.get("pages", []) or []) if p is not None],
+            components={k: _component_from_dict(v) for k, v in (data.get("components", {}) or {}).items()},
+            component_sets={k: _component_from_dict(v) for k, v in (data.get("component_sets", {}) or {}).items()},
+            styles={k: _token_from_dict(v) for k, v in (data.get("styles", {}) or {}).items()},
+            variables={k: _token_from_dict(v) for k, v in (data.get("variables", {}) or {}).items()},
+            assets=dict(data.get("assets", {}) or {}),
+            prototype_start_node=data.get("prototype_start_node"),
+            unknown=dict(data.get("unknown", {}) or {}),
+            raw=dict(data.get("raw", {}) or {}),
+        )
+
 
 # ---------------------------------------------------------------------------
 # Serialization helpers
@@ -781,3 +807,364 @@ def ir_to_json(document: IRDocument, indent: int = 2) -> str:
     reproducible across Python versions.
     """
     return json.dumps(document.to_dict(), indent=indent, sort_keys=True)
+
+
+# ---------------------------------------------------------------------------
+# Loaders (from_dict) — JSON round-trip (Part 16)
+# ---------------------------------------------------------------------------
+# Each loader reproduces exactly what the matching ``to_dict`` emits: missing
+# keys become the dataclass defaults, and values are already rounded by
+# ``_round`` at serialization time, so ``from_dict(x.to_dict()).to_dict() ==
+# x.to_dict()`` holds exactly (the artifact-stability contract).
+
+
+def _float_or_none(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _color_from_dict(data: Any) -> Optional[IRColor]:
+    if not isinstance(data, dict):
+        return None
+    return IRColor(
+        r=float(data.get("r", 0.0) or 0.0),
+        g=float(data.get("g", 0.0) or 0.0),
+        b=float(data.get("b", 0.0) or 0.0),
+        a=float(data.get("a", 1.0) if data.get("a") is not None else 1.0),
+    )
+
+
+def _gradient_stop_from_dict(data: Any) -> IRGradientStop:
+    if not isinstance(data, dict):
+        return IRGradientStop()
+    return IRGradientStop(
+        position=float(data.get("position", 0.0) or 0.0),
+        color=_color_from_dict(data.get("color")),
+    )
+
+
+def _fill_from_dict(data: Any) -> IRFill:
+    if not isinstance(data, dict):
+        return IRFill()
+    return IRFill(
+        kind=data.get("kind", "none"),
+        color=_color_from_dict(data.get("color")),
+        opacity=float(data.get("opacity", 1.0)),
+        visible=bool(data.get("visible", True)),
+        image_ref=data.get("image_ref"),
+        scale_mode=data.get("scale_mode"),
+        blend_mode=data.get("blend_mode"),
+        gradient_stops=[_gradient_stop_from_dict(s) for s in data.get("gradient_stops", []) or []],
+        token_ref=data.get("token_ref"),
+    )
+
+
+def _border_from_dict(data: Any) -> IRBorder:
+    if not isinstance(data, dict):
+        return IRBorder()
+    return IRBorder(
+        color=_color_from_dict(data.get("color")),
+        weight=_float_or_none(data.get("weight")),
+        visible=bool(data.get("visible", True)),
+        align=data.get("align"),
+        style=data.get("style"),
+        token_ref=data.get("token_ref"),
+    )
+
+
+def _shadow_from_dict(data: Any) -> IRShadow:
+    if not isinstance(data, dict):
+        return IRShadow()
+    return IRShadow(
+        kind=data.get("kind", "drop"),
+        color=_color_from_dict(data.get("color")),
+        x=float(data.get("x", 0.0) or 0.0),
+        y=float(data.get("y", 0.0) or 0.0),
+        blur=float(data.get("blur", 0.0) or 0.0),
+        spread=float(data.get("spread", 0.0) or 0.0),
+        visible=bool(data.get("visible", True)),
+    )
+
+
+def _blur_from_dict(data: Any) -> IRBlur:
+    if not isinstance(data, dict):
+        return IRBlur()
+    return IRBlur(
+        kind=data.get("kind", "layer"),
+        radius=float(data.get("radius", 0.0) or 0.0),
+        visible=bool(data.get("visible", True)),
+    )
+
+
+def _style_from_dict(data: Any) -> Optional[IRStyle]:
+    if not isinstance(data, dict):
+        return None
+    corner_radii = data.get("corner_radii")
+    return IRStyle(
+        fills=[_fill_from_dict(f) for f in data.get("fills", []) or []],
+        borders=[_border_from_dict(b) for b in data.get("borders", []) or []],
+        shadows=[_shadow_from_dict(s) for s in data.get("shadows", []) or []],
+        blurs=[_blur_from_dict(b) for b in data.get("blurs", []) or []],
+        radius=_float_or_none(data.get("radius")),
+        corner_radii=[float(v) for v in corner_radii] if isinstance(corner_radii, list) else None,
+        opacity=float(data.get("opacity", 1.0)),
+    )
+
+
+def _spacing_from_dict(data: Any) -> Optional[IRSpacing]:
+    if not isinstance(data, dict):
+        return None
+    return IRSpacing(
+        top=_float_or_none(data.get("top")),
+        right=_float_or_none(data.get("right")),
+        bottom=_float_or_none(data.get("bottom")),
+        left=_float_or_none(data.get("left")),
+    )
+
+
+def _layout_from_dict(data: Any) -> Optional[IRLayout]:
+    if not isinstance(data, dict):
+        return None
+    return IRLayout(
+        mode=data.get("mode", "none"),
+        direction=data.get("direction"),
+        justify=data.get("justify"),
+        align=data.get("align"),
+        padding=_spacing_from_dict(data.get("padding")),
+        gap=_float_or_none(data.get("gap")),
+        wrap=data.get("wrap"),
+        grow=_float_or_none(data.get("grow")),
+        shrink=_float_or_none(data.get("shrink")),
+        align_self=data.get("align_self"),
+        sizing_primary=data.get("sizing_primary"),
+        sizing_counter=data.get("sizing_counter"),
+        grid_columns=dict(data.get("grid_columns", {}) or {}) if isinstance(data.get("grid_columns"), dict) else None,
+    )
+
+
+def _position_from_dict(data: Any) -> Optional[IRPosition]:
+    if not isinstance(data, dict):
+        return None
+    return IRPosition(
+        mode=data.get("mode", "absolute"),
+        x=_float_or_none(data.get("x")),
+        y=_float_or_none(data.get("y")),
+        left=_float_or_none(data.get("left")),
+        right=_float_or_none(data.get("right")),
+        top=_float_or_none(data.get("top")),
+        bottom=_float_or_none(data.get("bottom")),
+    )
+
+
+def _dimensions_from_dict(data: Any) -> Optional[IRDimensions]:
+    if not isinstance(data, dict):
+        return None
+    return IRDimensions(
+        width=_float_or_none(data.get("width")),
+        height=_float_or_none(data.get("height")),
+        min_width=_float_or_none(data.get("min_width")),
+        max_width=_float_or_none(data.get("max_width")),
+        min_height=_float_or_none(data.get("min_height")),
+        max_height=_float_or_none(data.get("max_height")),
+        sizing_horizontal=data.get("sizing_horizontal"),
+        sizing_vertical=data.get("sizing_vertical"),
+    )
+
+
+def _link_from_dict(data: Any) -> Optional[IRLink]:
+    if not isinstance(data, dict):
+        return None
+    return IRLink(
+        kind=data.get("kind", "url"),
+        url=data.get("url"),
+        node_id=data.get("node_id"),
+    )
+
+
+def _typography_from_dict(data: Any) -> Optional[IRTypography]:
+    if not isinstance(data, dict):
+        return None
+    return IRTypography(
+        font_family=data.get("font_family"),
+        font_postscript_name=data.get("font_postscript_name"),
+        font_weight=_float_or_none(data.get("font_weight")),
+        font_size=_float_or_none(data.get("font_size")),
+        line_height=_float_or_none(data.get("line_height")),
+        letter_spacing=_float_or_none(data.get("letter_spacing")),
+        text_case=data.get("text_case"),
+        text_decoration=data.get("text_decoration"),
+        text_align=data.get("text_align"),
+        vertical_align=data.get("vertical_align"),
+        auto_resize=data.get("auto_resize"),
+        token_refs=list(data.get("token_refs", []) or []),
+    )
+
+
+def _text_from_dict(data: Any) -> Optional[IRTextContent]:
+    if not isinstance(data, dict):
+        return None
+    return IRTextContent(
+        characters=str(data.get("characters", "") or ""),
+        hyperlink=_link_from_dict(data.get("hyperlink")),
+    )
+
+
+def _component_from_dict(data: Any) -> IRComponent:
+    if not isinstance(data, dict):
+        return IRComponent()
+    return IRComponent(
+        key=data.get("key"),
+        node_id=data.get("node_id"),
+        name=str(data.get("name", "") or ""),
+        kind=data.get("kind", "component"),
+        description=str(data.get("description", "") or ""),
+        documentation_links=[_link_from_dict(l) for l in data.get("documentation_links", []) or [] if isinstance(l, dict)],
+    )
+
+
+def _instance_from_dict(data: Any) -> Optional[IRInstance]:
+    if not isinstance(data, dict):
+        return None
+    return IRInstance(
+        component_id=data.get("component_id"),
+        component_key=data.get("component_key"),
+        main_component_id=data.get("main_component_id"),
+        main_component_key=data.get("main_component_key"),
+    )
+
+
+def _token_ref_from_dict(data: Any) -> IRTokenRef:
+    if not isinstance(data, dict):
+        return IRTokenRef()
+    return IRTokenRef(
+        property_name=str(data.get("property_name", "") or ""),
+        token_key=str(data.get("token_key", "") or ""),
+        kind=data.get("kind", "variable"),
+    )
+
+
+def _tokens_from_dict(data: Any) -> Optional[IRTokens]:
+    if not isinstance(data, dict):
+        return None
+    return IRTokens(
+        refs=[_token_ref_from_dict(r) for r in data.get("refs", []) or []],
+        bound_variables=dict(data.get("bound_variables", {}) or {}),
+        style_refs=dict(data.get("style_refs", {}) or {}),
+    )
+
+
+def _responsive_from_dict(data: Any) -> Optional[IResponsive]:
+    if not isinstance(data, dict):
+        return None
+    return IResponsive(
+        constraints_horizontal=data.get("constraints_horizontal"),
+        constraints_vertical=data.get("constraints_vertical"),
+        sizing_horizontal=data.get("sizing_horizontal"),
+        sizing_vertical=data.get("sizing_vertical"),
+        min_width=_float_or_none(data.get("min_width")),
+        max_width=_float_or_none(data.get("max_width")),
+        min_height=_float_or_none(data.get("min_height")),
+        max_height=_float_or_none(data.get("max_height")),
+    )
+
+
+def _interaction_from_dict(data: Any) -> IRInteraction:
+    if not isinstance(data, dict):
+        return IRInteraction()
+    return IRInteraction(
+        trigger=data.get("trigger"),
+        action=data.get("action"),
+        destination=data.get("destination"),
+        transition=dict(data.get("transition", {}) or {}) if isinstance(data.get("transition"), dict) else None,
+    )
+
+
+def _prototype_from_dict(data: Any) -> Optional[IRPrototype]:
+    if not isinstance(data, dict):
+        return None
+    return IRPrototype(
+        url=data.get("url"),
+        links=[_link_from_dict(l) for l in data.get("links", []) or [] if isinstance(l, dict)],
+        interactions=[_interaction_from_dict(i) for i in data.get("interactions", []) or []],
+        start_node=data.get("start_node"),
+    )
+
+
+def _annotations_from_dict(data: Any) -> Optional[IRAnnotations]:
+    if not isinstance(data, dict):
+        return None
+    return IRAnnotations(
+        annotation=data.get("annotation"),
+        developer_metadata=dict(data.get("developer_metadata", {}) or {}),
+    )
+
+
+def _asset_from_dict(data: Any) -> Optional[IRAssetRef]:
+    if not isinstance(data, dict):
+        return None
+    return IRAssetRef(
+        node_id=str(data.get("node_id", "") or ""),
+        url=data.get("url"),
+        image_ref=data.get("image_ref"),
+        local_path=data.get("local_path"),
+    )
+
+
+def _source_from_dict(data: Any) -> IRSource:
+    if not isinstance(data, dict):
+        return IRSource()
+    return IRSource(
+        file_key=str(data.get("file_key", "") or ""),
+        node_id=str(data.get("node_id", "") or ""),
+        node_type=str(data.get("node_type", "") or ""),
+        path=list(data.get("path", []) or []),
+    )
+
+
+def _token_from_dict(data: Any) -> IRToken:
+    if not isinstance(data, dict):
+        return IRToken()
+    return IRToken(
+        kind=data.get("kind", "variable"),
+        key=str(data.get("key", "") or ""),
+        name=str(data.get("name", "") or ""),
+        token_type=str(data.get("token_type", "") or ""),
+        value=data.get("value"),
+        description=str(data.get("description", "") or ""),
+        resolved_type=data.get("resolved_type"),
+    )
+
+
+def _node_from_dict(data: Any) -> Optional[IRNode]:
+    """Rebuild an :class:`IRNode` subtree (children recursively)."""
+    if not isinstance(data, dict):
+        return None
+    return IRNode(
+        id=str(data.get("id", "") or ""),
+        name=str(data.get("name", "") or ""),
+        kind=str(data.get("kind", KIND_NODE) or KIND_NODE),
+        node_type=str(data.get("node_type", "") or ""),
+        source=_source_from_dict(data.get("source")),
+        visible=bool(data.get("visible", True)),
+        opacity=float(data.get("opacity", 1.0)),
+        dimensions=_dimensions_from_dict(data.get("dimensions")),
+        position=_position_from_dict(data.get("position")),
+        layout=_layout_from_dict(data.get("layout")),
+        style=_style_from_dict(data.get("style")),
+        typography=_typography_from_dict(data.get("typography")),
+        text=_text_from_dict(data.get("text")),
+        component=_component_from_dict(data.get("component")) if isinstance(data.get("component"), dict) else None,
+        instance=_instance_from_dict(data.get("instance")),
+        tokens=_tokens_from_dict(data.get("tokens")),
+        responsive=_responsive_from_dict(data.get("responsive")),
+        prototype=_prototype_from_dict(data.get("prototype")),
+        annotations=_annotations_from_dict(data.get("annotations")),
+        asset=_asset_from_dict(data.get("asset")),
+        children=[c for c in (_node_from_dict(ch) for ch in data.get("children", []) or []) if c is not None],
+        unknown=dict(data.get("unknown", {}) or {}),
+        raw=dict(data.get("raw", {}) or {}),
+    )

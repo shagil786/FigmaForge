@@ -125,7 +125,7 @@ function spawnPython(
 }
 
 /** Parse the single JSON line the pipeline CLI prints on success. */
-export function parseManifestLine(stdout: string): BackendManifest {
+export function parseJsonLine(stdout: string): Record<string, unknown> {
   const lines = stdout.split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (lines.length === 0) {
     throw new Error("pipeline.py printed no output");
@@ -136,10 +136,19 @@ export function parseManifestLine(stdout: string): BackendManifest {
   } catch (err) {
     throw new Error(`pipeline.py output is not JSON: ${(err as Error).message}`);
   }
-  if (typeof parsed !== "object" || parsed === null || !("backend" in parsed)) {
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new Error("pipeline.py output is not a JSON object");
+  }
+  return parsed as Record<string, unknown>;
+}
+
+/** Parse a pipeline manifest line (same contract, requires the backend field). */
+export function parseManifestLine(stdout: string): BackendManifest {
+  const parsed = parseJsonLine(stdout);
+  if (!("backend" in parsed)) {
     throw new Error("pipeline.py manifest is missing the 'backend' field");
   }
-  return parsed as BackendManifest;
+  return parsed as unknown as BackendManifest;
 }
 
 // ---------------------------------------------------------------------------
@@ -230,11 +239,178 @@ export async function invokeIngest(
       `pipeline.py ingest exited ${result.exitCode}: ${detail}`,
     );
   }
-  const lines = result.stdout.split(/\r?\n/).filter((l) => l.trim().length > 0);
-  const fileJson = JSON.parse(lines[lines.length - 1] ?? "{}") as Record<string, unknown>;
+  const fileJson = parseJsonLine(result.stdout);
   return {
     fileKey: String(fileJson.file_key ?? source.fileKey ?? ""),
     fileJson,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Front-half stages (Part 16) — normalize / resolve / layout
+// ---------------------------------------------------------------------------
+
+/**
+ * Run one front-half subcommand against a JSON payload staged to a temp
+ * file; returns the parsed single-JSON-line result.
+ */
+async function invokeJsonStage(
+  cfg: { pythonBin: string; pluginDir: string },
+  subcommand: "normalize" | "resolve" | "layout",
+  inputJson: unknown,
+  extraArgs: string[] = [],
+): Promise<Record<string, unknown>> {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ff-stage-"));
+  const inputPath = path.join(tmp, "input.json");
+  fs.writeFileSync(inputPath, JSON.stringify(inputJson), "utf-8");
+  try {
+    const result = await spawnPython(
+      cfg.pythonBin,
+      path.join(cfg.pluginDir, "scripts", "pipeline.py"),
+      [subcommand, "--file", inputPath, ...extraArgs],
+      cfg.pluginDir,
+    );
+    if (result.exitCode !== 0) {
+      const detail = result.stderr.trim() || result.stdout.trim();
+      throw new Error(
+        `pipeline.py ${subcommand} exited ${result.exitCode}: ${detail}`,
+      );
+    }
+    return parseJsonLine(result.stdout);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+/** Build + validate the design IR from a Figma file JSON. */
+export function invokeNormalize(
+  cfg: { pythonBin: string; pluginDir: string },
+  fileJson: unknown,
+): Promise<Record<string, unknown>> {
+  return invokeJsonStage(cfg, "normalize", fileJson);
+}
+
+/** Resolve a design IR against the project library. */
+export function invokeResolve(
+  cfg: { pythonBin: string; pluginDir: string },
+  irJson: unknown,
+): Promise<Record<string, unknown>> {
+  return invokeJsonStage(cfg, "resolve", irJson);
+}
+
+/** Infer the layout plan from a design IR. */
+export function invokeLayout(
+  cfg: { pythonBin: string; pluginDir: string },
+  irJson: unknown,
+  viewport?: number,
+): Promise<Record<string, unknown>> {
+  return invokeJsonStage(
+    cfg, "layout", irJson,
+    viewport !== undefined ? ["--viewport", String(viewport)] : [],
+  );
+}
+
+/**
+ * Generate backend code from front-half stage artifacts (no recompute):
+ * ``generate --ir … --layout … [--resolution …]``.
+ */
+export async function invokeBackendGeneratorFromStages(
+  cfg: { pythonBin: string; pluginDir: string },
+  target: CodegenTarget | string,
+  stages: { irJson: unknown; layoutJson: unknown; resolutionJson?: unknown },
+  outDir: string,
+  options?: BackendInvokeOptions,
+): Promise<BackendGenerateResult> {
+  const backend = backendForTarget(target);
+
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ff-codegen-"));
+  try {
+    const irPath = path.join(tmp, "ir.json");
+    const layoutPath = path.join(tmp, "layout.json");
+    fs.writeFileSync(irPath, JSON.stringify(stages.irJson), "utf-8");
+    fs.writeFileSync(layoutPath, JSON.stringify(stages.layoutJson), "utf-8");
+
+    const args = [
+      "generate",
+      "--ir", irPath,
+      "--layout", layoutPath,
+      "--backend", backend,
+      "--out-dir", outDir,
+    ];
+    if (stages.resolutionJson !== undefined) {
+      const resolutionPath = path.join(tmp, "resolution.json");
+      fs.writeFileSync(resolutionPath, JSON.stringify(stages.resolutionJson), "utf-8");
+      args.push("--resolution", resolutionPath);
+    }
+    if (options?.viewport !== undefined) {
+      args.push("--viewport", String(options.viewport));
+    }
+
+    const result = await spawnPython(
+      cfg.pythonBin,
+      path.join(cfg.pluginDir, "scripts", "pipeline.py"),
+      args,
+      cfg.pluginDir,
+    );
+    if (result.exitCode !== 0) {
+      const detail = result.stderr.trim() || result.stdout.trim();
+      throw new Error(
+        `pipeline.py generate (${backend}) exited ${result.exitCode}: ${detail}`,
+      );
+    }
+    const manifest = parseManifestLine(result.stdout);
+    return { manifest, filesDir: path.join(outDir, backend) };
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+/** Normalize stage handler — fileJson → irJson (shared + artifact). */
+export function createNormalizeStageHandler(): StageHandler {
+  return async (ctx: PipelineContext) => {
+    const fileJson = ctx.shared.get("fileJson");
+    if (!fileJson) {
+      throw new Error("normalize stage requires ingest output (no fileJson available)");
+    }
+    const irJson = await invokeNormalize(
+      { pythonBin: ctx.toolCtx.pythonBin, pluginDir: ctx.config.pluginDir },
+      fileJson,
+    );
+    ctx.shared.set("irJson", irJson);
+    return { irJson };
+  };
+}
+
+/** Resolve stage handler — irJson → resolutionJson (shared + artifact). */
+export function createResolveStageHandler(): StageHandler {
+  return async (ctx: PipelineContext) => {
+    const irJson = ctx.shared.get("irJson");
+    if (!irJson) {
+      throw new Error("resolve stage requires normalize output (no irJson available)");
+    }
+    const resolutionJson = await invokeResolve(
+      { pythonBin: ctx.toolCtx.pythonBin, pluginDir: ctx.config.pluginDir },
+      irJson,
+    );
+    ctx.shared.set("resolutionJson", resolutionJson);
+    return { resolutionJson };
+  };
+}
+
+/** Layout stage handler — irJson → layoutJson (shared + artifact). */
+export function createLayoutStageHandler(): StageHandler {
+  return async (ctx: PipelineContext) => {
+    const irJson = ctx.shared.get("irJson");
+    if (!irJson) {
+      throw new Error("layout stage requires normalize output (no irJson available)");
+    }
+    const layoutJson = await invokeLayout(
+      { pythonBin: ctx.toolCtx.pythonBin, pluginDir: ctx.config.pluginDir },
+      irJson,
+      ctx.config.viewport.width,
+    );
+    ctx.shared.set("layoutJson", layoutJson);
+    return { layoutJson };
   };
 }
 
@@ -257,24 +433,32 @@ export function createIngestStageHandler(): StageHandler {
 }
 
 /**
- * Generate stage handler — lowers the ingested file through the configured
- * target's Python backend and records the manifest + files directory.
+ * Generate stage handler — lowers the pipeline's output through the
+ * configured target's Python backend.  Prefers the staged front-half
+ * artifacts (``--ir/--layout/[--resolution]``); falls back to the legacy
+ * ``--file`` recompute path when only ingest output is available.
  */
 export function createGenerateStageHandler(): StageHandler {
   return async (ctx: PipelineContext, input: Record<string, unknown>) => {
-    const fileJson = ctx.shared.get("fileJson") ?? input.fileJson;
-    if (!fileJson) {
-      throw new Error("generate stage requires ingest output (no fileJson available)");
-    }
-
     const outDir = path.join(ctx.config.outputDir, ctx.config.runId, "generated");
-    const result = await invokeBackendGenerator(
-      { pythonBin: ctx.toolCtx.pythonBin, pluginDir: ctx.config.pluginDir },
-      ctx.config.target,
-      fileJson,
-      outDir,
-      { viewport: ctx.config.viewport.width },
-    );
+    const cfg = { pythonBin: ctx.toolCtx.pythonBin, pluginDir: ctx.config.pluginDir };
+    const options = { viewport: ctx.config.viewport.width };
+
+    const irJson = ctx.shared.get("irJson") ?? input.irJson;
+    const layoutJson = ctx.shared.get("layoutJson") ?? input.layoutJson;
+    let result: BackendGenerateResult;
+    if (irJson && layoutJson) {
+      const resolutionJson = ctx.shared.get("resolutionJson") ?? input.resolutionJson;
+      result = await invokeBackendGeneratorFromStages(
+        cfg, ctx.config.target, { irJson, layoutJson, resolutionJson }, outDir, options,
+      );
+    } else {
+      const fileJson = ctx.shared.get("fileJson") ?? input.fileJson;
+      if (!fileJson) {
+        throw new Error("generate stage requires ingest or front-half stage output");
+      }
+      result = await invokeBackendGenerator(cfg, ctx.config.target, fileJson, outDir, options);
+    }
 
     ctx.shared.set("generatedManifest", result.manifest);
     return {

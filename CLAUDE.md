@@ -25,7 +25,7 @@ This is a complete platform implementation (version 0.0.1-dev), containing a 100
 - `plugin/figmaforge/` — The primary source code and content:
   - `core/` (Python): The full Figma-to-Code pipeline:
     - **Ingestion:** `figma_client.py`, `figma_types.py`, `figma_errors.py`, `figma_fixtures.py`, `normalizer.py`
-    - **IR Pipeline:** `ir_types.py`, `ir_builder.py`, `ir_validator.py` (stdlib-only JSON-Schema draft-07)
+    - **IR Pipeline:** `ir_types.py`, `ir_builder.py`, `ir_validator.py` (stdlib-only JSON-Schema draft-07); `IRDocument.from_dict` JSON round-trip loader (Part 16)
     - **Resolution:** `resolver.py`, `matcher.py`, `component_index.py`, `variant_resolver.py`, `token_resolver.py`, `library_types.py`
     - **Layout:** `layout_engine.py` (988 lines), `layout_types.py`, `layout_analyzer.py`, `constraint_model.py`, `breakpoint_model.py`
     - **Generators:** `react_generator.py` (wired to ResolutionReport), `css_generator.py` (all sizing modes), `generator_types.py`
@@ -34,7 +34,7 @@ This is a complete platform implementation (version 0.0.1-dev), containing a 100
     - **Assets & Diff:** `asset_handler.py`, `asset_manager.py` (content-addressed, SVG security), `figma_assets.py` (baseline download), `png_codec.py` + `pixel_diff.py` (stdlib pixel diffing + CLI + shared SSIM verdict), `ssim.py` (pure-stdlib perceptual SSIM, Part 13), `render_harness.py`, `diff_engine.py` (per-category scoring + capped pixel weight + regional SSIM gating)
     - **Repair Loop (Part 8):** `repair_classifier.py` (9 categories), `patch_planner.py` (strategy-ordered), `patch_executor.py` (with rollback), `repair_loop.py` (iteration controller), `repair_history.py` (manifest)
     - **Hooks:** `hooks/session_detector.py`, `hooks/external_mutation_gate.py` (regex matching), `hooks/post_edit_validator.py` (executes validators)
-    - **Pipeline CLI (Part 15):** `scripts/pipeline.py` — `ingest` (live `--file-key` or local `--file`) and `generate` (all six backends, deterministic manifest) subcommands; exit codes 2/3/4; consumed by the TS runtime
+    - **Pipeline CLI (Parts 15–16):** `scripts/pipeline.py` — `ingest`, `normalize`, `resolve`, `layout`, and `generate` subcommands (one-JSON-line contract, exit codes 2/3/4); `generate` supports staged mode (`--ir/--layout/[--resolution]`, byte-identical to `--file` recompute); consumed by the TS runtime
   - `catalog/`: `roles.json` (100 roles across 10 domains), `roles.json`.
   - `agents/`: `context-scout.md`, `lifecycle-planner.md`, `fresh-verifier.md`.
   - `skills/`: `route.md`, `lifecycle.md`, `doctor.md`, `mcp-template.md`, `lsp-template.md`, `demo.md`.
@@ -42,11 +42,11 @@ This is a complete platform implementation (version 0.0.1-dev), containing a 100
   - `schemas/`: `design-ir.schema.json`, `layout-plan.schema.json`, `resolution-report.schema.json`, `detection.schema.json`, `router.schema.json`, `task-state.schema.json`.
   - `templates/`: Inert examples for MCP and LSP configurations.
   - `library/`: `components.json` (5 project components), `tokens.json` (12 design tokens).
-  - `tests/` (40 test files, 481 tests): Unit, integration, snapshot, property-based, repair-loop, backend adapter (six real generators + 5 golden snapshots), capability-vs-output honesty audit, render-harness, pixel-diff, SSIM-gating, baseline-refresh, and pipeline-CLI tests.
+  - `tests/` (42 test files, 499 tests): Unit, integration, snapshot, property-based, repair-loop, backend adapter (six real generators + 5 golden snapshots), capability-vs-output honesty audit, render-harness, pixel-diff, SSIM-gating, baseline-refresh, pipeline-CLI, and IR/layout round-trip tests.
 - `runtime/` (Part 9 — TypeScript Orchestration Runtime):
-  - `src/core/` (16 modules): `types.ts` (composable `CodegenTarget = { framework, styling }`), `events.ts`, `checkpoint.ts`, `artifacts.ts`, `tools.ts`, `state.ts`, `budget.ts`, `retry.ts`, `security.ts`, `pipeline.ts`, `evaluation.ts`, `providers.ts`, `screenshot_compare.ts`, `render_handler.ts`, `backend_codegen.ts` (Part 15: target→backend map, Python CLI invocation, ingest/generate stage handlers), `index.ts`
+  - `src/core/` (16 modules): `types.ts` (composable `CodegenTarget = { framework, styling }`), `events.ts`, `checkpoint.ts`, `artifacts.ts`, `tools.ts`, `state.ts`, `budget.ts`, `retry.ts`, `security.ts`, `pipeline.ts`, `evaluation.ts`, `providers.ts`, `screenshot_compare.ts`, `render_handler.ts`, `backend_codegen.ts` (Parts 15–16: target→backend map, Python CLI invocation, ingest/normalize/resolve/layout/generate stage handlers + staged generate), `index.ts`
   - `src/cli/main.ts`: CLI with 7 commands (run, inspect, render, compare, repair, replay, demo) + `--target=<framework+styling>` and `--file=<path>` flags
-  - `tests/` (3 files, 124 tests): Comprehensive test suite with custom test framework (incl. backend-codegen stage + demo tests)
+  - `tests/` (3 files, 128 tests): Comprehensive test suite with custom test framework (incl. backend-codegen stage, demo, and five-stage front-half tests)
   - `evaluation/fixtures/golden/`: 3 golden fixtures (simple-button, login-screen, card-layout)
 - `docs/architecture.md` — In-depth architectural blueprint.
 - `docs/DEVELOPMENT_LOG.md` — Part-by-part development log with decisions and verification.
@@ -77,9 +77,9 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 > `buildConfig`), e.g. `PYTHON_BIN=/opt/homebrew/bin/python3.14 node dist/runtime/tests/run_all.js`
 > or `PYTHON_BIN=/opt/homebrew/bin/python3.14 node dist/runtime/src/cli/main.js compare ...`.
 
-* **Run all tests (481 tests):**
+* **Run all tests (499 tests):**
   `cd plugin/figmaforge && python3 -m unittest discover -s tests -v`
-* **Run runtime tests (124 tests):**
+* **Run runtime tests (128 tests):**
   `npx tsc && node dist/runtime/tests/run_all.js`
 * **Install browser rendering dependencies (required for the render stage):**
   `pip install playwright && playwright install chromium`
@@ -105,8 +105,8 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 
 ## 7. Testing Requirements
 
-- All 481 Python tests across 40 test files must pass (`python3 -m unittest discover -s tests`); browser-render tests skip cleanly without chromium.
-- All 124 TypeScript runtime tests must pass (`npx tsc && node dist/runtime/tests/run_all.js`).
+- All 499 Python tests across 42 test files must pass (`python3 -m unittest discover -s tests`); browser-render tests skip cleanly without chromium.
+- All 128 TypeScript runtime tests must pass (`npx tsc && node dist/runtime/tests/run_all.js`).
 - Test categories: unit tests, integration tests, golden-file snapshot tests, property-based tests, perceptual (SSIM) gating tests.
 - Snapshot tests use `REWRITE_SNAPSHOTS=1` to regenerate golden files after intentional output changes.
 - Adding a new module requires corresponding test coverage.
@@ -124,7 +124,7 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 1. Discuss architecture impact (review `docs/architecture.md`).
 2. Run full test suite (`python3 -m unittest discover -s tests` from `plugin/figmaforge/`).
 3. Make atomic, minimal coherent changes explicitly matching schemas.
-4. Verify all 481 tests pass and regenerate snapshots if output changed intentionally.
+4. Verify all 499 tests pass and regenerate snapshots if output changed intentionally.
 5. Update `docs/DEVELOPMENT_LOG.md` with the change entry.
 6. Only document verified, executable routines.
 
@@ -132,7 +132,7 @@ Nested `CLAUDE.md` files should NOT be created. The structure is global to the p
 
 - Scope is strictly adhered to (no speculative integrations).
 - All changes maintain schema constraints (run `claude plugin validate --strict`).
-- Full test suite passes: `python3 -m unittest discover -s tests` (481 tests, 40 files).
+- Full test suite passes: `python3 -m unittest discover -s tests` (499 tests, 42 files).
 - Changes align exactly with architectural constraints in `docs/architecture.md`.
 - `docs/DEVELOPMENT_LOG.md` updated with the change entry.
 - No exposed credentials, secrets, or unintentional active `.lsp.json`/`.mcp.json` templates exist.
