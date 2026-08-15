@@ -361,14 +361,18 @@ def extend_ir_style(
     style: VStyle,
     plan_node: LayoutNodePlan,
     ir: Optional[IRNode],
+    assets: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> None:
     """Add IR-sourced style (fills/radius/borders/opacity/shadows/blur/typography)
     plus overflow behavior and breakpoint changes to a VStyle.
 
     Shared by html_css, vue, and svelte so all web backends lower the IR
-    style surface identically.  Image fills degrade to a named fallback
-    (the calling backend emits the ``fidelity:`` marker in its markup);
-    breakpoints fold into ``style.breakpoints`` for ``@media`` emission.
+    style surface identically.  Image fills lower to a real CSS background
+    (``url(<path>)`` with Figma's default cover/center fit) when the node has
+    a resolved asset in ``assets`` (``options["assets"]`` from the assets
+    stage); otherwise they degrade to a named fallback (the calling backend
+    emits the ``fidelity:`` marker in its markup) — never silent.
+    Breakpoints fold into ``style.breakpoints`` for ``@media`` emission.
     """
     if ir is not None and ir.style is not None:
         s = ir.style
@@ -386,9 +390,16 @@ def extend_ir_style(
                 )
                 style.base["background"] = f"linear-gradient(to bottom, {stops})"
                 break
-            # image fills -> named fallback, never silent
-            style.base["background"] = "#f0f0f0"
-            break
+            if fill.kind == "image":
+                asset = (assets or {}).get(ir.id) if ir is not None else None
+                if asset and asset.get("path"):
+                    style.base["backgroundImage"] = f"url({asset['path']})"
+                    style.base["backgroundSize"] = "cover"
+                    style.base["backgroundPosition"] = "center"
+                else:
+                    # unresolved image fill -> named fallback, never silent
+                    style.base["background"] = "#f0f0f0"
+                break
 
         if s.radius is not None:
             style.base["borderRadius"] = f"{_fmt_num(s.radius)}px"

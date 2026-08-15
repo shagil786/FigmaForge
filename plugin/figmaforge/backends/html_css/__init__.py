@@ -203,6 +203,13 @@ class HtmlCssBackend(BackendAdapter):
             if n.style is not None
             and any(f.visible and f.kind == "image" for f in n.style.fills)
         )
+        assets: Dict[str, Dict[str, Any]] = opts.get("assets") or {}
+        # Only image fills WITHOUT a resolved asset keep the marked fallback;
+        # a resolved one emits a real background (extend_ir_style).
+        unresolved_image_fill_ids = frozenset(
+            nid for nid in image_fill_ids
+            if not (assets.get(nid) or {}).get("path")
+        )
 
         output = GeneratedOutput()
         all_css: List[str] = []
@@ -214,10 +221,12 @@ class HtmlCssBackend(BackendAdapter):
             root_vnode = node_builder.build(screen)
 
             # Apply styles from layout plan
-            self._apply_styles(root_vnode, screen, style_gen, ir_by_id)
+            self._apply_styles(root_vnode, screen, style_gen, ir_by_id, assets=assets)
 
             # Emit HTML + CSS
-            html, css = emitter.emit(root_vnode, image_fill_ids=image_fill_ids)
+            html, css = emitter.emit(
+                root_vnode, image_fill_ids=unresolved_image_fill_ids,
+            )
             all_html.append(html)
             if css:
                 all_css.append(css)
@@ -261,12 +270,13 @@ class HtmlCssBackend(BackendAdapter):
         plan: LayoutNodePlan,
         style_gen: CssStyleGenerator,
         ir_by_id: Dict[str, IRNode],
+        assets: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> None:
         """Recursively apply CSS styles from the layout plan to VNodes."""
         vnode.style = style_gen.generate_style(plan)
-        extend_ir_style(vnode.style, plan, ir_by_id.get(vnode.node_id))
+        extend_ir_style(vnode.style, plan, ir_by_id.get(vnode.node_id), assets=assets)
         for child_vnode, child_plan in zip(vnode.children, plan.children):
-            self._apply_styles(child_vnode, child_plan, style_gen, ir_by_id)
+            self._apply_styles(child_vnode, child_plan, style_gen, ir_by_id, assets=assets)
 
     def _wrap_html_document(
         self,
