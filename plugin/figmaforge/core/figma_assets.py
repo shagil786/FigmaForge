@@ -68,7 +68,7 @@ class BaselineAsset:
     deduped: bool
 
 
-def _default_transport(url: str, timeout: float) -> bytes:
+def default_transport(url: str, timeout: float) -> bytes:
     """Fetch ``url`` via urllib, enforcing :data:`MAX_BASELINE_BYTES`."""
     try:
         with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310
@@ -118,7 +118,7 @@ def _declared_content_length(resp) -> Optional[int]:
         return None
 
 
-def _fetch_with_retry(
+def fetch_with_retry(
     fetch: Callable[[str, float], bytes],
     url: str,
     timeout_seconds: float,
@@ -176,7 +176,7 @@ def download_baselines(
     Every failure path — including ``client.get_images()`` API/validation
     errors — surfaces as a :class:`FigmaAssetError` subtype.
     """
-    fetch = transport or _default_transport
+    fetch = transport or default_transport
     try:
         image_set = client.get_images(file_key, node_ids, fmt=fmt, scale=scale)
     except FigmaError as exc:
@@ -191,7 +191,7 @@ def download_baselines(
             raise BaselineDownloadError(
                 f"no render URL returned for node {node_id!r}"
             )
-        raw = _fetch_with_retry(fetch, url, timeout_seconds, max_retries)
+        raw = fetch_with_retry(fetch, url, timeout_seconds, max_retries)
         content_hash = hashlib.sha256(raw).hexdigest()
         deduped = content_hash in asset_manager.manifest.assets
         stored_hash = asset_manager.ingest(
@@ -207,3 +207,8 @@ def download_baselines(
             deduped=deduped,
         )
     return results
+
+# Backwards-compatible private-name aliases (Part 17: the assets stage uses
+# the public names; existing tests/importers keep using the underscore names).
+_default_transport = default_transport
+_fetch_with_retry = fetch_with_retry

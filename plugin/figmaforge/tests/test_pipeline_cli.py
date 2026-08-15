@@ -350,7 +350,157 @@ class TestGenerate(unittest.TestCase):
             self.assertTrue(expected <= covered)
 
 
+class TestAssetsStage(unittest.TestCase):
+    """assets subcommand: download + content-address IR asset refs (Part 17)."""
 
+    def _normalize_to(self, tmp: str) -> Path:
+        out_path = Path(tmp) / "ir.json"
+        proc = _run(["normalize", "--file", str(FIXTURE), "--out", str(out_path)])
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        return out_path
+
+    def _ir_with_doc_asset(self, tmp: str, url: str) -> str:
+        """Normalize the fixture and add a document-level asset URL."""
+        ir_path = self._normalize_to(tmp)
+        data = json.loads(ir_path.read_text(encoding="utf-8"))
+        data["assets"]["2:1"] = url
+        ir_path.write_text(json.dumps(data), encoding="utf-8")
+        return str(ir_path)
+
+    @staticmethod
+    def _first_node_id(node):
+        if isinstance(node, dict) and node.get("id"):
+            return node["id"]
+        for child in node.get("children") or []:
+            found = TestAssetsStage._first_node_id(child)
+            if found:
+                return found
+        return None
+
+    def _ir_with_node_asset(self, tmp: str, asset_dict: dict) -> str:
+        """Normalize the fixture and attach ``asset_dict`` to its first node."""
+        ir_path = self._normalize_to(tmp)
+        data = json.loads(ir_path.read_text(encoding="utf-8"))
+        target = self._first_node_id(data["root"])
+
+        def inject(node):
+            if isinstance(node, dict) and node.get("id") == target:
+                node["asset"] = asset_dict
+            for child in node.get("children") or []:
+                inject(child)
+            return node
+
+        inject(data["root"])
+        ir_path.write_text(json.dumps(data), encoding="utf-8")
+        return str(ir_path)
+
+    def test_assets_empty_manifest_deterministic(self):
+        """Fixture IR (no assets) emits an empty manifest; runs byte-identical."""
+        with tempfile.TemporaryDirectory() as tmp:
+            ir_path = self._normalize_to(tmp)
+            assets_dir = Path(tmp) / "assets"
+            args = ["assets", "--ir", str(ir_path), "--assets-dir", str(assets_dir)]
+            first = _run(args)
+            second = _run(args)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertEqual(first.stdout, second.stdout)
+
+            payload = json.loads(first.stdout)
+            self.assertEqual(payload["assets"], [])
+            self.assertEqual(payload["counts"], {"total": 0, "downloaded": 0, "unresolved": 0})
+            self.assertEqual(payload["assets_dir"], str(assets_dir.resolve()))
+
+    def test_assets_downloads_file_url_and_stores(self):
+        """A file:// URL is fetched, hashed, content-addressed, and recorded."""
+        import hashlib
+
+        png = b"\x89PNG\r\n\x1a\nfake-asset-bytes"
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "photo.png"
+            src.write_bytes(png)
+            url = "file://" + str(src)
+            ir_path = self._ir_with_doc_asset(tmp, url)
+            assets_dir = Path(tmp) / "assets"
+            proc = _run(["assets", "--ir", ir_path, "--assets-dir", str(assets_dir)])
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+
+            payload = json.loads(proc.stdout)
+            expected_hash = hashlib.sha256(png).hexdigest()
+            self.assertEqual(payload["counts"], {"total": 1, "downloaded": 1, "unresolved": 0})
+            (entry,) = payload["assets"]
+            self.assertEqual(entry["node_id"], "2:1")
+            self.assertEqual(entry["url"], url)
+            self.assertEqual(entry["kind"], "image")
+            self.assertEqual(entry["status"], "downloaded")
+            self.assertEqual(entry["content_hash"], expected_hash)
+            self.assertEqual(
+                entry["local_path"],
+                str(assets_dir.resolve() / expected_hash[:2] / expected_hash),
+            )
+            self.assertTrue(Path(entry["local_path"]).read_bytes() == png)
+
+            # Manifest records kind/extension in the store.
+            meta_path = assets_dir / "manifest.json"
+            self.assertTrue(meta_path.exists())
+            store = json.loads(meta_path.read_text(encoding="utf-8"))
+            self.assertEqual(store["assets"][expected_hash]["kind"], "image")
+            self.assertEqual(store["assets"][expected_hash]["extension"], "png")
+
+    def test_assets_svg_kind_downloaded(self):
+        """An .svg URL downloads as an SVG-validated, content-addressed asset."""
+        svg = b'<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>'
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "icon.svg"
+            src.write_bytes(svg)
+            url = "file://" + str(src)
+            ir_path = self._ir_with_doc_asset(tmp, url)
+            assets_dir = Path(tmp) / "assets"
+            proc = _run(["assets", "--ir", ir_path, "--assets-dir", str(assets_dir)])
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+
+            payload = json.loads(proc.stdout)
+            (entry,) = payload["assets"]
+            self.assertEqual(entry["kind"], "svg")
+            self.assertEqual(entry["status"], "downloaded")
+
+            store = json.loads((assets_dir / "manifest.json").read_text(encoding="utf-8"))
+            meta = store["assets"][entry["content_hash"]]
+            self.assertEqual(meta["kind"], "svg")
+            self.assertEqual(meta["extension"], "svg")
+
+    def test_assets_rejects_unsafe_svg(self):
+        """An embedded-script SVG fails the stage with a clear error (exit 1)."""
+        bad = b"<svg><script>alert(1)</script></svg>"
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "evil.svg"
+            src.write_bytes(bad)
+            url = "file://" + str(src)
+            ir_path = self._ir_with_doc_asset(tmp, url)
+            proc = _run(["assets", "--ir", ir_path, "--assets-dir", str(Path(tmp) / "assets")])
+            self.assertEqual(proc.returncode, 1)
+            self.assertIn("SVG", proc.stderr)
+            self.assertEqual(proc.stdout.strip(), "")
+
+    def test_assets_missing_token_exit_3(self):
+        """An unresolved image_ref (no URL) without FIGMA_TOKEN exits 3."""
+        with tempfile.TemporaryDirectory() as tmp:
+            ir_path = self._ir_with_node_asset(tmp, {"node_id": "x", "url": None, "image_ref": "img:9"})
+            proc = _run(
+                ["assets", "--ir", ir_path, "--assets-dir", str(Path(tmp) / "assets")],
+                env=_no_token_env(),
+            )
+            self.assertEqual(proc.returncode, 3)
+            self.assertIn("FIGMA_TOKEN", proc.stderr)
+
+    def test_assets_invalid_ir(self):
+        """A non-IR JSON input exits 4."""
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = Path(tmp) / "not_ir.json"
+            bad.write_text(json.dumps({"foo": 1}), encoding="utf-8")
+            proc = _run(["assets", "--ir", str(bad), "--assets-dir", str(Path(tmp) / "assets")])
+            self.assertEqual(proc.returncode, 4)
+            self.assertTrue(proc.stderr.strip())
 
 
 if __name__ == "__main__":

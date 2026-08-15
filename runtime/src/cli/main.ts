@@ -30,6 +30,7 @@ import {
   createResolveStageHandler,
   createLayoutStageHandler,
   createGenerateStageHandler,
+  createAssetsStageHandler,
   invokeIngest,
   invokeBackendGenerator,
   TARGET_BACKENDS,
@@ -246,8 +247,9 @@ async function cmdRun(args: CliArgs): Promise<void> {
 
   // Wire the real Python pipeline stages: ingest fetches (or reads locally)
   // the Figma file, normalize/resolve/layout run the front half through the
-  // pipeline CLI, and generate lowers the stage artifacts through the backend
-  // (Part 15: ingest+generate; Part 16: full front half).
+  // pipeline CLI, assets downloads + content-addresses IR asset refs, and
+  // generate lowers the stage artifacts through the backend
+  // (Part 15: ingest+generate; Part 16: full front half; Part 17: assets).
   if (localFile) {
     pipeline.setShared("filePath", path.resolve(localFile));
   }
@@ -255,6 +257,7 @@ async function cmdRun(args: CliArgs): Promise<void> {
   pipeline.onStage("normalize", createNormalizeStageHandler());
   pipeline.onStage("resolve", createResolveStageHandler());
   pipeline.onStage("layout", createLayoutStageHandler());
+  pipeline.onStage("assets", createAssetsStageHandler());
   pipeline.onStage("generate", createGenerateStageHandler());
 
   const result = await pipeline.run();

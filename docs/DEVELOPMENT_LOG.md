@@ -708,3 +708,60 @@ stages whose JSON artifacts are consumed losslessly by the next stage, and
 Wiring assets/render/compare/repair/verify into the TS runtime; compiling or
 executing generated SwiftUI/Flutter/TSX code; changing the `figmaforge demo`
 backend-direct path; schema-version migration for old IR/layout artifacts.
+
+## Part 17 — Assets Stage (content-addressed image/SVG assets through the TS runtime)
+
+Part 16 left `assets` (and render/compare/repair/verify) without a TS handler,
+so `figmaforge run` skipped it even though the Python asset machinery
+(`AssetManager`, `figma_assets`, `AssetHandler`) was complete and tested.
+Part 17 wires it: a CLI entry, an asset-reference collector, and a real TS
+stage — `figmaforge run` now exercises six stages.
+
+### What Changed
+
+1. **Asset-reference collector** (`core/asset_collector.py`) — pure,
+   deterministic `AssetRef` collection from the IR surface: per-node
+   `IRAssetRef` (`node.asset`), the document `assets` map (node_id → url),
+   and image fills (`IRFill(kind="image")` with an `image_ref`). Kind
+   detection from `image_ref`/url (`.svg` or `svg:` prefix); refs sorted by
+   node_id, deduped.
+2. **Public fetch helpers** (`core/figma_assets.py`) — `_default_transport`
+   and `_fetch_with_retry` exported as `default_transport` / `fetch_with_retry`
+   (internal call sites switched; underscore aliases kept so existing
+   importers/tests keep working).
+3. **`pipeline.py assets` subcommand** — `--ir` (required), `--file-key`,
+   `--assets-dir` (default `assets`), `--out`. Loads + schema-validates the
+   IR, collects refs, resolves `image_ref`-only refs via `get_images` when a
+   token and file key exist (grouped by format — svg vs png; exit 3 without
+   a token), downloads URLs through the reused retry/cap transport, and
+   content-addresses via `AssetManager` (SVG-validated; unsafe SVG → exit 1
+   with a clear message). Emits a deterministic manifest (`assets` sorted by
+   node_id with status/content_hash/local_path, `counts`, resolved
+   `assets_dir`).
+4. **TS assets stage** (`backend_codegen.ts`) — `invokeAssets` (staged IR,
+   spawn, single-JSON-line parse) and `createAssetsStageHandler` (reads
+   `irJson` from shared state, run-scoped store under
+   `<outputDir>/<runId>/assets`, stores `assetManifest`). `cmdRun` registers
+   it after layout — **six real stages**.
+
+### Testing
+
+- Python: **515** tests OK, zero skips (43 test files) — +10 collector tests
+  (asset refs / document assets / svg kind / image fills / empty doc / dedup
+  / deterministic sort / compat aliases) and +6 assets-CLI tests (empty-manifest
+  determinism, file:// download + hash + store, svg kind, unsafe-svg rejection,
+  missing-token exit 3, invalid-IR exit 4).
+- TS: **131** runtime tests passing, `npx tsc` clean — +3 backend-codegen tests
+  (six-stage run → `asset_manifest` artifact, deterministic across runs except
+  the run-scoped `assets_dir`; `invokeAssets` downloads + content-addresses a
+  `file://` URL; assets-without-normalize stage error).
+- Smoke: `figmaforge run --file=<fixture> --target=flutter+flutter_widgets`
+  produced **7 artifacts** (ingest/normalize/resolve/layout/assets/generate +
+  event log) with the deterministic empty asset manifest.
+- `claude plugin validate --strict` clean (verified at the Part 17 final gate).
+
+### Non-goals (deferred)
+
+Threading resolved local asset paths *into* generated code (the per-backend
+FILLS_IMAGE/IMAGE_ASSETS lift); wiring render/compare/repair/verify into the
+TS runtime; Figma OAuth (token-only).
