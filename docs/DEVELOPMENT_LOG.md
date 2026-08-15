@@ -567,7 +567,14 @@ silent — and a repo-wide honesty audit now locks that contract.
 
 ### Non-goals (deferred)
 Real-Figma end-to-end demo, real-repository testing, rollback procedure docs, diff heatmap
-output + extended PNG formats, SwiftUI main-axis justification (Spacer idiom, partial).
+output + extended PNG formats.
+
+### Follow-up — real SwiftUI main-axis justification (Spacer)
+swiftui's `JUSTIFY` now lowers to real `Spacer()` lines inside VStack/HStack: CENTER
+becomes leading + trailing spacers, MAX a leading spacer, SPACE_BETWEEN a spacer between
+every pair of children, and MIN/None the default packing. `JUSTIFY` is lifted from partial
+back to supported; the repo-wide honesty audit gained the `Spacer()` signal. Full gate:
+**471** tests OK (was 466), zero skips.
 
 ### Follow-up — real flutter sizing idioms (Expanded / IntrinsicWidth+Height / FractionallySizedBox)
 flutter's fill/hug/percent sizing now lower to the real Flutter idioms instead of computed box

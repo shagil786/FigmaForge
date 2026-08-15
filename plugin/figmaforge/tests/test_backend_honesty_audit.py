@@ -401,6 +401,7 @@ _SWIFTUI_SIGNALS: Dict[str, Tuple[str, ...]] = {
     Feature.HUG_SIZE: (".fixedSize()",),
     Feature.PADDING: (".padding(24)",),
     Feature.GAP: ("VStack(spacing:",),
+    Feature.JUSTIFY: ("Spacer()",),
     Feature.ALIGN_ITEMS: ("VStack(alignment: .trailing",),
     Feature.FILLS_SOLID: ("Color(red: 0.20, green: 0.40, blue: 0.80)",),
     Feature.BORDERS: (".border(",),

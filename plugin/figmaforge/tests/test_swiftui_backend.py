@@ -149,6 +149,34 @@ def _swift_plan() -> LayoutPlan:
     return LayoutPlan(file_key="swift", viewport=390.0, screens=[screen])
 
 
+def _justify_plan(justify: str) -> LayoutPlan:
+    """A column screen with three leaf children and a main-axis justification."""
+    screen = LayoutNodePlan(
+        node_id="0:1", name="Justify", kind="frame",
+        display=DISPLAY_FLEX, direction="column",
+        box=Box(x=0, y=0, width=400, height=600),
+        sizing=SizingSpec(
+            horizontal=AxisSizing(mode=SIZING_FIXED),
+            vertical=AxisSizing(mode=SIZING_FIXED),
+        ),
+        alignment=AlignmentSpec(justify=justify, align="CENTER"),
+    )
+    for i in range(3):
+        screen.children.append(LayoutNodePlan(
+            node_id=f"c:{i}", name=f"Child{i}", kind="frame",
+            display=DISPLAY_NONE, box=Box(x=0, y=0, width=100, height=30),
+        ))
+    return LayoutPlan(file_key="swift", viewport=390.0, screens=[screen])
+
+
+def _justify_document() -> IRDocument:
+    page = IRNode(
+        id="page-1", name="Page", kind=KIND_PAGE, node_type="CANVAS",
+        source=IRSource(file_key="swift", node_id="page-1"),
+    )
+    return IRDocument(file_key="swift", name="Justify", pages=[page])
+
+
 def _rich_fixture():
     """Shadows, text decoration, overflow clip, and fill sizing."""
     label = IRNode(
@@ -312,6 +340,35 @@ class TestSwiftUIBackend(unittest.TestCase):
         self.assertIn(".opacity(0.9)", content)
         # Title text color -> foregroundColor.
         self.assertIn(".foregroundColor(Color(red: 0.08, green: 0.12, blue: 0.24))", content)
+
+    # -- real main-axis justification: Spacer() in VStack/HStack --
+    def _justify_content(self, justify: str) -> str:
+        output = self.backend.generate(
+            document=_justify_document(), layout_plan=_justify_plan(justify),
+        )
+        return [f for f in output.files if f.path.endswith(".swift")][0].content
+
+    def test_justify_center_leading_and_trailing_spacers(self):
+        content = self._justify_content("CENTER")
+        self.assertEqual(content.count("Spacer()"), 2)
+
+    def test_justify_max_leading_spacer(self):
+        content = self._justify_content("MAX")
+        self.assertEqual(content.count("Spacer()"), 1)
+
+    def test_justify_space_between_spacers_between_children(self):
+        content = self._justify_content("SPACE_BETWEEN")
+        # Three children -> a Spacer between each pair.
+        self.assertEqual(content.count("Spacer()"), 2)
+
+    def test_justify_min_no_spacers(self):
+        content = self._justify_content("MIN")
+        self.assertNotIn("Spacer()", content)
+
+    def test_justify_lifted_to_supported(self):
+        caps = self.backend.capabilities
+        self.assertIn("justify", caps.supported_features)
+        self.assertNotIn("justify", caps.partial_features)
 
     def test_typography_modifiers(self):
         content = self._view().content
