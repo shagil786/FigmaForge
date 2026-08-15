@@ -1,7 +1,7 @@
 # Repair + Verify Stages — auto-repair and final verification through the TS runtime (Part 20) — Design Spec
 
 > **Branch:** `feat/part-20-repair-verify` (from main @ `40269c2`; Parts 18–19 are open PRs #21/#22 — this branch assumes only the Part 17 main state).
-> **Gate baseline (this branch, off main):** Python **533 OK, zero skips** (44 files) · TS `npx tsc` clean, **141 passing** · `claude plugin validate --strict` ✔. If #21/#22 merge first, counts shift to 526/133 and 533/141 respectively — the plan's per-task expectations state the branch-real numbers.
+> **Gate baseline (this branch, off main):** Python **515 OK, zero skips** (43 files) · TS `npx tsc` clean, **131 passing** · `claude plugin validate --strict` ✔. If #21/#22 merge first, counts shift to 526/133 and 533/141 respectively — the plan's per-task expectations state the branch-real numbers.
 
 ## Problem
 
@@ -88,4 +88,4 @@ Register all **ten real stages** (ingest → normalize → resolve → layout �
 - `figmaforge run --file=<fixture> --target=html+css` → **10 artifacts**, `Score` ≥ threshold, `Repairs: 0`, `Verification: PASSED`.
 - `figmaforge run … --baseline <color-shifted.png>` → compare score < threshold → repair runs (≥ 1 iteration) → regenerated html_css carries the repaired color → `Verification:` reflects the measured post-repair score.
 - `figmaforge run --target=flutter` → render degrades → repair + verify short-circuit with honest notes, run still completes, 10 artifacts.
-- Gate: **533 → ~545 Python** / **141 → ~150 TS**, `claude plugin validate --strict` ✔, real-chromium smoke at the gate.
+- Gate: **515 → ~535 Python** / **131 → ~150 TS**, `claude plugin validate --strict` ✔, real-chromium smoke at the gate.

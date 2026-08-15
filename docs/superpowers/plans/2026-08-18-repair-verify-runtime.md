@@ -1,7 +1,7 @@
 # Repair + Verify Stages — Implementation Plan (Part 20)
 
 > **Branch:** `feat/part-20-repair-verify` (from main @ `40269c2`). See the [design spec](./2026-08-18-repair-verify-runtime-design.md) for findings, honesty contract, and risk review.
-> **Gate baseline (this branch):** Python **533 OK, zero skips** (44 files) · TS **141 passing**, `npx tsc` clean · `claude plugin validate --strict` ✔. Expected after: **~545 / ~150**.
+> **Gate baseline (this branch, off main):** Python **515 OK, zero skips** (43 files) · TS **131 passing**, `npx tsc` clean · `claude plugin validate --strict` ✔. Expected after: **~535 / ~150**.
 > **Conventions:** test-first, one commit per task after the full suite goes green, commits on `feat/part-20-repair-verify`, PR against main (no merge, repo convention). Chrome: real-chromium tests only where deterministic; unit tests inject a fake harness (Part 19 render-test convention).
 
 ## Task 1 — Pixel → color repair (Python, test-first, contained)
@@ -16,7 +16,7 @@
 
 **Implement**: `core/patch_planner.py` — `PatchPlanner(..., baseline_png=None)`; in `_determine_new_value`/`_determine_property`, for `CATEGORY_COLOR` with `expected.region` and a decodable baseline: decode via `core.png_codec.decode_png`, clamp the region, average RGB, return `#rrggbb`; property → `"background"`. `core/repair_loop.py` — pass `baseline_png=self._config.baseline_png` to the planner it constructs in `run()`.
 
-**Verify**: new tests green; existing `test_repair_loop_raster.py`, `test_repair_classifier_pixel.py`, `test_diff_engine_ssim.py` untouched and green; full Python suite **533 + N OK**.
+**Verify**: new tests green; existing `test_repair_loop_raster.py`, `test_repair_classifier_pixel.py`, `test_diff_engine_ssim.py` untouched and green; full Python suite **515 + 6 = 521 OK**.
 **Commit**: `fix(repair): extract real baseline region color for pixel-mismatch repair patches`.
 
 ## Task 2 — html_css styles override seam (Python, test-first)
