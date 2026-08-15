@@ -12,7 +12,7 @@ import * as os from "node:os";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 
-import { describe, it, assert, assertEqual, assertDeepEqual, assertThrows, assertGreaterThan, assertIncludes } from "./test_framework.js";
+import { describe, it, assert, assertEqual, assertDeepEqual, assertThrows, assertRejects, assertGreaterThan, assertIncludes } from "./test_framework.js";
 import type { SuiteResult } from "./test_framework.js";
 import { PRESET_TARGETS, targetKey } from "../src/core/types.js";
 import type { RuntimeConfig } from "../src/core/types.js";
@@ -26,6 +26,7 @@ import {
   invokeLayout,
   invokeAssets,
   invokeRender,
+  invokeRepair,
   createIngestStageHandler,
   createGenerateStageHandler,
   createNormalizeStageHandler,
@@ -34,6 +35,7 @@ import {
   createAssetsStageHandler,
   createRenderStageHandler,
   createCompareStageHandler,
+  createRepairStageHandler,
 } from "../src/core/backend_codegen.js";
 import { EventLog } from "../src/core/events.js";
 import { CheckpointManager } from "../src/core/checkpoint.js";
@@ -962,6 +964,299 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
         assert(cp !== null);
         assertEqual(cp!.metrics.similarityScore, 0,
           "metrics must stay untouched when no score is measured");
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    // -----------------------------------------------------------------
+    // Part 20 — repair stage handler (Task 5)
+    // -----------------------------------------------------------------
+
+    await it("repair short-circuits when the gate is already satisfied", async () => {
+      const dir = tmpDir();
+      try {
+        // Threshold 0.5: the reference-baseline score (≈ 1.0, proven > 0.9
+        // in the Part 19 chain) is deterministically above it, so the
+        // gate-satisfied branch fires and repair must never spawn.
+        const config = makeConfig(dir, {
+          target: { framework: "html", styling: "css" },
+          similarityThreshold: 0.5,
+        });
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.setShared("filePath", FIXTURE);
+        pipeline.onStage("ingest", createIngestStageHandler());
+        pipeline.onStage("normalize", createNormalizeStageHandler());
+        pipeline.onStage("resolve", createResolveStageHandler());
+        pipeline.onStage("layout", createLayoutStageHandler());
+        pipeline.onStage("assets", createAssetsStageHandler());
+        pipeline.onStage("generate", createGenerateStageHandler());
+        pipeline.onStage("render", createRenderStageHandler());
+        pipeline.onStage("compare", createCompareStageHandler());
+        pipeline.onStage("repair", createRepairStageHandler());
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "completed");
+        // 9 real stages (ingest→repair) + the event log.
+        assertEqual(result.artifacts, 10, "expected 9 stage artifacts + event log");
+
+        const repairArtifacts = artifacts.byStage("repair");
+        assertEqual(repairArtifacts.length, 1);
+        const repair = artifacts.loadJSON(repairArtifacts[0]) as {
+          repairs: number;
+          note: string;
+          iterations_run: number;
+          success: boolean | null;
+        };
+        assertEqual(repair.repairs, 0);
+        assertEqual(repair.note, "gate already satisfied");
+        assertEqual(repair.iterations_run, 0);
+        assertEqual(repair.success, null);
+
+        // No repair spawn: the repair out dir must not exist and the budget
+        // must be untouched.
+        const repairDir = path.join(dir, config.runId, "repair");
+        assert(!fs.existsSync(repairDir), "short-circuit must never spawn repair");
+        assertEqual(budget.current.repairIterations, 0);
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("repair short-circuits on the reference-baseline contract when the gate fails", async () => {
+      const dir = tmpDir();
+      try {
+        // Threshold 1.5 forces the gate check to fail on the reference
+        // baseline (score ∈ [0,1] < 1.5), so the by-construction contract
+        // branch is the one that fires — never a spawn.
+        const config = makeConfig(dir, {
+          target: { framework: "html", styling: "css" },
+          similarityThreshold: 1.5,
+        });
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.setShared("filePath", FIXTURE);
+        pipeline.onStage("ingest", createIngestStageHandler());
+        pipeline.onStage("normalize", createNormalizeStageHandler());
+        pipeline.onStage("resolve", createResolveStageHandler());
+        pipeline.onStage("layout", createLayoutStageHandler());
+        pipeline.onStage("assets", createAssetsStageHandler());
+        pipeline.onStage("generate", createGenerateStageHandler());
+        pipeline.onStage("render", createRenderStageHandler());
+        pipeline.onStage("compare", createCompareStageHandler());
+        pipeline.onStage("repair", createRepairStageHandler());
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "completed");
+        const repairArtifacts = artifacts.byStage("repair");
+        assertEqual(repairArtifacts.length, 1);
+        const repair = artifacts.loadJSON(repairArtifacts[0]) as {
+          repairs: number;
+          note: string;
+          iterations_run: number;
+          success: boolean | null;
+        };
+        assertEqual(repair.repairs, 0);
+        assertEqual(repair.iterations_run, 0);
+        assertEqual(repair.success, null);
+        assert(repair.note.includes("reference"),
+          `expected the reference-baseline contract note, got: ${repair.note}`);
+        const repairDir = path.join(dir, config.runId, "repair");
+        assert(!fs.existsSync(repairDir),
+          "reference-baseline contract must never spawn repair");
+        assertEqual(budget.current.repairIterations, 0);
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("repair stage degrades with no measured score when render degraded", async () => {
+      const dir = tmpDir();
+      try {
+        const config = makeConfig(dir); // flutter — render degrades
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.setShared("filePath", FIXTURE);
+        pipeline.onStage("ingest", createIngestStageHandler());
+        pipeline.onStage("normalize", createNormalizeStageHandler());
+        pipeline.onStage("resolve", createResolveStageHandler());
+        pipeline.onStage("layout", createLayoutStageHandler());
+        pipeline.onStage("assets", createAssetsStageHandler());
+        pipeline.onStage("generate", createGenerateStageHandler());
+        pipeline.onStage("render", createRenderStageHandler());
+        pipeline.onStage("compare", createCompareStageHandler());
+        pipeline.onStage("repair", createRepairStageHandler());
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "completed");
+        const repairArtifacts = artifacts.byStage("repair");
+        assertEqual(repairArtifacts.length, 1);
+        const repair = artifacts.loadJSON(repairArtifacts[0]) as {
+          repairs: number;
+          success: boolean | null;
+          note: string;
+        };
+        assertEqual(repair.repairs, 0);
+        assertEqual(repair.success, null);
+        assert(repair.note.includes("no measured score"),
+          `expected the no-measured-score degrade note, got: ${repair.note}`);
+        const repairDir = path.join(dir, config.runId, "repair");
+        assert(!fs.existsSync(repairDir), "degrade must never spawn repair");
+        assertEqual(budget.current.repairIterations, 0);
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("repair runs the real Python loop and regenerates html_css against an external baseline", async () => {
+      const dir = tmpDir();
+      try {
+        // A deliberately-different external baseline: a full-red page at the
+        // exact viewport (Part 19's margin-reset trick).  The compare stage
+        // scores it well below the threshold, so the repair stage must spawn
+        // the real Python loop and converge toward it.
+        const redHtml = path.join(dir, "red.html");
+        fs.writeFileSync(
+          redHtml,
+          '<!DOCTYPE html><html><head><style>' +
+            '*{margin:0;padding:0;box-sizing:border-box}' +
+            'body{width:1440px;height:900px;overflow:hidden}' +
+            '</style></head><body>' +
+            '<div style="width:1440px;height:900px;background:#ff0000"></div>' +
+            '</body></html>',
+          "utf-8",
+        );
+        const red = await invokeRender(
+          { pythonBin: PYTHON_BIN, pluginDir: PLUGIN_DIR },
+          redHtml,
+          { width: 1440, height: 900 },
+          dir,
+        );
+
+        // Threshold 1.0: the compare score (< 0.9 vs the red baseline) is
+        // below it, so repair runs; and the loop's own gate is 1.0, forcing
+        // real patches (the capped pixel weight alone can't satisfy 1.0).
+        const config = makeConfig(dir, {
+          target: { framework: "html", styling: "css" },
+          similarityThreshold: 1.0,
+          budgets: {
+            maxTokens: 10000,
+            maxTimeMs: 120000,
+            maxIterations: 100,
+            maxRepairIterations: 3,
+          },
+        });
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.setShared("filePath", FIXTURE);
+        pipeline.setShared("baselinePath", red.screenshot);
+        pipeline.onStage("ingest", createIngestStageHandler());
+        pipeline.onStage("normalize", createNormalizeStageHandler());
+        pipeline.onStage("resolve", createResolveStageHandler());
+        pipeline.onStage("layout", createLayoutStageHandler());
+        pipeline.onStage("assets", createAssetsStageHandler());
+        pipeline.onStage("generate", createGenerateStageHandler());
+        pipeline.onStage("render", createRenderStageHandler());
+        pipeline.onStage("compare", createCompareStageHandler());
+        pipeline.onStage("repair", createRepairStageHandler());
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "completed");
+        const repairArtifacts = artifacts.byStage("repair");
+        assertEqual(repairArtifacts.length, 1);
+        const repair = artifacts.loadJSON(repairArtifacts[0]) as {
+          iterations_run: number;
+          final_score: number | null;
+          repaired_styles: string | null;
+          repaired_styles_path: string | null;
+          generated: { backend: string; files: Array<{ path: string }> } | null;
+        };
+        assertGreaterThan(repair.iterations_run, 0,
+          "a sub-threshold external baseline must actually run the repair loop");
+        assert(typeof repair.final_score === "number",
+          "final_score should be measured after repair");
+        assert(repair.repaired_styles_path !== null,
+          "repaired styles must serialize to the repair out dir");
+        assert(fs.existsSync(repair.repaired_styles_path as string));
+        assert(repair.generated !== null, "repair must regenerate html_css");
+        assertEqual(repair.generated!.backend, "html_css");
+        assertGreaterThan(repair.generated!.files.length, 0);
+
+        // The regenerated files exist on disk and carry the repair: the
+        // original computed card fill (#1a1a1a) must be gone from the output.
+        const genDir = path.join(dir, config.runId, "repair", "generated", "html_css");
+        const written = fs.readdirSync(genDir);
+        const regeneratedHtml = written
+          .filter((f) => f.endsWith(".html"))
+          .map((f) => fs.readFileSync(path.join(genDir, f), "utf-8"));
+        assertGreaterThan(regeneratedHtml.length, 0,
+          "repair must write regenerated html files");
+        assert(
+          regeneratedHtml.some((h) => !h.includes("#1a1a1a")),
+          "regenerated html should drop the original card fill the repair replaced",
+        );
+
+        // The budget must record the real iterations (the Repairs: line).
+        assertGreaterThan(budget.current.repairIterations, 0,
+          "the repair budget must be bumped by the real iterations");
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("invokeRepair surfaces a typed error for a missing baseline", async () => {
+      const dir = tmpDir();
+      try {
+        const fileJson = JSON.parse(fs.readFileSync(FIXTURE, "utf-8"));
+        const irJson = await invokeNormalize(
+          { pythonBin: PYTHON_BIN, pluginDir: PLUGIN_DIR },
+          fileJson,
+        );
+        const layoutJson = await invokeLayout(
+          { pythonBin: PYTHON_BIN, pluginDir: PLUGIN_DIR },
+          irJson,
+          1440,
+        );
+        await assertRejects(
+          () => invokeRepair(
+            { pythonBin: PYTHON_BIN, pluginDir: PLUGIN_DIR },
+            irJson,
+            layoutJson,
+            path.join(dir, "missing.png"),
+            path.join(dir, "repair"),
+            { viewport: { width: 1440, height: 900 } },
+          ),
+          "exited 4",
+        );
       } finally {
         cleanDir(dir);
       }

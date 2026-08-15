@@ -856,6 +856,177 @@ export function createCompareStageHandler(): StageHandler {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Repair stage (Part 20) — real RepairLoop against an external baseline
+// ---------------------------------------------------------------------------
+
+/** Options threaded into ``pipeline.py repair``. */
+export interface RepairOptions {
+  viewport: { width: number; height: number };
+  maxIterations?: number;
+  threshold?: number;
+}
+
+/**
+ * Run the real Python repair loop via ``scripts/pipeline.py repair``.
+ * Stages IR + layout to temp files (like the other staged invoke helpers),
+ * spawns the loop against the resolved external baseline, and parses the
+ * single JSON line.  Nonzero exit → typed error with stderr detail.  The
+ * loop converges by mutating the shared layer; regenerated html_css lands
+ * under ``outDir/generated/html_css``, repaired styles + full history under
+ * ``outDir/``.
+ */
+export async function invokeRepair(
+  cfg: { pythonBin: string; pluginDir: string },
+  irJson: unknown,
+  layoutJson: unknown,
+  baseline: string,
+  outDir: string,
+  opts: RepairOptions,
+): Promise<Record<string, unknown>> {
+  fs.mkdirSync(outDir, { recursive: true });
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ff-repair-"));
+  try {
+    const irPath = path.join(tmp, "ir.json");
+    const layoutPath = path.join(tmp, "layout.json");
+    fs.writeFileSync(irPath, JSON.stringify(irJson), "utf-8");
+    fs.writeFileSync(layoutPath, JSON.stringify(layoutJson), "utf-8");
+    const args = [
+      "repair", "--ir", irPath, "--layout", layoutPath,
+      "--baseline", baseline,
+      "--out", outDir,
+      "--viewport", `${opts.viewport.width}x${opts.viewport.height}`,
+    ];
+    if (opts.maxIterations !== undefined) {
+      args.push("--max-iterations", String(opts.maxIterations));
+    }
+    if (opts.threshold !== undefined) {
+      args.push("--threshold", String(opts.threshold));
+    }
+    const result = await spawnPython(
+      cfg.pythonBin,
+      path.join(cfg.pluginDir, "scripts", "pipeline.py"),
+      args,
+      cfg.pluginDir,
+    );
+    if (result.exitCode !== 0) {
+      const detail = result.stderr.trim() || result.stdout.trim();
+      throw new Error(
+        `pipeline.py repair exited ${result.exitCode}: ${detail}`,
+      );
+    }
+    return parseJsonLine(result.stdout);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Repair stage handler — measure, then auto-repair toward the baseline.
+ *
+ * Reads the compare stage's shared resolved baseline + diff report.  Honest
+ * short-circuits that NEVER spawn Python: no measured score (render degraded)
+ * → ``{repairs: 0, success: null}``; gate already satisfied (score ≥
+ * threshold) → ``{repairs: 0}``; ``baseline_kind === "reference"`` → the
+ * by-construction contract (the reference render IS the intended render — a
+ * low score there is a codegen regression the verify stage catches, not
+ * something repair can converge against).  Otherwise it spawns the real
+ * RepairLoop into ``<run>/repair/``, shares the outputs for the verify stage
+ * (``repairOut``/``repairManifest``/``repairStylesPath``), and bumps the
+ * budget ``repairIterations`` by the real iterations so the ``Repairs:``
+ * summary line is honest.
+ */
+export function createRepairStageHandler(): StageHandler {
+  return async (ctx: PipelineContext) => {
+    const threshold = ctx.config.similarityThreshold;
+    const repairDir = path.join(ctx.config.outputDir, ctx.config.runId, "repair");
+    const report = ctx.shared.get("diffReport") as
+      | { similarity_score: number | null }
+      | undefined;
+    const baseline = ctx.shared.get("compareBaseline") as string | undefined;
+    const baselineKind = ctx.shared.get("compareBaselineKind") as string | undefined;
+
+    const inert = (note: string) => ({
+      repairs: 0,
+      success: null,
+      iterations_run: 0,
+      final_score: report?.similarity_score ?? null,
+      stop_reason: null,
+      repaired_styles: null,
+      repaired_styles_path: null,
+      generated: null,
+      out_dir: repairDir,
+      note,
+    });
+
+    // Short-circuit 1: no measured score — nothing to repair.
+    if (!baseline || !report || report.similarity_score === null) {
+      return inert("no measured score — nothing to repair");
+    }
+    // Short-circuit 2: the gate is already satisfied.
+    if (report.similarity_score >= threshold) {
+      return inert("gate already satisfied");
+    }
+    // Short-circuit 3: reference baseline — the by-construction contract.
+    if (baselineKind === "reference") {
+      return inert(
+        "reference baseline is the intended render; a low score is a codegen " +
+        "regression the verify stage will catch — nothing to repair",
+      );
+    }
+
+    // Real repair: spawn the Python loop against the shared external baseline.
+    const irJson = ctx.shared.get("irJson");
+    const layoutJson = ctx.shared.get("layoutJson");
+    if (!irJson || !layoutJson) {
+      throw new Error(
+        "repair stage requires normalize/layout output (no irJson/layoutJson available)",
+      );
+    }
+    const cfg = { pythonBin: ctx.toolCtx.pythonBin, pluginDir: ctx.config.pluginDir };
+    const payload = await invokeRepair(
+      cfg,
+      irJson,
+      layoutJson,
+      baseline,
+      repairDir,
+      {
+        viewport: ctx.config.viewport,
+        maxIterations: ctx.config.budgets.maxRepairIterations,
+        threshold,
+      },
+    );
+    const iterationsRun = Number(payload.iterations_run ?? 0);
+    // The coordinator overwrites metrics.repairIterations from the budget
+    // after each stage, so bump the real budget — not just the metrics.
+    for (let i = 0; i < iterationsRun; i++) {
+      ctx.budget.addRepairIteration();
+    }
+
+    const stylesPath = path.join(repairDir, "styles.repaired.json");
+    const result = {
+      ok: payload.ok ?? true,
+      success: (payload.success as boolean | null) ?? null,
+      final_score: (payload.final_score as number | null) ?? null,
+      iterations_run: iterationsRun,
+      stop_reason: (payload.stop_reason as string | null) ?? null,
+      repairs: payload.repairs ?? [],
+      categories: payload.categories ?? null,
+      repaired_styles: (payload.repaired_styles as string | null) ?? null,
+      repaired_styles_path: fs.existsSync(stylesPath) ? stylesPath : null,
+      generated: (payload.generated as
+        | { backend: string; files: Array<{ path: string }> }
+        | null) ?? null,
+      out_dir: repairDir,
+      note: null,
+    };
+    ctx.shared.set("repairOut", repairDir);
+    ctx.shared.set("repairStylesPath", result.repaired_styles_path);
+    ctx.shared.set("repairManifest", payload);
+    return result;
+  };
+}
+
 /**
  * Ingest stage handler — fetches a Figma file (live, via ``--file-key``) or
  * reads a local fixture (via ``ctx.shared["filePath"]``), then stores the
