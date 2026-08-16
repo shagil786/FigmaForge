@@ -126,8 +126,8 @@
               "anchors": {
                 "bottom": 120.0,
                 "horizontal": "min",
-                "left": 68.0,
-                "right": 1372.0,
+                "left": 24.0,
+                "right": 1416.0,
                 "top": 24.0,
                 "vertical": "min"
               },
@@ -356,11 +356,11 @@
                 "justify": "MIN"
               },
               "anchors": {
-                "bottom": 56.0,
+                "bottom": 64.0,
                 "horizontal": "min",
                 "left": 24.0,
                 "right": 1416.0,
-                "top": 88.0,
+                "top": 80.0,
                 "vertical": "min"
               },
               "assumptions": [],

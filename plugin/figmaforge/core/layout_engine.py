@@ -348,7 +348,7 @@ class LayoutEngine:
         plan.sizing = self._sizing_spec(res_h, res_v, facts_h, facts_v)
         plan.spacing = self._spacing(node, parent, box)
         plan.alignment = self._alignment(node)
-        plan.anchors = self._anchors(facts_h, facts_v, parent)
+        plan.anchors = self._anchors(facts_h, facts_v, parent, node)
 
         # --- assumptions + text-approximation diagnostic
         for assumption in (res_h.assumption, res_v.assumption):
@@ -675,7 +675,12 @@ class LayoutEngine:
             # Parent content extent unresolved (hug under an unsolved parent or
             # an underdetermined frame): cannot anchor — place at content origin.
             return (c.x, c.y, w, h)
-        rel_l, _, rel_t, _ = self._rel_offsets(parent_node, w, h)
+        # Use the node being placed, not ``self._current_node``.  Children are
+        # built before their parent is anchored, so the mutable traversal
+        # cursor may point at the last child here.  Using that cursor makes a
+        # parent inherit a child's absolute coordinates and shifts nested
+        # sections (often completely off-canvas).
+        rel_l, _, rel_t, _ = self._rel_offsets(parent_node, node, w, h)
         x0 = (rel_l if rel_l is not None else 0.0)
         y0 = (rel_t if rel_t is not None else 0.0)
         left = x0 - c.x
@@ -710,12 +715,12 @@ class LayoutEngine:
     def _rel_offsets(
         self,
         parent_node: Optional[IRNode],
+        node: Optional[IRNode],
         self_w: float,
         self_h: float,
     ) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
         """(left, right, top, bottom) distances of the current node from the
         parent, computed from canvas coords minus the parent's canvas box."""
-        node = self._current_node
         pos = node.position if node else None
         if pos is None:
             return (None, None, None, None)
@@ -913,8 +918,10 @@ class LayoutEngine:
             align_self=layout.align_self if layout else None,
         )
 
-    def _anchors(self, facts_h, facts_v, parent: _ParentContext) -> Anchoring:
-        l, r, t, b = self._rel_offsets(parent.node, 0.0, 0.0)
+    def _anchors(
+        self, facts_h, facts_v, parent: _ParentContext, node: IRNode,
+    ) -> Anchoring:
+        l, r, t, b = self._rel_offsets(parent.node, node, 0.0, 0.0)
         return Anchoring(
             horizontal=_ANCHOR_BY_CONSTRAINT.get(facts_h.constraints, "min"),
             vertical=_ANCHOR_BY_CONSTRAINT.get(facts_v.constraints, "min"),
