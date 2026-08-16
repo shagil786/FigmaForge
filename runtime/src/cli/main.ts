@@ -303,138 +303,143 @@ async function cmdRun(args: CliArgs): Promise<void> {
 
   // Set up cancellation
   const ac = new AbortController();
-  process.on("SIGINT", () => {
+  const handleSigint = () => {
     console.log("\nCancelling...");
     ac.abort();
-  });
+  };
+  process.on("SIGINT", handleSigint);
   pipeline.setAbortSignal(ac.signal);
 
-  // Wire the real Python pipeline stages: ingest fetches (or reads locally)
-  // the Figma file, normalize/resolve/layout run the front half through the
-  // pipeline CLI, assets downloads + content-addresses IR asset refs, and
-  // generate lowers the stage artifacts through the backend
-  // (Part 15: ingest+generate; Part 16: full front half; Part 17: assets).
-  // render + compare (Part 19) then measure the generated output against a
-  // baseline (explicit --baseline, live --figma-baseline, or the IR
-  // reference render); repair + verify (Part 20) close the ten-stage loop:
-  // auto-repair toward an external baseline and measure the final gate.
-  if (localFile) {
-    pipeline.setShared("filePath", path.resolve(localFile));
-  }
-  if (args.flags["baseline"]) {
-    pipeline.setShared("baselinePath", path.resolve(args.flags["baseline"]));
-  }
-  if (args.flags["figma-baseline"] === "true") {
-    pipeline.setShared("figmaBaseline", true);
-  }
-  if (args.flags["no-repair"] === "true") {
-    pipeline.setShared("noRepair", true);
-  }
-  const noBundle = args.flags["no-bundle"] === "true";
-  pipeline.onStage("ingest", createIngestStageHandler());
-  pipeline.onStage("normalize", createNormalizeStageHandler());
-  pipeline.onStage("resolve", createResolveStageHandler());
-  pipeline.onStage("layout", createLayoutStageHandler());
-  pipeline.onStage("assets", createAssetsStageHandler());
-  pipeline.onStage("generate", createGenerateStageHandler());
-  // NOTE: PIPELINE_STAGES runs assets before generate (Part 18) so the
-  // assets-stage manifest can thread resolved paths into generated code.
-  pipeline.onStage("render", createRenderStageHandler({ noBundle }));
-  pipeline.onStage("compare", createCompareStageHandler());
-  pipeline.onStage("repair", createRepairStageHandler());
-  pipeline.onStage("verify", createVerifyStageHandler());
-
-  const adaptiveRequest = args.flags["adaptive-request"]
-    ?? (args.flags["adaptive"] === "true" ? DEFAULT_ADAPTIVE_REQUEST : undefined);
-  if (adaptiveRequest !== undefined) {
-    const plan = await cliRuntimeDeps.invokeAdaptivePreflight(
-      { pythonBin: config.pythonBin, pluginDir: config.pluginDir },
-      process.cwd(),
-      adaptiveRequest,
-    );
-    artifacts.storeJSON("adaptive_plan", "preflight", "adaptive_plan", plan);
-    events.emit("adaptive_plan_created", "Adaptive preflight completed", {
-      data: {
-        stack_status: plan.route.stack_status,
-        execution_mode: plan.route.execution_mode,
-        phases: plan.route.phases,
-        approval_gates: plan.route.approval_gates,
-      },
-    });
-  }
-
-  const result = await pipeline.run();
-
-  console.log(`\nPipeline ${result.status}`);
-  console.log(`  Duration:   ${result.totalDurationMs}ms`);
-  console.log(`  Score:      ${result.similarityScore}`);
-  console.log(`  Repairs:    ${result.repairIterations}`);
-  console.log(`  Tokens:     ${result.tokensUsed}`);
-  console.log(`  Artifacts:  ${result.artifacts}`);
-  console.log(`  Events:     ${result.events}`);
-
-  // Measured visual verdict from the compare stage's diff_report artifact
-  // (Part 19) — a real number or an honest "no measured score" note.
-  const diffArtifacts = artifacts.byKind("diff_report");
-  if (diffArtifacts.length > 0) {
-    const report = artifacts.loadJSON(diffArtifacts[0]) as {
-      similarity_score: number | null;
-      baseline_kind: string | null;
-      raster_stats?: { ssim?: number | null; ssim_clean?: boolean | null } | null;
-      note?: string | null;
-    };
-    if (report.similarity_score !== null) {
-      const verdict = report.raster_stats?.ssim_clean === true
-        ? "perceptually identical"
-        : report.raster_stats?.ssim_clean === false
-          ? "perceptual change"
-          : "unavailable";
-      console.log(
-        `  Visual verdict: similarity ${report.similarity_score.toFixed(4)} ` +
-        `vs ${report.baseline_kind ?? "?"} baseline — ${verdict} ` +
-        `(SSIM ${(report.raster_stats?.ssim ?? -1).toFixed(4)})`,
-      );
-    } else {
-      console.log(`  Visual verdict: no measured score (${report.note ?? "no screenshots"})`);
+  try {
+    // Wire the real Python pipeline stages: ingest fetches (or reads locally)
+    // the Figma file, normalize/resolve/layout run the front half through the
+    // pipeline CLI, assets downloads + content-addresses IR asset refs, and
+    // generate lowers the stage artifacts through the backend
+    // (Part 15: ingest+generate; Part 16: full front half; Part 17: assets).
+    // render + compare (Part 19) then measure the generated output against a
+    // baseline (explicit --baseline, live --figma-baseline, or the IR
+    // reference render); repair + verify (Part 20) close the ten-stage loop:
+    // auto-repair toward an external baseline and measure the final gate.
+    if (localFile) {
+      pipeline.setShared("filePath", path.resolve(localFile));
     }
-  }
-
-  // Final verification from the verify stage's metrics-kind artifact (Part
-  // 20) — the terminal pass/fail gate: PASSED / FAILED / cannot verify.
-  // A failed verification does NOT fail the run: the report is valid output
-  // (the run already exited 0 for a completed pipeline).
-  const verifyArtifacts = artifacts.byKind("metrics");
-  if (verifyArtifacts.length > 0) {
-    const verify = artifacts.loadJSON(verifyArtifacts[0]) as {
-      passed: boolean | null;
-      similarity_score: number | null;
-      threshold: number;
-      note?: string | null;
-    };
-    if (verify.passed === true) {
-      console.log(
-        `  Verification: PASSED ` +
-        `(${(verify.similarity_score ?? 0).toFixed(4)} >= ${verify.threshold})`,
-      );
-    } else if (verify.passed === false) {
-      console.log(
-        `  Verification: FAILED ` +
-        `(${(verify.similarity_score ?? 0).toFixed(4)} < ${verify.threshold})`,
-      );
-    } else {
-      console.log(`  Verification: cannot verify (${verify.note ?? "no measured score"})`);
+    if (args.flags["baseline"]) {
+      pipeline.setShared("baselinePath", path.resolve(args.flags["baseline"]));
     }
-  }
-
-  if (result.errors.length > 0) {
-    console.log(`\nErrors:`);
-    for (const err of result.errors) {
-      console.log(`  - ${err}`);
+    if (args.flags["figma-baseline"] === "true") {
+      pipeline.setShared("figmaBaseline", true);
     }
-  }
+    if (args.flags["no-repair"] === "true") {
+      pipeline.setShared("noRepair", true);
+    }
+    const noBundle = args.flags["no-bundle"] === "true";
+    pipeline.onStage("ingest", createIngestStageHandler());
+    pipeline.onStage("normalize", createNormalizeStageHandler());
+    pipeline.onStage("resolve", createResolveStageHandler());
+    pipeline.onStage("layout", createLayoutStageHandler());
+    pipeline.onStage("assets", createAssetsStageHandler());
+    pipeline.onStage("generate", createGenerateStageHandler());
+    // NOTE: PIPELINE_STAGES runs assets before generate (Part 18) so the
+    // assets-stage manifest can thread resolved paths into generated code.
+    pipeline.onStage("render", createRenderStageHandler({ noBundle }));
+    pipeline.onStage("compare", createCompareStageHandler());
+    pipeline.onStage("repair", createRepairStageHandler());
+    pipeline.onStage("verify", createVerifyStageHandler());
 
-  if (result.status !== "completed") {
-    process.exit(1);
+    const adaptiveRequest = args.flags["adaptive-request"]
+      ?? (args.flags["adaptive"] === "true" ? DEFAULT_ADAPTIVE_REQUEST : undefined);
+    if (adaptiveRequest !== undefined) {
+      const plan = await cliRuntimeDeps.invokeAdaptivePreflight(
+        { pythonBin: config.pythonBin, pluginDir: config.pluginDir },
+        process.cwd(),
+        adaptiveRequest,
+      );
+      artifacts.storeJSON("adaptive_plan", "preflight", "adaptive_plan", plan);
+      events.emit("adaptive_plan_created", "Adaptive preflight completed", {
+        data: {
+          stack_status: plan.route.stack_status,
+          execution_mode: plan.route.execution_mode,
+          phases: plan.route.phases,
+          approval_gates: plan.route.approval_gates,
+        },
+      });
+    }
+
+    const result = await pipeline.run();
+
+    console.log(`\nPipeline ${result.status}`);
+    console.log(`  Duration:   ${result.totalDurationMs}ms`);
+    console.log(`  Score:      ${result.similarityScore}`);
+    console.log(`  Repairs:    ${result.repairIterations}`);
+    console.log(`  Tokens:     ${result.tokensUsed}`);
+    console.log(`  Artifacts:  ${result.artifacts}`);
+    console.log(`  Events:     ${result.events}`);
+
+    // Measured visual verdict from the compare stage's diff_report artifact
+    // (Part 19) — a real number or an honest "no measured score" note.
+    const diffArtifacts = artifacts.byKind("diff_report");
+    if (diffArtifacts.length > 0) {
+      const report = artifacts.loadJSON(diffArtifacts[0]) as {
+        similarity_score: number | null;
+        baseline_kind: string | null;
+        raster_stats?: { ssim?: number | null; ssim_clean?: boolean | null } | null;
+        note?: string | null;
+      };
+      if (report.similarity_score !== null) {
+        const verdict = report.raster_stats?.ssim_clean === true
+          ? "perceptually identical"
+          : report.raster_stats?.ssim_clean === false
+            ? "perceptual change"
+            : "unavailable";
+        console.log(
+          `  Visual verdict: similarity ${report.similarity_score.toFixed(4)} ` +
+          `vs ${report.baseline_kind ?? "?"} baseline — ${verdict} ` +
+          `(SSIM ${(report.raster_stats?.ssim ?? -1).toFixed(4)})`,
+        );
+      } else {
+        console.log(`  Visual verdict: no measured score (${report.note ?? "no screenshots"})`);
+      }
+    }
+
+    // Final verification from the verify stage's metrics-kind artifact (Part
+    // 20) — the terminal pass/fail gate: PASSED / FAILED / cannot verify.
+    // A failed verification does NOT fail the run: the report is valid output
+    // (the run already exited 0 for a completed pipeline).
+    const verifyArtifacts = artifacts.byKind("metrics");
+    if (verifyArtifacts.length > 0) {
+      const verify = artifacts.loadJSON(verifyArtifacts[0]) as {
+        passed: boolean | null;
+        similarity_score: number | null;
+        threshold: number;
+        note?: string | null;
+      };
+      if (verify.passed === true) {
+        console.log(
+          `  Verification: PASSED ` +
+          `(${(verify.similarity_score ?? 0).toFixed(4)} >= ${verify.threshold})`,
+        );
+      } else if (verify.passed === false) {
+        console.log(
+          `  Verification: FAILED ` +
+          `(${(verify.similarity_score ?? 0).toFixed(4)} < ${verify.threshold})`,
+        );
+      } else {
+        console.log(`  Verification: cannot verify (${verify.note ?? "no measured score"})`);
+      }
+    }
+
+    if (result.errors.length > 0) {
+      console.log(`\nErrors:`);
+      for (const err of result.errors) {
+        console.log(`  - ${err}`);
+      }
+    }
+
+    if (result.status !== "completed") {
+      process.exit(1);
+    }
+  } finally {
+    process.removeListener("SIGINT", handleSigint);
   }
 }
 

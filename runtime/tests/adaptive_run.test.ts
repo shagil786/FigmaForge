@@ -189,6 +189,26 @@ export async function runAdaptiveRunTests(): Promise<SuiteResult[]> {
       assert(result.artifactKinds.includes("adaptive_plan"));
       assert(result.eventKinds.includes("adaptive_plan_created"));
     });
+
+    await it("repeated runMainForTests invocations do not accumulate SIGINT listeners", async () => {
+      const baseline = process.rawListeners("SIGINT");
+      try {
+        await runCliWithFakePreflight([]);
+        await runCliWithFakePreflight(["--adaptive"]);
+        assertEqual(
+          process.rawListeners("SIGINT").length,
+          baseline.length,
+          "cmdRun should clean up its SIGINT listener after each run",
+        );
+      } finally {
+        const baselineSet = new Set(baseline);
+        for (const listener of process.rawListeners("SIGINT")) {
+          if (!baselineSet.has(listener)) {
+            process.removeListener("SIGINT", listener);
+          }
+        }
+      }
+    });
   })];
 }
 
