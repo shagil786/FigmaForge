@@ -51,19 +51,22 @@ class TestAdaptivePlan(unittest.TestCase):
         self.assertTrue(payload["route"]["phases"])
 
     def test_installed_capability_reaches_router(self):
-        result = run_plan(
-            "Review product requirements for the next release",
-            installed_capabilities=["product-skills:product-discovery"],
+        without_cap = run_plan("Research the competitor landscape")
+        with_cap = run_plan(
+            "Research the competitor landscape",
+            installed_capabilities=["deep-research"],
         )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        payload = json.loads(result.stdout)
+        self.assertEqual(without_cap.returncode, 0, without_cap.stderr)
+        self.assertEqual(with_cap.returncode, 0, with_cap.stderr)
 
-        routed_caps = [
-            capability
-            for role in payload["route"]["roles"]
-            for capability in role.get("capability_refs", [])
-        ]
-        self.assertIn("product-skills:product-discovery", routed_caps)
+        without_payload = json.loads(without_cap.stdout)
+        with_payload = json.loads(with_cap.stdout)
+        without_roles = [role["id"] for role in without_payload["route"]["roles"]]
+        with_roles = [role["id"] for role in with_payload["route"]["roles"]]
+        self.assertNotIn("discovery-researcher", without_roles)
+        self.assertIn("discovery-researcher", with_roles)
+        reasons = with_payload["route"]["roles"][0]["reasons"]
+        self.assertIn("Installed capability ref: deep-research", reasons)
 
     def test_unclassified_repo_returns_valid_plan(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -71,10 +74,15 @@ class TestAdaptivePlan(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["detection"]["status"], "unclassified")
 
+    def test_whitespace_request_returns_structured_error(self):
+        result = run_plan("   ")
+        self.assertEqual(result.returncode, 2)
+        self.assertTrue(json.loads(result.stderr)["error"])
+
     def test_missing_root_returns_structured_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             result = run_plan("Inspect", root=Path(tmp) / "missing")
-        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.returncode, 2)
         self.assertTrue(json.loads(result.stderr)["error"])
 
 

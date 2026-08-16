@@ -64,7 +64,12 @@ def build_plan(root: Path, request: str, installed_capabilities: list[str]) -> d
     catalog = Catalog()
     router = Router(catalog, detector)
     detection = detector.detect()
-    route = router.route(request, installed_capabilities=installed_capabilities)
+    original_detect = detector.detect
+    try:
+        detector.detect = lambda: detection
+        route = router.route(request, installed_capabilities=installed_capabilities)
+    finally:
+        detector.detect = original_detect
     return {
         "schema_version": 1,
         "request": request,
