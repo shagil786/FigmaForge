@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+"""
+Tests for the adaptive preflight planning CLI.
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+
+plugin_root = Path(__file__).resolve().parent.parent
+SCRIPT = plugin_root / "scripts" / "adaptive_plan.py"
+
+
+def run_plan(request: str, root: Path | None = None, installed_capabilities: list[str] | None = None):
+    """Run the adaptive plan CLI as a subprocess."""
+    args = [
+        sys.executable,
+        str(SCRIPT),
+        "--root",
+        str(root or plugin_root),
+        "--request",
+        request,
+    ]
+    for capability in installed_capabilities or []:
+        args.extend(["--installed-capability", capability])
+    return subprocess.run(
+        args,
+        cwd=str(plugin_root),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+
+class TestAdaptivePlan(unittest.TestCase):
+    def test_plan_is_deterministic_for_classified_repo(self):
+        first = run_plan("Convert this Figma design into React")
+        second = run_plan("Convert this Figma design into React")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(first.stdout, second.stdout)
+
+        payload = json.loads(first.stdout)
+        self.assertEqual(payload["schema_version"], 1)
+        self.assertTrue(payload["route"]["phases"])
+
+    def test_installed_capability_reaches_router(self):
+        result = run_plan(
+            "Review product requirements for the next release",
+            installed_capabilities=["product-skills:product-discovery"],
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+
+        routed_caps = [
+            capability
+            for role in payload["route"]["roles"]
+            for capability in role.get("capability_refs", [])
+        ]
+        self.assertIn("product-skills:product-discovery", routed_caps)
+
+    def test_unclassified_repo_returns_valid_plan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = run_plan("Inspect this repository", root=Path(tmp))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["detection"]["status"], "unclassified")
+
+    def test_missing_root_returns_structured_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = run_plan("Inspect", root=Path(tmp) / "missing")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue(json.loads(result.stderr)["error"])
+
+
+if __name__ == "__main__":
+    unittest.main()
