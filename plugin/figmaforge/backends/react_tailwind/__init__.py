@@ -14,9 +14,8 @@ Image fills are SUPPORTED when the assets stage resolved a path for the node
 (``bg-[url(...)] bg-cover bg-center``); an unresolved image fill keeps the
 honest marker.
 
-Fidelity honesty: features this backend cannot represent (e.g. absolute
-positioning) are reported by ``preflight`` and degraded with an inline
-``{/* fidelity: ... */}`` marker — never silently.
+Absolute and relative positioning are emitted as Tailwind utilities with
+arbitrary pixel offsets; unsupported features remain explicitly marked.
 """
 
 from __future__ import annotations
@@ -54,8 +53,7 @@ from core.token_resolver import SemanticToken
 # React+Tailwind supports most web features (minus the ones Tailwind itself
 # cannot express — subtract them so ``supports()`` reports them honestly).
 _REACT_TW_UNSUPPORTED = frozenset({
-    Feature.ABSOLUTE_POSITIONING,  # Tailwind has position-absolute but limited
-    Feature.RELATIVE_POSITIONING,  # Supported but not idiomatic Tailwind
+    Feature.RELATIVE_POSITIONING,  # generated as a containing-block detail
     Feature.AUTO_LAYOUT,  # React components, not a Tailwind concept
 })
 
@@ -103,7 +101,7 @@ _ORDER = [
     "display", "flexDirection", "justifyContent", "alignItems", "alignSelf",
     "flex", "gap", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
     "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight",
-    "position",
+    "position", "left", "right", "top", "bottom", "zIndex",
     # Repair-override surface (Part 22): the loop's category fallback can
     # patch these, and react emits no layout class for them otherwise.
     "background", "color", "fontSize",
@@ -228,8 +226,12 @@ def _css_class(prop: str, value: str) -> Optional[str]:
         prefix = {"minWidth": "min-w", "maxWidth": "max-w",
                   "minHeight": "min-h", "maxHeight": "max-h"}[prop]
         return _px_class(prefix, value)
-    if prop == "position" and value == "relative":
-        return "relative"
+    if prop == "position":
+        return {"relative": "relative", "absolute": "absolute"}.get(value)
+    if prop in ("left", "right", "top", "bottom"):
+        return _px_class(prop, value)
+    if prop == "zIndex":
+        return f"z-[{value}]"
     # Repair-override surface (Part 22, F2/F3): the pixel path always patches
     # #rrggbb (patch_planner gates on it), so these arbitrary values are
     # Tailwind-safe.  fontSize arrives as a number (px).
@@ -496,9 +498,6 @@ class ReactTailwindBackend(BackendAdapter):
                 continue
             classes.append(cls)
 
-        if plan_node.display == DISPLAY_ABSOLUTE or style.base.get("position") == "absolute":
-            markers.append("fidelity: absolute_positioning approximated (in-flow)")
-
         if ir is not None:
             # An override ``background`` REPLACES the IR fills entirely (F3)
             # — the repair loop converges pixels, and html_css's override
@@ -574,7 +573,7 @@ class ReactTailwindBackend(BackendAdapter):
                 if not fill.visible or fill.kind == "none":
                     continue
                 if fill.kind == "solid" and fill.color is not None:
-                    classes.append(f"bg-[{_hex6(fill.color)}]")
+                    classes.append(f"text-[{_hex6(fill.color)}]" if ir.kind == "text" else f"bg-[{_hex6(fill.color)}]")
                     break
                 if fill.kind == "gradient":
                     stops = [st for st in fill.gradient_stops if st.color is not None]

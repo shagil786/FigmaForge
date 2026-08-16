@@ -133,6 +133,10 @@ class CssStyleGenerator:
         if plan.box:
             self._apply_sizing(style, plan, display)
 
+        # Absolute descendants use this node's local coordinate space.
+        if display != "absolute" and _has_absolute_descendant(plan):
+            style.base["position"] = "relative"
+
         if plan.spacing:
             if plan.spacing.padding:
                 p = plan.spacing.padding
@@ -436,7 +440,8 @@ def extend_ir_style(
             if not fill.visible or fill.kind == "none":
                 continue
             if fill.kind == "solid" and fill.color is not None:
-                style.base["background"] = _hex6(fill.color)
+                # Figma text fills are foreground color, not a painted box.
+                style.base["color" if ir.kind == "text" else "background"] = _hex6(fill.color)
                 break
             if fill.kind == "gradient" and fill.gradient_stops:
                 stops = ", ".join(
@@ -608,8 +613,7 @@ class ScopedCssGenerator:
 
     Shared by the vue and svelte backends: builds on :class:`CssStyleGenerator`
     for layout props, extends each node's style with IR-sourced fills/radius/
-    opacity/typography, degrades absolute positioning to in-flow (the calling
-    backend emits the ``fidelity:`` marker in its template), and folds
+    opacity/typography, preserves absolute positioning, and folds
     LayoutPlan breakpoint changes into ``@media (max-width: …)`` rules.
     """
 
@@ -663,13 +667,6 @@ class ScopedCssGenerator:
         if override.get("breakpoints"):
             style.breakpoints.update(override["breakpoints"])
 
-        # Absolute positioning is a preflight loss; degrade to in-flow by
-        # dropping the positioning props (the backend's template carries the
-        # ``<!-- fidelity: ... -->`` marker).
-        if plan_node.display == DISPLAY_ABSOLUTE:
-            for prop in ("display", "position", "left", "right", "top", "bottom"):
-                style.base.pop(prop, None)
-
         selector = f".n-{vnode.node_id.replace(':', '-')}"
         if style.base:
             props = "; ".join(
@@ -693,6 +690,13 @@ class ScopedCssGenerator:
     ) -> None:
         """Add IR-sourced style (fills/radius/opacity/typography) + breakpoints."""
         extend_ir_style(style, plan_node, ir, assets=self._assets)
+
+
+def _has_absolute_descendant(plan: LayoutNodePlan) -> bool:
+    return any(
+        child.display == DISPLAY_ABSOLUTE or _has_absolute_descendant(child)
+        for child in plan.children
+    )
 
 
 # Breakpoint props whose ``after`` value is a length in px (not a keyword

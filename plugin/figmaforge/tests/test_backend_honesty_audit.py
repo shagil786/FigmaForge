@@ -354,13 +354,14 @@ _CSS_SIGNALS: Dict[str, Tuple[str, ...]] = {
     Feature.OVERFLOW_CLIP: ("overflow: hidden",),
     Feature.OVERFLOW_SCROLL: ("overflow: auto",),
     Feature.GRID: ("display: grid",),
+    Feature.ABSOLUTE_POSITIONING: ("position: absolute",),
 }
 
 # html_css additionally verifies absolute positioning (real position + anchors).
 _HTML_CSS_SIGNALS = dict(_CSS_SIGNALS)
 _HTML_CSS_SIGNALS[Feature.ABSOLUTE_POSITIONING] = ("position: absolute",)
 
-# vue / svelte add component tags (absolute positioning is declared unsupported).
+# vue / svelte add component tags.
 _VUE_SVELTE_SIGNALS = dict(_CSS_SIGNALS)
 _VUE_SVELTE_SIGNALS[Feature.COMPONENTS] = ("<ButtonCard",)
 _VUE_SVELTE_SIGNALS[Feature.COMPONENT_INSTANCES] = ("<PrimaryButton",)
@@ -398,6 +399,7 @@ _REACT_TW_SIGNALS: Dict[str, Tuple[str, ...]] = {
     Feature.TOKEN_REFERENCES: ("brand-blue",),
     Feature.COMPONENTS: ("<ButtonCard",),
     Feature.COMPONENT_INSTANCES: ("<PrimaryButton",),
+    Feature.ABSOLUTE_POSITIONING: ("absolute",),
 }
 
 _SWIFTUI_SIGNALS: Dict[str, Tuple[str, ...]] = {
