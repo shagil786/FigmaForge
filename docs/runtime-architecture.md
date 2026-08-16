@@ -168,6 +168,63 @@ figmaforge compare --run-id=<id>
 figmaforge repair --run-id=<id>
 ```
 
+## Adaptive Preflight
+
+`figmaforge run` supports an optional detector/router preflight before the visual pipeline starts. It is opt-in: default runs stay unchanged unless one of the adaptive flags is supplied.
+
+```bash
+figmaforge run --file=fixture.json --target=react+tailwind --adaptive
+figmaforge run --file=fixture.json --target=react+tailwind \
+  --adaptive-request="Build the landing page for a marketing site"
+```
+
+`--adaptive` uses the deterministic default request, `Convert this Figma design into the selected code-generation target`. `--adaptive-request=<text>` supplies an explicit natural-language request and implies adaptive mode. When enabled, the runtime invokes the Python detector/router bridge before `PipelineCoordinator.run`, stores an `adaptive_plan` artifact, places the typed plan in shared pipeline context, and emits `adaptive_plan_created` followed by `adaptive_plan_applied`. It then derives an explicit policy containing the selected mode, phases, and approval gates, stores that policy in shared context, and emits `adaptive_policy_applied`. Unsupported execution modes or approval gates fail preflight clearly. A policy carrying the `external_mutation` gate now requires approval before `generate` or `repair` mutates generated output. The existing approval callback remains authoritative, while `--no-approval` retains its existing semantics. On checkpoint resume, the latest stored adaptive plan is restored and applied without re-running detection. If the repository is unclassified, the plan is still stored with `stack_status: unclassified` and the visual pipeline continues.
+
+Portability boundary: the detector, router, lifecycle state, Python pipeline, TypeScript runtime, JSON schemas, backend generators, and generic JSON/HTTP model-provider protocol are host-neutral. The Claude Code-specific layer is the plugin manifest, skill files, agent files, hook registration, and `/figmaforge:*` command UX; other LLM hosts can call the runtime and provider protocol without those hooks.
+
+The JSON/HTTP provider accepts optional tool schemas and normalizes both
+`tool_calls` and `toolCalls` responses, including JSON-string arguments, so
+OpenAI-compatible gateways and other LLM hosts can integrate actions without
+adopting Claude Code. Completed runs also write a machine-readable
+`summary.json`; remote artifact delivery is opt-in through
+`--artifact-upload-url` and reads credentials only from
+`FIGMAFORGE_ARTIFACT_UPLOAD_TOKEN`.
+
+The matching dependency-free receiver is available as
+`figmaforge artifact-server`; it supports bearer authentication, `/health`,
+atomic file writes, and per-run file/byte retention limits.
+
+Provider consumers may use the optional `ModelProvider.stream()` interface;
+the JSON/HTTP adapter parses NDJSON and SSE-style `data:` records into typed
+text chunks and a terminal `done` chunk.
+
+For human review, `figmaforge inspect --run-id=<id>
+--export-report=<path.html>` creates a self-contained baseline report with the
+measured score, mismatch categories, and artifact inventory.
+
+Native acceptance can additionally use `--swiftui-simulator=<udid>` to compile
+the generated SwiftUI into a temporary app bundle, install and launch it with
+`simctl`, and capture a real simulator screenshot.
+
+### Native artifact acceptance
+
+The native acceptance command exercises the real Python generator for both
+`swiftui` and `flutter`, verifies that every manifest file exists, then runs
+available validation. SwiftUI uses `swiftc -parse`; Flutter uses Dart's
+formatter when Dart is installed, or Docker Flutter to run `pub get`,
+`flutter analyze`, and a widget test. Missing native toolchains are reported as
+skipped rather than silently treated as passing:
+
+```bash
+python3 plugin/figmaforge/scripts/native_acceptance.py \
+  --fixture plugin/figmaforge/fixtures/figma/layout_desktop.json
+
+# Optional full Flutter analyzer and widget test through Docker/Colima
+python3 plugin/figmaforge/scripts/native_acceptance.py \
+  --fixture plugin/figmaforge/fixtures/figma/layout_desktop.json \
+  --flutter-docker-image ghcr.io/cirruslabs/flutter:stable
+```
+
 ## Evaluation
 
 ### Golden Fixtures
@@ -185,8 +242,13 @@ Each fixture contains:
 ### Running Evaluation
 
 ```bash
-# Build and run tests
-npx tsc && node dist/runtime/tests/run_all.js
+# Build and run the fast runtime test tier
+cd runtime
+npm run build
+npm test
+
+# Run the real Python/Chromium/Vite integration tier
+npm run test:integration
 
 # Run evaluation suite programmatically
 import { runEvalSuite } from "./runtime/src/core/evaluation.js";

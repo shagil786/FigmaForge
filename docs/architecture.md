@@ -4,7 +4,7 @@
 
 FigmaForge is a technology-agnostic, adaptive, full-lifecycle Claude Code engineering platform. It enables any software project type by detecting stack-specific signals and routing to the appropriate capabilities, without requiring per-repo authoring of agents, skills, or workflows.
 
-**Status:** Planned but not implemented. All prerequisites are done (skill bundles, PinchTab, backdrops).
+**Status:** Implemented through Part 22. The adaptive platform and Figma-to-code pipeline are operational; deeper integration between their lifecycle/routing layers remains future work.
 
 ---
 
@@ -374,7 +374,7 @@ concrete adapter exists for a given combination.
   carries the same `* { margin: 0; padding: 0; box-sizing: border-box; }`
   reset as the reference render, so Figma's border-box widths compare
   pixel-exact.
-- `scripts/pipeline.py` — **Pipeline CLI (Parts 15–21):** the bridge between the TS
+- `scripts/pipeline.py` — **Pipeline CLI (Parts 15–22):** the bridge between the TS
   runtime and the Python backends. `ingest` (live `--file-key` or local `--file`)
   prints one deterministic JSON line (raw payload + `file_key`/`pages`); the front
   half is `normalize` (IRBuilder → schema-validated design IR), `resolve`
@@ -403,7 +403,7 @@ concrete adapter exists for a given combination.
   stdout carries exactly one JSON line per success. IR and layout-plan JSON
   round-trip loaders (`IRDocument.from_dict`, `LayoutPlan.from_dict`) make every
   stage's artifact directly consumable by the next.
-- `runtime/src/core/backend_codegen.ts` — **Runtime bridge (Parts 15–21):**
+- `runtime/src/core/backend_codegen.ts` — **Runtime bridge (Parts 15–22):**
   `TARGET_BACKENDS` maps the six backend-bearing presets to Python backend names;
   `backendForTarget` rejects backend-less targets with a typed error;
   `invokeBackendGenerator`/`invokeIngest`/`invokeNormalize`/`invokeResolve`/
@@ -723,7 +723,10 @@ FigmaForge is a planned, not-implemented, technology-agnostic, adaptive platform
 - **Strict safety invariants** and backup/rollback strategy
 
 **Implementation status:** Core modules (detector, router, catalog, state machine) are implemented and tested. The Figma-to-Code pipeline (Parts 1-8) is fully implemented. The backend adapter architecture (Parts 10 + 14) is implemented with all six backends real — HTML+CSS (reference), React+Tailwind, Vue, Svelte, SwiftUI, and Flutter — sharing one web style-mapping implementation (`web_common.py`) and enforcing the capability-vs-output honesty rule via a repo-wide audit. The TypeScript orchestration runtime (Part 9) is implemented with composable code-generation targets, and since Part 15 it actually drives the Python backends: `figmaforge run` registers real `ingest`/`normalize`/`resolve`/`layout`/`assets`/`generate`/`render`/`compare`/`repair`/`verify` stage handlers (`backend_codegen.ts`) that shell out to the `scripts/pipeline.py` CLI, so the **full ten-stage pipeline** runs stage-by-stage — each JSON artifact (figma_raw, design_ir, resolution_report, layout_plan, asset_manifest, generated_code, screenshot, diff_report, repair_result, metrics) is consumed losslessly by the next via the Part-16 round-trip loaders, the assets stage content-addresses the IR's image/SVG refs into a run-scoped store (running before generate so its manifest is an input — Part 18), `generate` lowers the staged artifacts instead of recomputing and threads resolved asset paths into the generated web code (`FILLS_IMAGE` supported, honesty-audit locked), and since Part 19 the render stage screenshots the generated html with real chromium while the compare stage measures similarity against a baseline (explicit `--baseline` → live `--figma-baseline` → reference render) through the SSIM-gated comparator — the run ends with a real measured `Score` and a `Visual verdict` line. Since Part 20, the repair stage auto-repairs toward an **external** baseline (real Python `RepairLoop` spawning `pipeline.py repair`; the planner extracts the baseline region color, the html_css `styles_override` seam carries repaired styles into regenerated code, and honest short-circuits never fabricate work — no score / gate satisfied / reference-baseline contract / `--no-repair`), and the verify stage re-renders the regenerated files against the same baseline for the final measured gate, printed as `Repairs:` and `Verification: PASSED/FAILED/cannot-verify` (a failed verification does not fail the run). Since Part 21, the web-framework backends are measured too: `bundler_harness.py` scaffolds react/vue/svelte output into a pinned multi-page Vite project (asset rewrite, box-sizing reset matching the reference), `pipeline.py render --bundle` builds + serves + screenshots it (build failure is an explicit error, never a fake screenshot), the TS render handler's no-`.html` branch bundles bundler-backed targets (`invokeBundleRender`) with a `--no-bundle` escape, and self-contained component fallbacks make the generated output build and render with zero errors — so all four browser targets produce real measured scores (react 0.9987 / vue 1.0000 / svelte 1.0000 / html_css 1.0 SSIM-clean on the checked-in fixture) and flow through the same compare/verify gate. The `figmaforge demo` command generates all six backends from one ingest with a comparison table (live `--file-key` or offline fixture). Integration between the Adaptive Platform and the Figma pipeline is in progress.
+Part 22 extends this status: repair now threads the run's backend, resolution report, and asset manifest, and verification re-bundles React/Vue/Svelte repairs against the same baseline. The runtime build/test packaging is also self-contained under `runtime/dist`, with fast tests separated from the explicit Python/Chromium/Vite integration tier.
 
 ---
 
-**Next:** Begin with Phase 1 (Safety Checkpoint) as the first implementation step.
+**Next:** Add production acceptance coverage around the now-available adaptive
+and native validation commands, then reconcile deeper adaptive lifecycle state
+with the ten-stage Figma pipeline.

@@ -1,9 +1,9 @@
 # FigmaForge Universal Adaptive Platform
 
 **Version:** 0.0.2-dev  
-**Status:** Parts 1–21 complete — full pixel-diff pipeline (Part 12), perceptual SSIM gating and baseline auto-refresh (Part 13), all six backend adapters implemented (Part 14: react+tailwind, vue, svelte, swiftui, flutter) with capability-vs-output honesty audits, the real-Figma end-to-end demo wired through the TS runtime (Part 15: Python pipeline CLI + ingest/generate stage handlers + `figmaforge demo`), the full front half wired (Part 16: IR/layout JSON round-trip loaders, normalize/resolve/layout subcommands, staged generate, five-stage `figmaforge run`), the assets stage wired (Part 17: asset-reference collector, `assets` subcommand, content-addressed image/SVG store, six-stage `figmaforge run`), resolved assets threaded into generated web code (Part 18: `generate --assets`, real `background-image`/`bg-[url(...)]` references, `FILLS_IMAGE` lifted to supported with the honesty audit locked), render+compare wired into the runtime (Part 19: `pipeline.py render` shot/reference/live-baseline modes, real browser screenshots of generated html, SSIM-gated diff_report with measured similarity + `Visual verdict`, eight-stage `figmaforge run`), and repair+verify wired into the runtime (Part 20: pixel→color repair fix, html_css `styles_override` seam, `pipeline.py repair` subcommand, TS repair/verify stage handlers with honest short-circuits, ten-stage `figmaforge run` with `Repairs:` and a `Verification:` pass/fail gate), and bundler-rendered measurement for the web-framework backends (Part 21: real Vite scaffold for react/vue/svelte with pinned deps + asset rewrite, `render --bundle`, TS bundler render path with a `--no-bundle` escape, self-contained component fallbacks so generated output builds and renders, and a box-sizing reset matching the reference — so all four browser targets produce real measured scores); validation gate green (605 Python / 162 TS tests)
+**Status:** Parts 1–24 implemented. The runtime now includes durable summaries, bounded baseline refresh, native artifact validation, optional remote artifact delivery, and provider-neutral tool-call normalization. Native simulator rendering remains environment-specific; browser/Vite acceptance is a separate integration tier.
 
-A technology-agnostic, adaptive, full-lifecycle Claude Code engineering platform that enables any software project type by detecting stack-specific signals and routing to appropriate capabilities. FigmaForge also converts normalized Figma design IR into framework-neutral layout plans and generates production-quality React/CSS output.
+A technology-agnostic, adaptive, full-lifecycle Claude Code engineering platform that enables any software project type by detecting stack-specific signals and routing to appropriate capabilities. FigmaForge also converts normalized Figma design IR into framework-neutral layout plans and generates production-quality React/CSS output. The adaptive preflight core and generic JSON/HTTP model-provider protocol are host-neutral; the Claude Code-specific wrapper is the plugin manifest, skills, agents, hooks, and command UX.
 
 ---
 
@@ -63,6 +63,30 @@ pip install playwright && playwright install chromium
 Without chromium, browser-render tests are skipped and the TS runtime falls back to
 HTML-only output.
 
+For Python/native integration coverage in restricted environments where Chromium
+cannot start, use:
+
+```bash
+FIGMAFORGE_SKIP_MONEY_TESTS=1 npm run test:integration
+```
+
+This explicitly skips tests that require npm/Vite or a real Chromium process; it
+does not fabricate screenshots or visual scores.
+
+The normal Python test discovery is also safe in restricted environments: real
+npm/Vite/Chromium tests are opt-in. Run them explicitly when the toolchain and
+local sockets are available:
+
+```bash
+FIGMAFORGE_RUN_TOOLCHAIN_TESTS=1 python3 -m unittest \
+  plugin.figmaforge.tests.test_bundler_buildability.TestWebBackendBuildability \
+  plugin.figmaforge.tests.test_bundler_harness_smoke.TestBundlerHarnessRealToolchain
+```
+
+When the pinned packages are already present in the npm cache, set
+`FIGMAFORGE_NPM_OFFLINE=1` to run the Vite harness without registry access.
+Otherwise the harness uses normal npm installation.
+
 ---
 
 ## Usage
@@ -73,11 +97,137 @@ HTML-only output.
 claude --plugin-dir ./plugin/figmaforge -p '/figmaforge:route Design a secure, testable CLI feature'
 ```
 
+### Adaptive Preflight
+
+The `run` command now accepts an optional adaptive preflight before the visual pipeline starts. It is opt-in: default runs stay unchanged unless one of the adaptive flags is provided.
+
+```bash
+figmaforge run --file=fixture.json --target=react+tailwind --adaptive
+figmaforge run --file=fixture.json --target=react+tailwind \
+  --adaptive-request="Build the landing page for a marketing site"
+```
+
+When enabled, the runtime records an `adaptive_plan` artifact, places the typed plan in shared pipeline context, and emits `adaptive_plan_created` followed by `adaptive_plan_applied` before the ten-stage pipeline begins. `--adaptive` uses the deterministic default request, while `--adaptive-request` supplies explicit natural language and implies adaptive mode. An `unclassified` adaptive plan is still stored and allowed to continue; it does not block the run.
+
+Adaptive policies carrying the `external_mutation` gate require approval before
+the `generate` or `repair` stages write generated output. `--no-approval`
+explicitly opts out for non-interactive runs.
+
+### Validate Native Artifacts
+
+Generate SwiftUI and Flutter output from a fixture, validate their manifests,
+and run available native syntax checks. SwiftUI uses `swiftc -parse`; Flutter
+uses `dart format` when Dart is installed and reports an explicit skip when it
+is unavailable:
+
+```bash
+python3 plugin/figmaforge/scripts/native_acceptance.py \
+  --fixture plugin/figmaforge/fixtures/figma/layout_desktop.json
+
+# Optional full Flutter analyzer and widget test through Docker/Colima
+python3 plugin/figmaforge/scripts/native_acceptance.py \
+  --fixture plugin/figmaforge/fixtures/figma/layout_desktop.json \
+  --flutter-docker-image ghcr.io/cirruslabs/flutter:stable
+
+# Optional SwiftUI SDK typecheck against a generic iOS simulator target
+python3 plugin/figmaforge/scripts/native_acceptance.py \
+  --fixture plugin/figmaforge/fixtures/figma/layout_desktop.json \
+  --swiftui-xcodebuild
+```
+
 ### Run Detector
 
 ```bash
 cd /path/to/your/repo
 python3 plugin/figmaforge/core/detector.py
+```
+
+### Optional Live Figma Acceptance
+
+The authenticated smoke test is disabled by default. Enable it only with a
+dedicated test file and token:
+
+```bash
+FIGMAFORGE_LIVE_ACCEPTANCE=1 \
+FIGMAFORGE_LIVE_FILE_KEY=<test-file-key> \
+FIGMA_TOKEN=<token> \
+python3 -m unittest plugin.figmaforge.tests.test_live_figma_acceptance
+```
+
+The token is read from the environment and is never written to artifacts or
+logs.
+
+For a local OAuth connection instead, register a Figma OAuth app and set its
+client credentials. Configure the app with the scope `file_content:read` and
+the redirect URL `http://127.0.0.1:43123/oauth/callback`, then run:
+
+```bash
+export FIGMA_OAUTH_CLIENT_ID="..."
+export FIGMA_OAUTH_CLIENT_SECRET="..."
+npm --prefix runtime run build
+node runtime/dist/src/cli/main.js auth login
+# Refresh an expired OAuth access token without opening the browser:
+node runtime/dist/src/cli/main.js auth refresh
+```
+
+FigmaForge opens Figma's consent page, verifies the loopback callback state,
+and stores the resulting credential at `~/.config/figmaforge/credentials.json`
+with mode `0600`. `FIGMA_TOKEN`, when set, remains the higher-priority
+override and is treated as a personal/plan token using `X-Figma-Token`. If
+your environment variable contains an OAuth bearer token, also set
+`FIGMA_TOKEN_SCHEME=bearer`. OAuth credentials are never printed or included
+in run artifacts.
+
+### Package and rollback a release
+
+Create a versioned, checksum-manifested archive containing the plugin and
+compiled runtime:
+
+```bash
+./scripts/package_release.sh ./release
+```
+
+See [docs/rollback.md](docs/rollback.md) for restoring a previous plugin and
+runtime package.
+
+### Optional remote artifact delivery
+
+Runs remain local by default. To explicitly upload a completed run directory
+to an HTTP(S) artifact service:
+
+```bash
+FIGMAFORGE_ARTIFACT_UPLOAD_TOKEN=<token> \
+  figmaforge run --file=fixture.json --no-approval \
+  --artifact-upload-url=https://artifacts.example/upload
+```
+
+The uploader validates the endpoint, encodes paths, uses authenticated PUT
+requests, and applies a timeout. The token is read only from the environment.
+
+The JSON/HTTP provider also exposes a typed `stream()` method for gateways
+that return NDJSON or SSE `data:` chunks, while retaining the same timeout and
+cancellation behavior as non-streaming requests.
+
+For self-hosted artifact retention, run the dependency-free receiver:
+
+```bash
+FIGMAFORGE_ARTIFACT_SERVER_TOKEN=<token> \
+  figmaforge artifact-server --root=./artifact-store \
+  --port=8787 --max-files=1000 --max-bytes=1073741824
+```
+
+The receiver accepts the uploader's `PUT /runs/<run-id>/<path>` format,
+supports `/health`, authenticates bearer tokens, and removes oldest files when
+retention limits are exceeded.
+
+With an installed and booted iOS simulator, generated SwiftUI can be compiled,
+installed, launched, and screenshotted end-to-end:
+
+```bash
+python3 plugin/figmaforge/scripts/native_acceptance.py \
+  --fixture plugin/figmaforge/fixtures/figma/file.json \
+  --out-dir ./native-out \
+  --swiftui-simulator=<booted-simulator-udid>
 ```
 
 ### Initialize Lifecycle
@@ -301,7 +451,7 @@ Md Shagil Nizami
 - ✅ **Part 9** TypeScript orchestration runtime (6-command CLI, composable targets)
 - ✅ **Part 10** Backend adapter architecture (protocol, registry, capability declaration, fidelity losses)
 - ✅ **Part 11** Real browser render harness (Playwright + headless chromium, layout metadata)
-- ✅ **Part 12** Pixel diffing + Figma baseline download (stdlib PNG codec, pixel diff CLI, capped pixel weight)
+- ✅ **Part 12** Pixel diffing + Figma baseline download (stdlib PNG codec, pixel diff CLI, capped pixel weight, optional deterministic heatmaps via `figmaforge compare --heatmap`)
 - ✅ **Part 13** Perceptual diffing (SSIM) + baseline auto-refresh (regional gating, opt-in clean-render adoption, CLI verdict)
 - ✅ **Part 14** Six backend implementations (react+tailwind, vue, svelte, swiftui, flutter) — shared web machinery, real lowerings, golden snapshots, fidelity markers
 - ✅ **Part 14** Repo-wide capability-vs-output honesty audits (html_css reference included; test_backend_honesty_audit locks the contract)
@@ -333,8 +483,9 @@ Md Shagil Nizami
 - ✅ **Part 21** Real-toolchain money tests — canonical react/vue/svelte output scaffolds, builds, and screenshots through the harness with real npm + chromium, zero console errors, ports never fixed
 - ✅ **Part 21** TS bundler render path — `invokeBundleRender` + the no-`.html` branch for bundler-backed targets feeds the existing compare/verify machinery unchanged; `--no-bundle` restores the honest degrade
 - ✅ **Part 21** `figmaforge run` CLI tests — `--target=react+tailwind` and `vue+scoped_css` each produce a real measured `Score` ≥ 0.95 with `Verification: PASSED` (react 0.9987 / vue 1.0000 / svelte 1.0000 SSIM-clean), `--no-bundle` degrades honestly, flutter stays a native degrade; root fidelity markers render inside the element (esbuild rejects sibling JSX children) and the scaffold carries the reference's box-sizing reset (Figma widths are border-box)
-- ✅ Full validation suite green (605 Python + 162 TS tests, zero skips)
-- ✅ CLAUDE.md + docs updated through Part 21
+- ✅ **Part 22** Web-backend repair regeneration — repair threads the run's backend, resolution report, and asset manifest; verification re-bundles React/Vue/Svelte output against the same baseline and rejects native re-rendering honestly
+- ✅ Runtime packaging/test split — `runtime/tsconfig.json`, root-safe CLI paths, `npm test` fast tier, and `npm run test:integration` for Python/Chromium/Vite acceptance coverage
+- ✅ CLAUDE.md + docs updated through Part 22
 
 ---
 
@@ -343,5 +494,6 @@ Md Shagil Nizami
 1. Test with real repositories
 2. Document the rollback procedure
 3. Image-fill fit modes beyond cover/center + asset bundling for deployment
-4. Diff heatmap output + extended PNG formats (deferred non-goals from Parts 12–13)
-5. **Web-backend repair regeneration** — the repair loop stays html_css-scoped today; react/vue/svelte measure through the bundler harness but their regeneration is a deferred extension (the honest contract is preserved: bundler builds are real, never faked)
+4. Extended PNG formats and native TypeScript pixel decoding remain deferred; heatmap output is now available through the Python diff bridge.
+5. Native SwiftUI/Flutter compile-and-run validation
+6. Adaptive plan execution policies beyond shared lifecycle context

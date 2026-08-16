@@ -46,7 +46,7 @@ stored in any file or logged.
 
 ```bash
 cd ~/code/projects/FigmaForge
-PYTHON_BIN=/opt/homebrew/bin/python3.14 node dist/runtime/src/cli/main.js demo --out=./demo-out
+PYTHON_BIN=/opt/homebrew/bin/python3.14 node runtime/dist/src/cli/main.js demo --out=./demo-out
 ```
 
 With no `--file` and no `--file-key`, the demo announces and uses the
@@ -59,14 +59,14 @@ No --file or --file-key given — using the offline fixture: …/plugin/figmafor
 Or pass a specific local file:
 
 ```bash
-PYTHON_BIN=/opt/homebrew/bin/python3.14 node dist/runtime/src/cli/main.js demo \
+PYTHON_BIN=/opt/homebrew/bin/python3.14 node runtime/dist/src/cli/main.js demo \
   --file=plugin/figmaforge/fixtures/figma/layout_desktop.json --out=./demo-out
 ```
 
 ## Live path
 
 ```bash
-PYTHON_BIN=/opt/homebrew/bin/python3.14 node dist/runtime/src/cli/main.js demo \
+PYTHON_BIN=/opt/homebrew/bin/python3.14 node runtime/dist/src/cli/main.js demo \
   --file-key=YOUR_FILE_KEY --out=./demo-out --render
 ```
 
@@ -133,7 +133,7 @@ The `run` command drives one target through the full pipeline (ingest +
 generate stages wired to the Python backends):
 
 ```bash
-PYTHON_BIN=/opt/homebrew/bin/python3.14 node dist/runtime/src/cli/main.js run \
+PYTHON_BIN=/opt/homebrew/bin/python3.14 node runtime/dist/src/cli/main.js run \
   --file=plugin/figmaforge/fixtures/figma/layout_desktop.json \
   --target=flutter+flutter_widgets --plugin-dir plugin/figmaforge \
   --no-approval --output-dir=./figmaforge-output
@@ -143,6 +143,26 @@ The `run` command exercises the **full ten-stage pipeline**: ingest →
 normalize → resolve → layout → assets → generate → render → compare → repair
 → verify, each a real stage that shells out to `scripts/pipeline.py` and
 stores its own artifact.
+
+### Optional adaptive preflight
+
+`figmaforge run` can opt into the detector/router preflight before that ten-stage pipeline starts. The runtime stays unchanged unless one of the adaptive flags is present.
+
+```bash
+PYTHON_BIN=/opt/homebrew/bin/python3.14 node runtime/dist/src/cli/main.js run \
+  --file=plugin/figmaforge/fixtures/figma/layout_desktop.json \
+  --target=flutter+flutter_widgets --plugin-dir plugin/figmaforge \
+  --adaptive --no-approval --output-dir=./figmaforge-output
+
+PYTHON_BIN=/opt/homebrew/bin/python3.14 node runtime/dist/src/cli/main.js run \
+  --file=plugin/figmaforge/fixtures/figma/layout_desktop.json \
+  --target=flutter+flutter_widgets \
+  --adaptive-request="Build the landing page for a marketing site" \
+  --plugin-dir plugin/figmaforge --no-approval --output-dir=./figmaforge-output
+```
+
+When enabled, `figmaforge run` records an `adaptive_plan` artifact and emits an `adaptive_plan_created` event before the pipeline begins. `--adaptive` uses the deterministic default request, `--adaptive-request` implies adaptive mode, and an `unclassified` plan is still stored and allowed to continue. The core runtime and Python detector/router are host-neutral; the Claude Code plugin files only provide the host-specific wrapper.
+
 Artifacts land under `./figmaforge-output/<run-id>/artifacts/`:
 
 - `ingest_output_*.json` — the normalized Figma file (`figma_raw`)
@@ -235,7 +255,7 @@ backend (e.g. `react+css`) fail the generate stage with a clear message.
 | `error: … FIGMA_TOKEN …` (exit 3) | `--file-key` used without a token — `export FIGMA_TOKEN=…`, or use `--file`/offline path |
 | `no Python backend for target …` | target has no adapter (e.g. `react+css`) — use one of the six keys above |
 | `pipeline.py … exited 2` / `error: unknown backend` | stale build — re-run `npx tsc` |
-| `Error: Cannot find module …/main.js` | run from the repo root, or use `dist/runtime/src/cli/main.js` (not `dist/runtime/cli/main.js`) |
+| `Error: Cannot find module …/main.js` | run `cd runtime && npm run build`; use `runtime/dist/src/cli/main.js` |
 | `render skipped for screen_0.html: playwright_not_installed` | best-effort render degraded as designed — `pip install playwright && playwright install chromium` to enable it |
 
 Exit codes mirror the Python CLI: **2** = bad invocation/unknown backend,
@@ -253,5 +273,6 @@ measured score (react 0.9987, vue 1.0000, svelte 1.0000, html_css 1.0 — all
 SSIM-clean on the checked-in fixture), with repair + verify closing the loop
 against external baselines. The gate: all six backends generate cleanly, the
 manifests and loss counts match each backend's declarations, and the Python
-(`python3.14 -m unittest discover -s tests`, 605 tests) + TS
-(`node dist/runtime/tests/run_all.js`, 162 tests) suites are green.
+(`python3.14 -m unittest discover -s plugin/figmaforge/tests`, fast tier) + the
+runtime fast tier (`cd runtime && npm test`, 122 tests) are green; run
+`npm run test:integration` for browser/Vite acceptance coverage.

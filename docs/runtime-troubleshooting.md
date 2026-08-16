@@ -89,6 +89,46 @@ const config = {
 };
 ```
 
+### Adaptive Preflight Issues
+
+#### Native acceptance reports Flutter validation as skipped
+
+**Cause**: The Dart/Flutter toolchain is not installed or is not on `PATH`.
+
+**Fix**: Install Flutter/Dart and rerun `native_acceptance.py`. Manifest and
+generator validation still run, while the missing toolchain remains visible in
+the structured report.
+
+When Docker/Colima is available, use `--flutter-docker-image
+ghcr.io/cirruslabs/flutter:stable` to run `flutter analyze` in the official SDK
+image without installing Flutter locally.
+
+#### Native acceptance fails before validation
+
+**Cause**: The Python backend did not produce a valid manifest or one of the
+manifest files is missing from the output directory.
+
+**Fix**: Run the command with the checked-in fixture and inspect the structured
+stderr error. The command validates both `swiftui` and `flutter` independently.
+
+#### No `adaptive_plan` artifact on a normal run
+
+**Cause**: Neither adaptive flag was supplied.
+
+**Fix**: This is expected. Add `--adaptive` for the default request or `--adaptive-request="<text>"` for an explicit request.
+
+#### `adaptive_plan_created` is missing from the event log
+
+**Cause**: The run did not enter adaptive mode, or the adaptive preflight failed before the pipeline started.
+
+**Fix**: Confirm the flag was passed, then inspect the Python stderr surfaced by the runtime. Check the repository root and `PYTHON_BIN` if the preflight exits nonzero.
+
+#### Adaptive plan is `unclassified`
+
+**Cause**: The detector could not classify the repository with enough confidence.
+
+**Fix**: No fix is required for the run itself. The plan is still stored, the `adaptive_plan_created` event is still emitted, and the visual pipeline continues. Treat the classification as advisory unless your workflow depends on a stricter adapter.
+
 ### Checkpoint Issues
 
 #### "Resuming from wrong checkpoint"
@@ -112,11 +152,29 @@ figmaforge run --file-key=<key> --run-id=unique-run-1 --output-dir=./output-1
 
 **Cause**: The test runner can't find the golden fixtures.
 
-**Fix**: Run tests from the project root:
+**Fix**: Build and run the fast runtime tier from the runtime package:
 ```bash
-cd FigmaForge
-npx tsc && node dist/runtime/tests/run_all.js
+cd FigmaForge/runtime
+npm run build && npm test
+
+# Full Python/Chromium/Vite integration tier
+npm run test:integration
+
+# Python/native integration without npm/Vite/Chromium process gates
+FIGMAFORGE_SKIP_MONEY_TESTS=1 npm run test:integration
 ```
+
+The environment flag records those browser/toolchain checks as skipped. Use the
+unmodified command when Chromium can launch and the Vite dependencies are
+available; only that run validates real screenshots and visual comparison.
+
+#### Live Figma acceptance is skipped
+
+**Cause**: The authenticated smoke test requires
+`FIGMAFORGE_LIVE_ACCEPTANCE=1`, `FIGMAFORGE_LIVE_FILE_KEY`, and `FIGMA_TOKEN`.
+
+**Fix**: Run it only with a dedicated test file and token. The default CI suite
+intentionally stays credential-free.
 
 #### Test timeouts
 
