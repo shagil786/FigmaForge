@@ -107,6 +107,7 @@ function spawnPython(
   scriptPath: string,
   args: string[],
   cwd: string,
+  options?: { timeoutMs?: number },
 ): Promise<PythonResult> {
   return new Promise((resolve, reject) => {
     const proc = spawn(pythonBin, [scriptPath, ...args], {
@@ -116,14 +117,31 @@ function spawnPython(
 
     let stdout = "";
     let stderr = "";
+    let settled = false;
+    const timeoutMs = options?.timeoutMs;
+    const timer = timeoutMs && timeoutMs > 0
+      ? setTimeout(() => {
+          stderr += `pipeline.py timed out after ${timeoutMs}ms`;
+          proc.kill("SIGTERM");
+          setTimeout(() => proc.kill("SIGKILL"), 2_000).unref();
+        }, timeoutMs)
+      : undefined;
 
     proc.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
     proc.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
 
     proc.on("close", (code: number | null) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
       resolve({ exitCode: code ?? 1, stdout, stderr });
     });
-    proc.on("error", (err: Error) => reject(err));
+    proc.on("error", (err: Error) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      reject(err);
+    });
   });
 }
 
@@ -240,6 +258,15 @@ export async function invokeIngest(
     path.join(cfg.pluginDir, "scripts", "pipeline.py"),
     args,
     cfg.pluginDir,
+    {
+      timeoutMs: (() => {
+        const configured = Number(
+          process.env.FIGMAFORGE_FIGMA_STAGE_TIMEOUT_SECONDS ?? 60,
+        );
+        return (Number.isFinite(configured) && configured > 0
+          ? configured : 60) * 1000;
+      })(),
+    },
   );
   if (result.exitCode !== 0) {
     const detail = result.stderr.trim() || result.stdout.trim();
@@ -359,6 +386,18 @@ export async function invokeAssets(
       path.join(cfg.pluginDir, "scripts", "pipeline.py"),
       ["assets", "--ir", irPath, "--assets-dir", assetsDir],
       cfg.pluginDir,
+      {
+        // The Python stage has its own 120s network budget.  Keep a process
+        // boundary as well in case a resolver or child I/O operation ignores
+        // that budget and never returns control to Python.
+        timeoutMs: (() => {
+          const configured = Number(
+            process.env.FIGMAFORGE_ASSET_STAGE_TIMEOUT_SECONDS ?? 120,
+          );
+          return (Number.isFinite(configured) && configured > 0
+            ? configured : 120) * 1000;
+        })(),
+      },
     );
     if (result.exitCode !== 0) {
       const detail = result.stderr.trim() || result.stdout.trim();
@@ -379,7 +418,7 @@ export function createAssetsStageHandler(): StageHandler {
     if (!irJson) {
       throw new Error("assets stage requires normalize output (no irJson available)");
     }
-    const assetsDir = path.join(ctx.config.outputDir, ctx.config.runId, "assets");
+  const assetsDir = path.join(ctx.config.outputDir, ctx.config.runId, "assets");
     const manifest = await invokeAssets(
       { pythonBin: ctx.toolCtx.pythonBin, pluginDir: ctx.config.pluginDir },
       irJson,
@@ -851,6 +890,7 @@ export function createCompareStageHandler(): StageHandler {
         screens: [],
         baseline: null,
         baseline_kind: null,
+        resized: false,
         note: "no screenshots to compare — the render stage degraded " +
           "(non-browser target or bundler-required output); no measured score.",
       };
@@ -907,7 +947,14 @@ export function createCompareStageHandler(): StageHandler {
       baselineKind = "reference";
     }
 
-    const comparator = new ScreenshotComparator({ colorThreshold: 16 }, cfg);
+    // Figma exports are commonly at the design's native pixel dimensions,
+    // while browser captures use the configured viewport.  Compare them at a
+    // common resolution so a valid visual signal is produced instead of the
+    // pixel comparator's size-mismatch sentinel (similarity 0).
+    const comparator = new ScreenshotComparator(
+      { colorThreshold: 16, resize: baselineKind === "figma" },
+      cfg,
+    );
     const screens: Array<{
       file: string;
       similarity: number;
@@ -960,7 +1007,10 @@ export function createCompareStageHandler(): StageHandler {
       screens,
       baseline,
       baseline_kind: baselineKind,
-      note: null,
+      resized: baselineKind === "figma",
+      note: baselineKind === "figma"
+        ? "Figma baseline was resized to common comparison dimensions"
+        : null,
     };
     ctx.shared.set("diffReport", report);
     // Share the resolved baseline so the repair/verify stages consume the
@@ -1259,7 +1309,10 @@ export function createVerifyStageHandler(opts?: {
         "repair", "generated", generated.backend,
       );
       fs.mkdirSync(verifyDir, { recursive: true });
-      const comparator = new ScreenshotComparator({ colorThreshold: 16 }, cfg);
+      const comparator = new ScreenshotComparator(
+        { colorThreshold: 16, resize: baselineKind === "figma" },
+        cfg,
+      );
       const screens: Array<{
         file: string;
         similarity: number;

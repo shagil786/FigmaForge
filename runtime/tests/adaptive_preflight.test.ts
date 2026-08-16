@@ -137,6 +137,37 @@ export async function runAdaptivePreflightTests(): Promise<SuiteResult[]> {
       }
     });
 
+    await it("rejects an unsupported execution policy explicitly", async () => {
+      const pluginDir = makePluginDir();
+      const script = baseScript([
+        "print(json.dumps({",
+        "    'schema_version': 1,",
+        "    'request': 'Inspect',",
+        "    'root': '/workspace/root',",
+        "    'detection': {},",
+        "    'route': {",
+        "        'phases': [],",
+        "        'roles': [],",
+        "        'external_skills': [],",
+        "        'execution_mode': 'magical_autopilot',",
+        "        'stack_status': 'classified',",
+        "        'approval_gates': [],",
+        "        'unloaded_modules': [],",
+        "    },",
+        "}))",
+      ]);
+      try {
+        writeScript(pluginDir, script);
+        const err = await captureAdaptivePreflightError(
+          makeConfig(pluginDir), "/workspace/root", "Inspect", [],
+        );
+        assertEqual(err.name, "AdaptivePreflightError");
+        assert(err.message.includes("unsupported execution_mode"));
+      } finally {
+        cleanDir(pluginDir);
+      }
+    });
+
     await it("preserves stderr and stdout when adaptive plan JSON is malformed", async () => {
       const pluginDir = makePluginDir();
       const script = baseScript([

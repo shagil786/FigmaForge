@@ -12,13 +12,14 @@ import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import * as zlib from "node:zlib";
 
-import { describe, it, assert, assertEqual, assertThrows, assertRejects, assertGreaterThan, assertLessOrEqual } from "./test_framework.js";
+import { describe, it, assert, assertEqual, assertDeepEqual, assertThrows, assertRejects, assertGreaterThan, assertLessOrEqual } from "./test_framework.js";
 import type { SuiteResult } from "./test_framework.js";
 
 import { PIPELINE_STAGES, STAGE_INDEX, makeRunId, makeTaskId, NullModelProvider } from "../src/core/types.js";
 import { EventLog } from "../src/core/events.js";
 import { CheckpointManager, EMPTY_METRICS } from "../src/core/checkpoint.js";
 import { ArtifactStore } from "../src/core/artifacts.js";
+import { ArtifactUploader } from "../src/core/artifact_upload.js";
 import { ToolRegistry } from "../src/core/tools.js";
 import { StateMachine, createInitialState } from "../src/core/state.js";
 import { BudgetTracker, BudgetExceededError } from "../src/core/budget.js";
@@ -27,6 +28,9 @@ import { PathSandbox, SecretGuard, ShellGuard, AssetValidator, ApprovalGate, Sec
 import { PipelineCoordinator } from "../src/core/pipeline.js";
 import { compareSnapshot, saveSnapshot, loadFixtures, injectFailure } from "../src/core/evaluation.js";
 import { createProvider, AnthropicProvider, OpenAIProvider } from "../src/core/providers.js";
+import { JsonProtocolProvider } from "../src/adapters/provider_protocol.js";
+import { buildReviewReportHtml } from "../src/core/review_report.js";
+import { ArtifactServer } from "../src/core/artifact_server.js";
 import { ScreenshotComparator, parsePixelDiffOutput } from "../src/core/screenshot_compare.js";
 import { vnodeToHtml, buildBrowserRenderScript, parseBrowserRenderOutput, pickLayoutMeta } from "../src/core/render_handler.js";
 import { runBackendCodegenTests } from "./backend_codegen.test.js";
@@ -43,6 +47,20 @@ function cleanDir(dir: string): void {
   if (fs.existsSync(dir)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+}
+
+const RUN_INTEGRATION = process.argv.includes("--integration");
+const RUN_MONEY_TESTS = RUN_INTEGRATION && !process.env.FIGMAFORGE_SKIP_MONEY_TESTS;
+
+async function skipIntegration(
+  name: string,
+  reason = process.env.FIGMAFORGE_SKIP_MONEY_TESTS
+    ? "FIGMAFORGE_SKIP_MONEY_TESTS set (no npm/chromium gate)"
+    : "run npm run test:integration for toolchain coverage",
+): Promise<SuiteResult> {
+  return describe(name, async () => {
+    await it(`skipped — ${reason}`, () => {});
+  });
 }
 
 // --- Filter-0 PNG generator for comparator tests (Part 12) ----------------
@@ -270,6 +288,24 @@ export async function runAllTests(): Promise<SuiteResult[]> {
         assertEqual(cp!.metrics.tokensUsed, 500);
         assertEqual(cp!.metrics.similarityScore, 0.85);
       });
+
+      await it("checkpoint filters secrets and paths outside the run directory", async () => {
+        const mgr = new CheckpointManager("run-secure", dir);
+        const runDir = path.join(dir, "run-secure");
+        const cp = mgr.save("ingest", {
+          access_token: "oauth-secret",
+          nested: { password: "hidden", value: "kept" },
+          safePath: path.join(runDir, "artifacts", "file.json"),
+          outsidePath: "/private/tmp/untrusted/file.json",
+        }, EMPTY_METRICS);
+        const raw = JSON.stringify(cp);
+        assert(!raw.includes("oauth-secret"));
+        assert(!raw.includes("hidden"));
+        assert(raw.includes("kept"));
+        assert(!raw.includes("/private/tmp/untrusted"));
+        const checkpointPath = path.join(runDir, "checkpoints", "ingest.json");
+        assertEqual(fs.statSync(checkpointPath).mode & 0o777, 0o600);
+      });
     } finally {
       cleanDir(dir);
     }
@@ -296,6 +332,19 @@ export async function runAllTests(): Promise<SuiteResult[]> {
         assertEqual(artifact.size, buf.length);
       });
 
+      await it("ArtifactStore prunes oldest artifacts within configured limits", async () => {
+        const store = new ArtifactStore("run-retention", dir);
+        store.storeJSON("design_ir", "normalize", "one", { value: 1 });
+        store.storeJSON("design_ir", "normalize", "two", { value: 2 });
+        store.storeJSON("metrics", "verify", "protected", { value: 3 });
+
+        const removed = store.prune({ maxArtifacts: 2, preserveKinds: ["metrics"] });
+
+        assertEqual(removed, 1);
+        assertEqual(store.count, 2);
+        assertEqual(store.byKind("metrics").length, 1);
+      });
+
       await it("ArtifactStore loads JSON artifacts", async () => {
         const store = new ArtifactStore("run-3", dir);
         const data = { test: "value", num: 42 };
@@ -303,6 +352,29 @@ export async function runAllTests(): Promise<SuiteResult[]> {
         const loaded = store.loadJSON(artifact);
         assertEqual((loaded as Record<string, unknown>).test, "value");
         assertEqual((loaded as Record<string, number>).num, 42);
+      });
+
+      await it("loadLatestJSON selects the requested artifact kind", async () => {
+        const first = new ArtifactStore("run-kind", dir);
+        first.storeJSON("design_ir", "normalize", "ir", { kind: "ir" });
+        first.storeJSON("resolution_report", "normalize", "resolution", { kind: "resolution" });
+        first.saveManifest();
+        const resumed = new ArtifactStore("run-kind", dir);
+        const loaded = resumed.loadLatestJSON("design_ir", "normalize") as Record<string, string> | null;
+        assert(loaded !== null);
+        assertEqual(loaded!.kind, "ir");
+      });
+
+      await it("ArtifactStore restores the latest adaptive plan for resume", async () => {
+        const store = new ArtifactStore("run-restore", dir);
+        store.storeJSON("adaptive_plan", "preflight", "adaptive_plan", {
+          schema_version: 1,
+          route: { phases: ["inspect"] },
+        });
+        const restored = store.loadLatestJSON("adaptive_plan", "preflight") as Record<string, any>;
+        assert(restored !== null, "adaptive plan should be recoverable from disk");
+        assertEqual(restored.schema_version, 1);
+        assertEqual(restored.route.phases[0], "inspect");
       });
 
       await it("ArtifactStore filters by stage and kind", async () => {
@@ -326,6 +398,41 @@ export async function runAllTests(): Promise<SuiteResult[]> {
         const store = new ArtifactStore("run-6", dir);
         store.storeJSON("design_ir", "normalize", "a", { data: "hello" });
         assertGreaterThan(store.totalSize, 0);
+      });
+
+      await it("ArtifactUploader uploads every run file with encoded paths and bearer auth", async () => {
+        const runDir = path.join(dir, "upload-run");
+        fs.mkdirSync(path.join(runDir, "artifacts"), { recursive: true });
+        fs.writeFileSync(path.join(runDir, "summary.json"), "summary");
+        fs.writeFileSync(path.join(runDir, "artifacts", "a file.bin"), Buffer.from([1, 2, 3]));
+        const requests: Array<{ url: string; auth: string | undefined; body: Buffer }> = [];
+        const result = await new ArtifactUploader().upload({
+          endpoint: "https://store.example/base",
+          runId: "run with spaces",
+          runDirectory: runDir,
+          token: "secret-token",
+          fetchImpl: (async (input, init) => {
+            requests.push({
+              url: String(input),
+              auth: (init?.headers ? new Headers(init.headers).get("authorization") : undefined) ?? undefined,
+              body: Buffer.from(init?.body as Uint8Array),
+            });
+            return new Response(null, { status: 200 });
+          }) as typeof fetch,
+        });
+        assertEqual(result.uploaded, 2);
+        assertEqual(result.bytes, 10);
+        assertEqual(requests.length, 2);
+        assert(requests[0].url.includes("run%20with%20spaces"), "run id must be URL encoded");
+        assert(requests.some((request) => request.url.includes("a%20file.bin")), "file path must be URL encoded");
+        assertEqual(requests[0].auth, "Bearer secret-token");
+      });
+
+      await it("ArtifactUploader rejects non-http endpoints before reading files", async () => {
+        await assertRejects(
+          () => new ArtifactUploader().upload({ endpoint: "file:///tmp/store", runId: "run", runDirectory: dir }),
+          "must use http or https",
+        );
       });
     } finally {
       cleanDir(dir);
@@ -845,6 +952,47 @@ export async function runAllTests(): Promise<SuiteResult[]> {
         assertEqual(result.errors.length, 0);
       });
 
+      await it("adaptive approval policy gates mutating stages", async () => {
+        const config = {
+          runId: "run-adaptive-policy",
+          fileKey: "test-key",
+          outputDir: dir,
+          approvedDirs: [dir],
+          requireApproval: true,
+          retry: { maxAttempts: 1, baseDelayMs: 10, maxDelayMs: 100, backoffMultiplier: 2 },
+          budgets: { maxTokens: 10000, maxTimeMs: 30000, maxIterations: 100, maxRepairIterations: 10 },
+          similarityThreshold: 0.95,
+          minProgress: 0.005,
+          viewport: { width: 1440, height: 900 },
+          pythonBin: "python3",
+          pluginDir: ".",
+          target: { framework: "html", styling: "css" },
+        };
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+        const approvals: string[] = [];
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+          async (request) => { approvals.push(request.action); return false; },
+        );
+        for (const stage of PIPELINE_STAGES) {
+          pipeline.onStage(stage, async (_ctx, input) => ({ stage: input.stage, status: "ok" }));
+        }
+        pipeline.setShared("adaptivePolicy", {
+          execution_mode: "direct",
+          phases: ["delivery"],
+          approval_gates: ["external_mutation"],
+          approval_required: true,
+        });
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "failed");
+        assertEqual(approvals[0], "adaptive:generate");
+      });
+
       await it("handles stage failure", async () => {
         const config = {
           runId: "run-fail",
@@ -876,6 +1024,73 @@ export async function runAllTests(): Promise<SuiteResult[]> {
         const result = await pipeline.run();
         assertEqual(result.status, "failed");
         assertGreaterThan(result.errors.length, 0);
+      });
+
+      await it("restores shared stage artifacts when a new process resumes", async () => {
+        const config = {
+          runId: "run-resume-shared",
+          fileKey: "test-key",
+          outputDir: dir,
+          approvedDirs: [dir],
+          requireApproval: false,
+          retry: { maxAttempts: 1, baseDelayMs: 10, maxDelayMs: 100, backoffMultiplier: 2 },
+          budgets: { maxTokens: 10000, maxTimeMs: 30000, maxIterations: 100, maxRepairIterations: 10 },
+          similarityThreshold: 0.95,
+          minProgress: 0.005,
+          viewport: { width: 1440, height: 900 },
+          pythonBin: "python3",
+          pluginDir: ".",
+          target: { framework: "html", styling: "css" },
+        };
+        const firstEvents = new EventLog(config.runId);
+        const firstCheckpoints = new CheckpointManager(config.runId, config.outputDir);
+        const firstArtifacts = new ArtifactStore(config.runId, config.outputDir);
+        const first = new PipelineCoordinator(
+          config, firstEvents, firstCheckpoints, firstArtifacts,
+          new ToolRegistry(), new BudgetTracker(config.budgets),
+        );
+        first.onStage("ingest", async (ctx) => {
+          const fileJson = { document: { id: "restored" } };
+          ctx.shared.set("fileJson", fileJson);
+          return { fileJson };
+        });
+        first.onStage("normalize", async () => {
+          throw new Error("simulated process interruption");
+        });
+        assertEqual((await first.run()).status, "failed");
+
+        const fresh = new PipelineCoordinator(
+          { ...config, resume: false }, new EventLog(config.runId),
+          new CheckpointManager(config.runId, config.outputDir),
+          new ArtifactStore(config.runId, config.outputDir),
+          new ToolRegistry(), new BudgetTracker(config.budgets),
+        );
+        fresh.onStage("normalize", async () => ({ irJson: { unexpected: true } }));
+        for (const stage of PIPELINE_STAGES.filter((stage) => stage !== "normalize")) {
+          fresh.onStage(stage, async (_ctx, input) => ({ stage: input.stage, status: "ok" }));
+        }
+        const freshResult = await fresh.run();
+        assertEqual(freshResult.status, "failed");
+        assert(freshResult.errors.some((error) => error.includes("--resume")));
+
+        const secondEvents = new EventLog(config.runId);
+        const secondCheckpoints = new CheckpointManager(config.runId, config.outputDir);
+        const secondArtifacts = new ArtifactStore(config.runId, config.outputDir);
+        const second = new PipelineCoordinator(
+          { ...config, resume: true }, secondEvents, secondCheckpoints, secondArtifacts,
+          new ToolRegistry(), new BudgetTracker(config.budgets),
+        );
+        let restored: unknown = null;
+        second.onStage("normalize", async (_ctx, input) => {
+          restored = input.fileJson;
+          return { irJson: { restored: true } };
+        });
+        for (const stage of PIPELINE_STAGES.filter((stage) => stage !== "normalize")) {
+          second.onStage(stage, async (_ctx, input) => ({ stage: input.stage, status: "ok" }));
+        }
+        assertEqual((await second.run()).status, "completed");
+        assertDeepEqual(restored, { document: { id: "restored" } });
+        assertGreaterThan(secondArtifacts.manifest().artifacts.length, 1);
       });
     } finally {
       cleanDir(dir);
@@ -1025,6 +1240,74 @@ export async function runAllTests(): Promise<SuiteResult[]> {
       assertEqual(provider.name, "openai");
     });
 
+    await it("JSON HTTP provider supports structured local-host responses", async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        assertEqual(body.prompt, "test prompt");
+        return new Response(JSON.stringify({ text: "local answer", tokensUsed: 7, model: "local" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }) as typeof fetch;
+      try {
+        const provider = new JsonProtocolProvider({ endpoint: "http://local.test/v1/complete" });
+        const result = await provider.complete("test prompt");
+        assertEqual(result.text, "local answer");
+        assertEqual(result.tokensUsed, 7);
+        assertEqual(result.model, "local");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    await it("JSON HTTP provider normalizes OpenAI-style tool calls", async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        assertEqual(body.tools[0].name, "lookup");
+        return new Response(JSON.stringify({
+          tool_calls: [{ id: "call-1", function: { name: "lookup", arguments: '{"query":"figma"}' } }],
+        }), { status: 200 });
+      }) as typeof fetch;
+      try {
+        const provider = new JsonProtocolProvider({ endpoint: "http://local.test/v1/complete" });
+        const result = await provider.complete("find it", {
+          tools: [{ name: "lookup", description: "Search", inputSchema: { type: "object" } }],
+        });
+        assertEqual(result.text, "");
+        assertEqual(result.toolCalls?.[0].name, "lookup");
+        assertEqual(result.toolCalls?.[0].arguments.query, "figma");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    await it("JSON HTTP provider streams NDJSON text chunks", async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        assertEqual(body.stream, true);
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(encoder.encode('{"text":"Hel"}\n{"text":"lo","done":true}\n'));
+            controller.close();
+          },
+        });
+        return new Response(stream, { status: 200 });
+      }) as typeof fetch;
+      try {
+        const provider = new JsonProtocolProvider({ endpoint: "http://local.test/v1/complete" });
+        const chunks: Array<{ text: string; done?: boolean }> = [];
+        for await (const chunk of provider.stream("say hello")) chunks.push(chunk);
+        assertEqual(chunks.map((chunk) => chunk.text).join(""), "Hello");
+        assertEqual(chunks[chunks.length - 1].done, true);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
     await it("AnthropicProvider rejects empty API key", async () => {
       const provider = new AnthropicProvider("", "claude-sonnet-4-20250514", "https://api.anthropic.com", 30000);
       await assertRejects(
@@ -1046,6 +1329,70 @@ export async function runAllTests(): Promise<SuiteResult[]> {
         () => createProvider({ name: "unknown" as "null" }),
         "Unknown provider",
       );
+    });
+  }));
+
+  // 14. Review report export
+  results.push(await describe("review report", async () => {
+    await it("builds a self-contained baseline review report", async () => {
+      const html = buildReviewReportHtml({
+        summary: { result: { status: "completed", similarityScore: 0.91 } },
+        manifest: { runId: "run-review", artifacts: [{ kind: "diff_report", path: "artifacts/diff.json", size: 12 }] },
+        diffReport: { similarity_score: 0.91, mismatches: [{ type: "position" }] },
+      });
+      assert(html.includes("FigmaForge Baseline Review"), "report should have a title");
+      assert(html.includes("0.91"), "report should include the measured score");
+      assert(html.includes("position"), "report should include mismatch categories");
+    });
+  }));
+
+  results.push(await describe("artifact server", async () => {
+    await it("accepts authenticated uploads and enforces retention", async () => {
+      const dir = tmpDir();
+      const server = new ArtifactServer({ rootDir: dir, token: "server-token", maxFiles: 1 });
+      try {
+        const address = await server.listen(0, "127.0.0.1");
+        const first = await fetch(`${address}/runs/run-1/summary.json`, {
+          method: "PUT", headers: { Authorization: "Bearer server-token" }, body: "one",
+        });
+        assertEqual(first.status, 201);
+        const second = await fetch(`${address}/runs/run-1/manifest.json`, {
+          method: "PUT", headers: { Authorization: "Bearer server-token" }, body: "two",
+        });
+        assertEqual(second.status, 201);
+        const unauthorized = await fetch(`${address}/runs/run-1/nope`, { method: "PUT", body: "x" });
+        assertEqual(unauthorized.status, 401);
+        const files = fs.readdirSync(path.join(dir, "run-1"));
+        assertEqual(files.length, 1);
+      } finally {
+        await server.close();
+        cleanDir(dir);
+      }
+    });
+
+    await it("enforces a global artifact retention bound across runs", async () => {
+      const dir = tmpDir();
+      const server = new ArtifactServer({ rootDir: dir, token: "server-token", maxRootFiles: 1 });
+      try {
+        const address = await server.listen(0, "127.0.0.1");
+        for (const runId of ["run-1", "run-2"]) {
+          const response = await fetch(`${address}/runs/${runId}/summary.json`, {
+            method: "PUT",
+            headers: { Authorization: "Bearer server-token" },
+            body: runId,
+          });
+          assertEqual(response.status, 201);
+        }
+        let fileCount = 0;
+        for (const runId of ["run-1", "run-2"]) {
+          const runDir = path.join(dir, runId);
+          if (fs.existsSync(runDir)) fileCount += fs.readdirSync(runDir).length;
+        }
+        assertEqual(fileCount, 1);
+      } finally {
+        await server.close();
+        cleanDir(dir);
+      }
     });
   }));
 
@@ -1223,6 +1570,17 @@ export async function runAllTests(): Promise<SuiteResult[]> {
         assertEqual(result.ssimClean, null);
       });
 
+      await it("resize option measures native-dimension Figma exports", async () => {
+        const comparator = new ScreenshotComparator({ resize: true });
+        const bufA = makePng(4, 4, [12, 34, 56]);
+        const bufB = makePng(6, 6, [12, 34, 56]);
+        const result = comparator.compareBuffers(bufA, bufB);
+        assertEqual(result.similarity, 1.0);
+        assertEqual(result.width, 4);
+        assertEqual(result.height, 4);
+        assertEqual(result.diffPixelCount, 0);
+      });
+
       await it("cmdCompare prints the perceptual verdict for a real change", async () => {
         const outDir = path.join(dir, "out", "cmp-real");
         const runId = "cmp-real";
@@ -1234,7 +1592,7 @@ export async function runAllTests(): Promise<SuiteResult[]> {
         );
         const base = path.join(outDir, "base.png");
         fs.writeFileSync(base, makePng(100, 100, [255, 255, 255]));
-        const cli = path.join(process.cwd(), "dist", "runtime", "src", "cli", "main.js");
+        const cli = path.join(process.cwd(), "runtime", "dist", "src", "cli", "main.js");
         const result = spawnSync(
           process.execPath,
           [cli, "compare", "--run-id", runId, "--output-dir", outDir, "--baseline", base],
@@ -1255,7 +1613,7 @@ export async function runAllTests(): Promise<SuiteResult[]> {
         fs.writeFileSync(path.join(renders, "screenshot.png"), buf);
         const base = path.join(outDir, "base2.png");
         fs.writeFileSync(base, buf);
-        const cli = path.join(process.cwd(), "dist", "runtime", "src", "cli", "main.js");
+        const cli = path.join(process.cwd(), "runtime", "dist", "src", "cli", "main.js");
         const result = spawnSync(
           process.execPath,
           [cli, "compare", "--run-id", runId, "--output-dir", outDir, "--baseline", base],
@@ -1429,10 +1787,13 @@ export async function runAllTests(): Promise<SuiteResult[]> {
   }));
 
   // 13b. cmdRun render+compare (Part 19) — measured visual verdict
+  if (!RUN_MONEY_TESTS) {
+    results.push(await skipIntegration("cmdRun render+compare (Part 19)"));
+  } else {
   results.push(await describe("cmdRun render+compare (Part 19)", async () => {
     const dir = tmpDir();
     const FIXTURE = path.resolve("plugin/figmaforge/fixtures/figma/layout_desktop.json");
-    const cli = path.resolve("dist/runtime/src/cli/main.js");
+    const cli = path.resolve("runtime/dist/src/cli/main.js");
     const PYTHON_BIN = process.env.PYTHON_BIN ?? "python3";
     try {
       await it("html+css run prints a measured score and visual verdict (reference baseline)", async () => {
@@ -1512,6 +1873,10 @@ export async function runAllTests(): Promise<SuiteResult[]> {
         const outDir = path.join(dir, "run-c");
         const env: Record<string, string> = { ...process.env, PYTHON_BIN };
         delete env.FIGMA_TOKEN;
+        // OAuth credentials are supported in addition to FIGMA_TOKEN. Keep
+        // this negative-auth test deterministic even when the developer has
+        // a connected local Figma account.
+        env.FIGMAFORGE_CREDENTIALS_PATH = path.join(dir, "no-oauth-credentials.json");
         const res = spawnSync(process.execPath, [
           cli, "run", `--file=${FIXTURE}`, "--file-key=abc123", "--target=html+css",
           "--no-approval", "--figma-baseline", `--output-dir=${outDir}`,
@@ -1530,12 +1895,16 @@ export async function runAllTests(): Promise<SuiteResult[]> {
       cleanDir(dir);
     }
   }));
+  }
 
   // 13c. cmdRun repair+verify (Part 20) — ten-stage run with a terminal gate
+  if (!RUN_MONEY_TESTS) {
+    results.push(await skipIntegration("cmdRun repair+verify (Part 20)"));
+  } else {
   results.push(await describe("cmdRun repair+verify (Part 20)", async () => {
     const dir = tmpDir();
     const FIXTURE = path.resolve("plugin/figmaforge/fixtures/figma/layout_desktop.json");
-    const cli = path.resolve("dist/runtime/src/cli/main.js");
+    const cli = path.resolve("runtime/dist/src/cli/main.js");
     const PYTHON_BIN = process.env.PYTHON_BIN ?? "python3";
     try {
       await it("html+css run completes all ten stages with a PASSED verification", async () => {
@@ -1687,12 +2056,16 @@ export async function runAllTests(): Promise<SuiteResult[]> {
       cleanDir(dir);
     }
   }));
+  }
 
   // 13d. cmdRun bundler-rendered measurement (Part 21) — real Vite + chromium
+  if (!RUN_MONEY_TESTS) {
+    results.push(await skipIntegration("cmdRun bundler measurement (Part 21)"));
+  } else {
   results.push(await describe("cmdRun bundler measurement (Part 21)", async () => {
     const dir = tmpDir();
     const FIXTURE = path.resolve("plugin/figmaforge/fixtures/figma/layout_desktop.json");
-    const cli = path.resolve("dist/runtime/src/cli/main.js");
+    const cli = path.resolve("runtime/dist/src/cli/main.js");
     const PYTHON_BIN = process.env.PYTHON_BIN ?? "python3";
 
     function runCli(args: string[], timeout: number) {
@@ -1794,15 +2167,19 @@ export async function runAllTests(): Promise<SuiteResult[]> {
       cleanDir(dir);
     }
   }));
+  }
 
   // 13e. cmdRun web-backend repair (Part 22) — end-to-end red-baseline
   // repair for a bundler-backed target with the REAL toolchain (npm + vite
   // + chromium).  Set FIGMAFORGE_SKIP_MONEY_TESTS=1 to skip cleanly when
   // the toolchain is unavailable.
+  if (!RUN_MONEY_TESTS) {
+    results.push(await skipIntegration("cmdRun web-backend repair (Part 22)"));
+  } else {
   results.push(await describe("cmdRun web-backend repair (Part 22)", async () => {
     const dir = tmpDir();
     const FIXTURE = path.resolve("plugin/figmaforge/fixtures/figma/layout_desktop.json");
-    const cli = path.resolve("dist/runtime/src/cli/main.js");
+    const cli = path.resolve("runtime/dist/src/cli/main.js");
     const PYTHON_BIN = process.env.PYTHON_BIN ?? "python3";
     try {
       if (process.env.FIGMAFORGE_SKIP_MONEY_TESTS) {
@@ -1885,6 +2262,7 @@ export async function runAllTests(): Promise<SuiteResult[]> {
       cleanDir(dir);
     }
   }));
+  }
 
   // 14. Backend code generation (Part 15) — real Python backends through the pipeline
   results.push(...await runBackendCodegenTests());

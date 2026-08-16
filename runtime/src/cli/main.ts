@@ -20,13 +20,18 @@ import type { RuntimeConfig, PipelineStage, CodegenTarget } from "../core/types.
 import { EventLog } from "../core/events.js";
 import { CheckpointManager } from "../core/checkpoint.js";
 import { ArtifactStore } from "../core/artifacts.js";
+import { ArtifactUploader } from "../core/artifact_upload.js";
+import { buildReviewReportHtml } from "../core/review_report.js";
+import { ArtifactServer } from "../core/artifact_server.js";
 import { ToolRegistry } from "../core/tools.js";
 import { BudgetTracker } from "../core/budget.js";
 import { PipelineCoordinator } from "../core/pipeline.js";
 import { ScreenshotComparator } from "../core/screenshot_compare.js";
 import { buildBrowserRenderScript, parseBrowserRenderOutput } from "../core/render_handler.js";
 import { invokeAdaptivePreflight } from "../core/adaptive_preflight.js";
+import { buildAdaptiveExecutionPolicy } from "../core/adaptive_preflight.js";
 import type { AdaptivePlan } from "../core/adaptive_preflight.js";
+import { RunLock } from "../core/run_lock.js";
 import {
   createIngestStageHandler,
   createNormalizeStageHandler,
@@ -100,6 +105,7 @@ Commands:
   repair    Run only the repair stage for a run
   replay    Replay a previous run from its event log
   demo      Generate all six backends and print a comparison table
+  auth      Connect FigmaForge to Figma (auth login|refresh)
 
 Options:
   --file-key=<key>         Figma file key (live ingest; requires FIGMA_TOKEN)
@@ -134,12 +140,23 @@ Options:
   --no-approval            Skip approval gates
   --approve-dir=<path>     Add an approved directory (repeatable)
   --verbose                Enable verbose output
+  --max-artifacts=<n>      Bound retained artifacts for this run
+  --max-artifact-bytes=<n> Bound retained artifact bytes for this run
+  --artifact-upload-url=<url>  Opt-in remote upload endpoint for completed run artifacts
+  artifact-server --max-root-files=<n>  Global artifact file retention limit
+  artifact-server --max-root-bytes=<n>  Global artifact byte retention limit
+  --export-report=<path.html>  Export a self-contained baseline review report
+  artifact-server             Receive uploaded artifacts with retention limits
+  --heatmap               Write a PNG diff heatmap for compare
+  --resize                Resize compared PNGs to the smaller dimensions
   --help                   Show this help message
 
 Examples:
   figmaforge run --file-key=abc123 --output-dir=./output
   figmaforge inspect --run-id=run-abc --output-dir=./output
   figmaforge replay --run-id=run-abc --output-dir=./output
+  figmaforge auth login
+  figmaforge auth refresh
 `);
 }
 
@@ -180,6 +197,12 @@ function buildConfig(args: CliArgs): RuntimeConfig {
     outputDir,
     approvedDirs,
     requireApproval: args.flags["no-approval"] !== "true",
+    resume: args.flags["resume"] === "true",
+    maxArtifacts: args.flags["max-artifacts"] === undefined
+      ? undefined : parseInt(args.flags["max-artifacts"], 10),
+    maxArtifactBytes: args.flags["max-artifact-bytes"] === undefined
+      ? undefined : parseInt(args.flags["max-artifact-bytes"], 10),
+    artifactUploadUrl: args.flags["artifact-upload-url"],
     retry: { ...DEFAULT_RETRY },
     budgets: {
       maxTokens: DEFAULT_BUDGETS.maxTokens,
@@ -200,13 +223,41 @@ function buildConfig(args: CliArgs): RuntimeConfig {
 // Commands
 // ---------------------------------------------------------------------------
 
+async function cmdAuth(args: CliArgs): Promise<void> {
+  const action = args.positional[0] ?? "login";
+  if (action !== "login" && action !== "refresh") {
+    throw new Error(`Unknown auth action "${action}" — use: figmaforge auth login|refresh`);
+  }
+  const config = buildConfig(args);
+  const script = path.join(config.pluginDir, "scripts", "figma_auth.py");
+  const scriptArgs = [script];
+  scriptArgs.push(action);
+  if (args.flags["scope"]) {
+    scriptArgs.push("--scope", args.flags["scope"]);
+  }
+  if (args.flags["port"]) {
+    scriptArgs.push("--port", args.flags["port"]);
+  }
+  const result = spawnSync(config.pythonBin, scriptArgs, {
+    cwd: config.pluginDir,
+    env: { ...process.env, PYTHONIOENCODING: "utf-8" },
+    stdio: "inherit",
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`Figma OAuth login failed (exit ${result.status ?? "unknown"})`);
+  }
+}
+
 const DEFAULT_ADAPTIVE_REQUEST =
   "Convert this Figma design into the selected code-generation target";
 
 type PipelineRunner = Pick<
   PipelineCoordinator,
   "setAbortSignal" | "setShared" | "onStage" | "run"
->;
+> & {
+  getShared?: (key: string) => unknown;
+};
 
 interface CliRuntimeDeps {
   invokeAdaptivePreflight: (
@@ -273,6 +324,11 @@ async function cmdRun(args: CliArgs): Promise<void> {
     console.error("Error: --file-key or --file is required for 'run' command");
     process.exit(1);
   }
+
+  const runLock = new RunLock(config.outputDir, config.runId);
+  runLock.acquire();
+  const releaseRunLock = () => runLock.release();
+  process.once("exit", releaseRunLock);
 
   console.log(`Starting pipeline run ${config.runId}`);
   console.log(`  File key: ${config.fileKey || "(local file)"}`);
@@ -348,24 +404,59 @@ async function cmdRun(args: CliArgs): Promise<void> {
 
     const adaptiveRequest = args.flags["adaptive-request"]
       ?? (args.flags["adaptive"] === "true" ? DEFAULT_ADAPTIVE_REQUEST : undefined);
+    let adaptivePlan: AdaptivePlan | null = null;
     if (adaptiveRequest !== undefined) {
-      const plan = await cliRuntimeDeps.invokeAdaptivePreflight(
+      adaptivePlan = await cliRuntimeDeps.invokeAdaptivePreflight(
         { pythonBin: config.pythonBin, pluginDir: config.pluginDir },
         process.cwd(),
         adaptiveRequest,
       );
-      artifacts.storeJSON("adaptive_plan", "preflight", "adaptive_plan", plan);
+      artifacts.storeJSON("adaptive_plan", "preflight", "adaptive_plan", adaptivePlan);
       events.emit("adaptive_plan_created", "Adaptive preflight completed", {
         data: {
-          stack_status: plan.route.stack_status,
-          execution_mode: plan.route.execution_mode,
-          phases: plan.route.phases,
-          approval_gates: plan.route.approval_gates,
+          stack_status: adaptivePlan.route.stack_status,
+          execution_mode: adaptivePlan.route.execution_mode,
+          phases: adaptivePlan.route.phases,
+          approval_gates: adaptivePlan.route.approval_gates,
         },
+      });
+    } else {
+      const restored = artifacts.loadLatestJSON("adaptive_plan", "preflight");
+      if (restored !== null) adaptivePlan = restored as AdaptivePlan;
+    }
+    if (adaptivePlan !== null) {
+      const adaptivePolicy = buildAdaptiveExecutionPolicy(
+        adaptivePlan,
+        config.requireApproval,
+      );
+      // Make the plan part of the pipeline context, not only an audit artifact.
+      // Every stage receives shared context through PipelineCoordinator, so
+      // downstream handlers and adapters can make lifecycle-aware decisions
+      // without re-running detection or parsing the artifact from disk.
+      pipeline.setShared("adaptivePlan", adaptivePlan);
+      pipeline.setShared("adaptivePolicy", adaptivePolicy);
+      events.emit("adaptive_plan_applied", "Adaptive plan applied to pipeline", {
+        data: {
+          stack_status: adaptivePlan.route.stack_status,
+          execution_mode: adaptivePlan.route.execution_mode,
+          phases: adaptivePlan.route.phases,
+          restored: adaptiveRequest === undefined,
+        },
+      });
+      events.emit("adaptive_policy_applied", "Adaptive route policy applied", {
+        data: { ...adaptivePolicy },
       });
     }
 
     const result = await pipeline.run();
+
+    const summaryPath = path.join(config.outputDir, config.runId, "summary.json");
+    fs.writeFileSync(summaryPath, JSON.stringify({
+      schema_version: 1,
+      generated_at: new Date().toISOString(),
+      result,
+      adaptive_policy: pipeline.getShared?.("adaptivePolicy") ?? null,
+    }, null, 2) + "\n", "utf-8");
 
     console.log(`\nPipeline ${result.status}`);
     console.log(`  Duration:   ${result.totalDurationMs}ms`);
@@ -374,6 +465,17 @@ async function cmdRun(args: CliArgs): Promise<void> {
     console.log(`  Tokens:     ${result.tokensUsed}`);
     console.log(`  Artifacts:  ${result.artifacts}`);
     console.log(`  Events:     ${result.events}`);
+    console.log(`  Summary:    ${summaryPath}`);
+
+    if (config.artifactUploadUrl) {
+      const upload = await new ArtifactUploader().upload({
+        endpoint: config.artifactUploadUrl,
+        runId: config.runId,
+        runDirectory: path.join(config.outputDir, config.runId),
+        token: process.env.FIGMAFORGE_ARTIFACT_UPLOAD_TOKEN,
+      });
+      console.log(`  Uploaded:   ${upload.uploaded} files (${upload.bytes} bytes)`);
+    }
 
     // Measured visual verdict from the compare stage's diff_report artifact
     // (Part 19) — a real number or an honest "no measured score" note.
@@ -382,6 +484,7 @@ async function cmdRun(args: CliArgs): Promise<void> {
       const report = artifacts.loadJSON(diffArtifacts[0]) as {
         similarity_score: number | null;
         baseline_kind: string | null;
+        resized?: boolean;
         raster_stats?: { ssim?: number | null; ssim_clean?: boolean | null } | null;
         note?: string | null;
       };
@@ -394,7 +497,8 @@ async function cmdRun(args: CliArgs): Promise<void> {
         console.log(
           `  Visual verdict: similarity ${report.similarity_score.toFixed(4)} ` +
           `vs ${report.baseline_kind ?? "?"} baseline — ${verdict} ` +
-          `(SSIM ${(report.raster_stats?.ssim ?? -1).toFixed(4)})`,
+          `(SSIM ${(report.raster_stats?.ssim ?? -1).toFixed(4)})` +
+          (report.resized ? " [resized for comparison]" : ""),
         );
       } else {
         console.log(`  Visual verdict: no measured score (${report.note ?? "no screenshots"})`);
@@ -440,6 +544,8 @@ async function cmdRun(args: CliArgs): Promise<void> {
     }
   } finally {
     process.removeListener("SIGINT", handleSigint);
+    process.removeListener("exit", releaseRunLock);
+    runLock.release();
   }
 }
 
@@ -496,6 +602,44 @@ async function cmdInspect(args: CliArgs): Promise<void> {
       }
     }
   }
+
+  const exportPath = args.flags["export-report"];
+  if (exportPath) {
+    const artifactEntries = fs.existsSync(manifestPath)
+      ? (JSON.parse(fs.readFileSync(manifestPath, "utf-8")) as { runId?: string; artifacts?: Array<Record<string, unknown>> })
+      : undefined;
+    let diffReport: Record<string, unknown> | undefined;
+    if (fs.existsSync(artifactsDir)) {
+      const diffFile = fs.readdirSync(artifactsDir).find((f: string) => f.includes("diff_report"));
+      if (diffFile) diffReport = JSON.parse(fs.readFileSync(path.join(artifactsDir, diffFile), "utf-8"));
+    }
+    const summaryPath = path.join(config.outputDir, runId, "summary.json");
+    const summary = fs.existsSync(summaryPath)
+      ? JSON.parse(fs.readFileSync(summaryPath, "utf-8")) as Record<string, unknown>
+      : undefined;
+    const reportPath = path.resolve(exportPath);
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    fs.writeFileSync(reportPath, buildReviewReportHtml({ summary, manifest: artifactEntries, diffReport }), "utf-8");
+    console.log(`\nReview report: ${reportPath}`);
+  }
+}
+
+async function cmdArtifactServer(args: CliArgs): Promise<void> {
+  const server = new ArtifactServer({
+    rootDir: path.resolve(args.flags["root"] ?? "./figmaforge-artifacts"),
+    token: args.flags["token"] ?? process.env.FIGMAFORGE_ARTIFACT_SERVER_TOKEN,
+    maxFiles: args.flags["max-files"] ? parseInt(args.flags["max-files"], 10) : undefined,
+    maxBytes: args.flags["max-bytes"] ? parseInt(args.flags["max-bytes"], 10) : undefined,
+    maxRootFiles: args.flags["max-root-files"] ? parseInt(args.flags["max-root-files"], 10) : undefined,
+    maxRootBytes: args.flags["max-root-bytes"] ? parseInt(args.flags["max-root-bytes"], 10) : undefined,
+    maxFileBytes: args.flags["max-file-bytes"] ? parseInt(args.flags["max-file-bytes"], 10) : undefined,
+  });
+  const address = await server.listen(args.flags["port"] ? parseInt(args.flags["port"], 10) : 8787, args.flags["host"] ?? "127.0.0.1");
+  console.log(`Artifact server listening at ${address}`);
+  await new Promise<void>((resolve) => {
+    const stop = async () => { process.removeListener("SIGINT", stop); await server.close(); resolve(); };
+    process.once("SIGINT", stop);
+  });
 }
 
 async function cmdReplay(args: CliArgs): Promise<void> {
@@ -638,7 +782,12 @@ async function cmdCompare(args: CliArgs): Promise<void> {
       return;
     }
     const comparator = new ScreenshotComparator(
-      { colorThreshold: 16 },
+      {
+        colorThreshold: 16,
+        resize: args.flags["resize"] === "true",
+        heatmapPath: args.flags["heatmap"] === "true"
+          ? path.join(rendersDir, "diff_heatmap.png") : undefined,
+      },
       { pythonBin: config.pythonBin, pluginDir: config.pluginDir },
     );
     const result = comparator.compare(screenshotPath, baselinePath);
@@ -649,6 +798,7 @@ async function cmdCompare(args: CliArgs): Promise<void> {
     } else {
       console.log(`  Similarity: ${result.similarity.toFixed(4)}`);
       console.log(`  Diff pixels: ${result.diffPixelCount} / ${result.totalPixels} (${(result.diffPercentage * 100).toFixed(2)}%)`);
+      if (result.heatmapPath) console.log(`  Heatmap: ${result.heatmapPath}`);
       if (result.ssimClean === true) {
         console.log(`  Perceptually identical: ${result.diffPixelCount} diff pixels are within visual noise (SSIM ${(result.ssim ?? 0).toFixed(4)}).`);
       } else if (result.ssimClean === false) {
@@ -832,11 +982,17 @@ export async function runMainForTests(argv: string[]): Promise<void> {
   const args = parseArgs(argv);
 
   switch (args.command) {
+    case "auth":
+      await cmdAuth(args);
+      break;
     case "run":
       await cmdRun(args);
       break;
     case "inspect":
       await cmdInspect(args);
+      break;
+    case "artifact-server":
+      await cmdArtifactServer(args);
       break;
     case "replay":
       await cmdReplay(args);

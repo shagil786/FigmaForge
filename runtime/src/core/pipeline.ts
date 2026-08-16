@@ -51,6 +51,27 @@ export type StageHandler = (
   input: Record<string, unknown>,
 ) => Promise<Record<string, unknown>>;
 
+const ADAPTIVE_MUTATING_STAGES = new Set<PipelineStage>([
+  "generate",
+  "repair",
+]);
+
+function adaptiveStageRequiresApproval(
+  policy: unknown,
+  stage: PipelineStage,
+): boolean {
+  if (!policy || typeof policy !== "object" || !ADAPTIVE_MUTATING_STAGES.has(stage)) {
+    return false;
+  }
+  const candidate = policy as {
+    approval_required?: unknown;
+    approval_gates?: unknown;
+  };
+  return candidate.approval_required === true
+    && Array.isArray(candidate.approval_gates)
+    && candidate.approval_gates.includes("external_mutation");
+}
+
 // ---------------------------------------------------------------------------
 // Pipeline context — passed to each stage handler
 // ---------------------------------------------------------------------------
@@ -152,6 +173,13 @@ export class PipelineCoordinator {
     this.startTimeMs = Date.now();
 
     try {
+      const existingCheckpoint = this.checkpoints.loadLatest();
+      if (existingCheckpoint !== null && this.config.resume !== true) {
+        throw new Error(
+          `run ${this.config.runId} already has a checkpoint at ${existingCheckpoint.stage}; ` +
+          "use --resume to continue it or choose a new --run-id",
+        );
+      }
       // Start the state machine
       this.sm.start();
       this.events.emit("run_started", `Pipeline run ${this.config.runId} starting`, {
@@ -165,6 +193,7 @@ export class PipelineCoordinator {
         startIdx = PIPELINE_STAGES.indexOf(resumeStage as PipelineStage);
         this.budget.restore(this.sm.state.metrics);
         this.budget.resetTimer();
+        this.restoreSharedFromCheckpoints();
       }
 
       // Execute each stage in order
@@ -214,6 +243,11 @@ export class PipelineCoordinator {
 
     // Save final artifacts
     this.artifacts.storeJSON("event_log", "verify", "event_log", this.events.toJSON());
+    this.artifacts.prune({
+      maxArtifacts: this.config.maxArtifacts,
+      maxBytes: this.config.maxArtifactBytes,
+      preserveKinds: ["figma_raw", "screenshot", "event_log", "checkpoint", "metrics"],
+    });
     this.artifacts.saveManifest();
 
     return this.buildResult();
@@ -221,6 +255,8 @@ export class PipelineCoordinator {
 
   /** Execute a single pipeline stage with retry. */
   private async executeStage(stage: PipelineStage): Promise<void> {
+    const progress = process.env.FIGMAFORGE_TEST_PROGRESS === "1";
+    if (progress) console.error(`[figmaforge] stage started: ${stage}`);
     const handler = this.handlers.get(stage);
     if (!handler) {
       this.events.emit("stage_skipped", `No handler for stage ${stage}`, { stage });
@@ -233,6 +269,20 @@ export class PipelineCoordinator {
     const taskId = makeTaskId(this.config.runId, stage, this.sm.state.currentAttempt);
 
     try {
+      if (adaptiveStageRequiresApproval(this.ctx.shared.get("adaptivePolicy"), stage)) {
+        await this.ctx.security.approval.assertApproved({
+          action: `adaptive:${stage}`,
+          description: `Adaptive policy requires approval before the ${stage} stage mutates generated output.`,
+          affectedFiles: [this.config.outputDir],
+          metadata: { stage, policy: this.ctx.shared.get("adaptivePolicy") },
+        });
+        this.events.emit("approval_granted", `Adaptive approval granted for ${stage}`, {
+          stage,
+          taskId,
+          data: { action: `adaptive:${stage}` },
+        });
+      }
+
       // Get input from previous stage outputs or shared state
       const input = this.getStageInput(stage);
 
@@ -277,6 +327,7 @@ export class PipelineCoordinator {
           totalDelayMs: result.totalDelayMs,
         },
       });
+      if (progress) console.error(`[figmaforge] stage completed: ${stage}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.sm.failStage(stage, message);
@@ -288,6 +339,7 @@ export class PipelineCoordinator {
         taskId,
         data: { error: message },
       });
+      if (progress) console.error(`[figmaforge] stage failed: ${stage}: ${message}`);
 
       throw err;
     }
@@ -304,6 +356,17 @@ export class PipelineCoordinator {
     input["fileKey"] = this.config.fileKey;
     input["viewport"] = this.config.viewport;
     return input;
+  }
+
+  /** Restore outputs produced by completed stages into the new process context. */
+  private restoreSharedFromCheckpoints(): void {
+    for (const checkpoint of this.checkpoints.list()) {
+      for (const [key, value] of Object.entries(checkpoint.outputs)) {
+        if (key !== "stage" && key !== "runId") {
+          this.ctx.shared.set(key, value);
+        }
+      }
+    }
   }
 
   /** Map pipeline stage to artifact kind. */

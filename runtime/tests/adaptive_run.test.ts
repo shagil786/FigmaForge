@@ -21,6 +21,7 @@ import {
 } from "./test_framework.js";
 import type { SuiteResult } from "./test_framework.js";
 import type { AdaptivePlan } from "../src/core/adaptive_preflight.js";
+import { buildAdaptiveExecutionPolicy } from "../src/core/adaptive_preflight.js";
 import {
   resetCliTestDepsForTesting,
   runMainForTests,
@@ -36,6 +37,7 @@ interface FakeCliResult {
   requests: string[];
   pipelineRan: boolean;
   stdout: string;
+  adaptivePlanApplied: boolean;
 }
 
 function tmpDir(): string {
@@ -93,6 +95,7 @@ async function runCliWithFakePreflight(
   let artifactKinds: string[] = [];
   let eventKinds: string[] = [];
   let pipelineRan = false;
+  let adaptivePlanApplied = false;
 
   setCliTestDepsForTesting({
     invokeAdaptivePreflight: async (_cfg, _root, request) => {
@@ -102,7 +105,10 @@ async function runCliWithFakePreflight(
     },
     createPipeline: (_config, events, _checkpoints, artifacts) => ({
       setAbortSignal: () => undefined,
-      setShared: () => undefined,
+      setShared: (key: string) => {
+        if (key === "adaptivePlan") adaptivePlanApplied = true;
+        if (key === "adaptivePolicy") adaptivePlanApplied = true;
+      },
       onStage: () => undefined,
       run: async () => {
         pipelineRan = true;
@@ -136,7 +142,7 @@ async function runCliWithFakePreflight(
         ...extraArgs,
       ]);
     });
-    return { artifactKinds, eventKinds, requests, pipelineRan, stdout };
+    return { artifactKinds, eventKinds, requests, pipelineRan, stdout, adaptivePlanApplied };
   } finally {
     resetCliTestDepsForTesting();
     cleanDir(dir);
@@ -145,6 +151,14 @@ async function runCliWithFakePreflight(
 
 export async function runAdaptiveRunTests(): Promise<SuiteResult[]> {
   return [await describe("adaptive run CLI", async () => {
+    await it("reports approval required only for an enforced mutation gate", async () => {
+      const policy = buildAdaptiveExecutionPolicy(
+        makePlan({ approval_gates: ["project_approval"] }),
+        true,
+      );
+      assertEqual(policy.approval_required, false);
+    });
+
     await it("shows adaptive flags in help output", async () => {
       const stdout = await captureStdout(async () => {
         await runMainForTests(["node", "figmaforge", "help"]);
@@ -165,6 +179,9 @@ export async function runAdaptiveRunTests(): Promise<SuiteResult[]> {
       const result = await runCliWithFakePreflight(["--adaptive-request=Build React UI"]);
       assert(result.artifactKinds.includes("adaptive_plan"));
       assert(result.eventKinds.includes("adaptive_plan_created"));
+      assert(result.eventKinds.includes("adaptive_plan_applied"));
+      assert(result.eventKinds.includes("adaptive_policy_applied"));
+      assert(result.adaptivePlanApplied, "adaptive plan should enter shared pipeline context");
       assertEqual(result.requests[0], "Build React UI");
     });
 
@@ -180,7 +197,7 @@ export async function runAdaptiveRunTests(): Promise<SuiteResult[]> {
         {
           plan: makePlan({
             stack_status: "unclassified",
-            execution_mode: "delegate",
+            execution_mode: "isolated_scout",
             phases: ["inspect"],
           }),
         },

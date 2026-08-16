@@ -5,6 +5,7 @@
 import { runAllTests } from "./test_all.js";
 import { runAdaptivePreflightTests } from "./adaptive_preflight.test.js";
 import { runAdaptiveRunTests } from "./adaptive_run.test.js";
+import { runRunLockTests } from "./run_lock.test.js";
 import { printResults } from "./test_framework.js";
 
 async function main(): Promise<void> {
@@ -15,6 +16,7 @@ async function main(): Promise<void> {
     ...(await runAllTests()),
     ...(await runAdaptivePreflightTests()),
     ...(await runAdaptiveRunTests()),
+    ...(await runRunLockTests()),
   ];
   printResults(results);
 

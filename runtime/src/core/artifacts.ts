@@ -74,6 +74,7 @@ export class ArtifactStore {
     outputDir: string,
   ) {
     this.baseDir = path.join(outputDir, runId, "artifacts");
+    this.loadManifestFromDisk();
   }
 
   /** Initialize the artifact directory. */
@@ -107,6 +108,22 @@ export class ArtifactStore {
     };
     this.artifacts.push(artifact);
     return artifact;
+  }
+
+  /** Load the newest JSON artifact for a kind/stage pair when resuming a run. */
+  loadLatestJSON(kind: ArtifactKind, stage: ArtifactStage): unknown | null {
+    const candidates = this.artifacts
+      .filter((artifact) => artifact.kind === kind && artifact.stage === stage)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+    for (const candidate of candidates) {
+      try {
+        return JSON.parse(fs.readFileSync(path.join(this.baseDir, candidate.path), "utf-8"));
+      } catch {
+        // Ignore corrupt candidates and keep searching older artifacts.
+      }
+    }
+    return null;
   }
 
   /** Store an artifact from a binary buffer (e.g. screenshot). */
@@ -158,6 +175,46 @@ export class ArtifactStore {
     return { runId: this.runId, artifacts: [...this.artifacts] };
   }
 
+  /**
+   * Remove oldest non-protected artifacts until optional retention limits hold.
+   * Provenance artifacts can be protected by kind and are never deleted.
+   */
+  prune(options: {
+    maxArtifacts?: number;
+    maxBytes?: number;
+    preserveKinds?: ArtifactKind[];
+  } = {}): number {
+    const maxArtifacts = options.maxArtifacts;
+    const maxBytes = options.maxBytes;
+    if (maxArtifacts === undefined && maxBytes === undefined) return 0;
+    if (maxArtifacts !== undefined && maxArtifacts < 0) {
+      throw new Error("maxArtifacts must be non-negative");
+    }
+    if (maxBytes !== undefined && maxBytes < 0) {
+      throw new Error("maxBytes must be non-negative");
+    }
+
+    const preserved = new Set(options.preserveKinds ?? []);
+    const candidates = this.artifacts
+      .filter((artifact) => !preserved.has(artifact.kind))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    let removed = 0;
+    let totalBytes = this.totalSize;
+    while (
+      candidates.length > 0
+      && ((maxArtifacts !== undefined && this.artifacts.length > maxArtifacts)
+        || (maxBytes !== undefined && totalBytes > maxBytes))
+    ) {
+      const artifact = candidates.shift()!;
+      const fullPath = path.join(this.baseDir, artifact.path);
+      if (fs.existsSync(fullPath)) fs.rmSync(fullPath, { force: true });
+      this.artifacts = this.artifacts.filter((entry) => entry.id !== artifact.id || entry.path !== artifact.path);
+      totalBytes -= artifact.size;
+      removed += 1;
+    }
+    return removed;
+  }
+
   /** Save the manifest to disk. */
   saveManifest(): string {
     this.init();
@@ -174,5 +231,22 @@ export class ArtifactStore {
   /** Get total size in bytes. */
   get totalSize(): number {
     return this.artifacts.reduce((sum, a) => sum + a.size, 0);
+  }
+
+  /** Rehydrate previously written artifact metadata for resumed runs. */
+  private loadManifestFromDisk(): void {
+    const manifestPath = path.join(this.baseDir, "..", "manifest.json");
+    if (!fs.existsSync(manifestPath)) return;
+    try {
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8")) as ArtifactManifest;
+      if (manifest.runId !== this.runId || !Array.isArray(manifest.artifacts)) return;
+      this.artifacts = manifest.artifacts.filter((artifact) => {
+        if (!artifact || typeof artifact.path !== "string") return false;
+        return fs.existsSync(path.join(this.baseDir, artifact.path));
+      });
+    } catch {
+      // A corrupt manifest must not prevent a run from starting; new artifacts
+      // will rebuild the manifest when the run reaches its finalization path.
+    }
   }
 }

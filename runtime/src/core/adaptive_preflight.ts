@@ -29,6 +29,30 @@ export interface AdaptivePlan {
   };
 }
 
+export interface AdaptiveExecutionPolicy {
+  execution_mode: string;
+  phases: string[];
+  approval_gates: string[];
+  approval_required: boolean;
+}
+
+/** Convert a validated route into explicit runtime policy metadata. */
+export function buildAdaptiveExecutionPolicy(
+  plan: AdaptivePlan,
+  requireApproval: boolean,
+): AdaptiveExecutionPolicy {
+  // The runtime currently gates only generated-output mutations for the
+  // external_mutation route. Keep the summary truthful until the other
+  // informational gates have concrete enforcement points.
+  const approvalGates = [...plan.route.approval_gates];
+  return {
+    execution_mode: plan.route.execution_mode,
+    phases: [...plan.route.phases],
+    approval_gates: approvalGates,
+    approval_required: requireApproval && approvalGates.includes("external_mutation"),
+  };
+}
+
 export class AdaptivePreflightError extends Error {
   readonly stderr: string;
   readonly stdout: string;
@@ -94,6 +118,20 @@ function isStringArray(value: unknown): value is string[] {
 function isRecordArray(value: unknown): value is Array<Record<string, unknown>> {
   return Array.isArray(value) && value.every((item) => isRecord(item));
 }
+
+const SUPPORTED_EXECUTION_MODES = new Set([
+  "direct",
+  "isolated_scout",
+  "isolated_planner",
+  "fresh_verifier",
+]);
+
+const SUPPORTED_APPROVAL_GATES = new Set([
+  "external_mutation",
+  "stack_selection",
+  "language_activation",
+  "project_approval",
+]);
 
 function parseFinalJsonLine(stdout: string, stderr: string): Record<string, unknown> {
   const lines = stdout.split(/\r?\n/).filter((line) => line.trim().length > 0);
@@ -186,6 +224,12 @@ function validateAdaptivePlan(
       stdout,
     });
   }
+  if (!SUPPORTED_EXECUTION_MODES.has(route.execution_mode)) {
+    throw new AdaptivePreflightError(
+      `adaptive_plan.py output has unsupported execution_mode: ${route.execution_mode}`,
+      { stderr, stdout },
+    );
+  }
   if (typeof route.stack_status !== "string") {
     throw new AdaptivePreflightError("adaptive_plan.py output is missing route.stack_status", {
       stderr,
@@ -197,6 +241,15 @@ function validateAdaptivePlan(
       stderr,
       stdout,
     });
+  }
+  const unsupportedGates = route.approval_gates.filter(
+    (gate) => !SUPPORTED_APPROVAL_GATES.has(gate),
+  );
+  if (unsupportedGates.length > 0) {
+    throw new AdaptivePreflightError(
+      `adaptive_plan.py output has unsupported approval gate: ${unsupportedGates[0]}`,
+      { stderr, stdout },
+    );
   }
   if (!isStringArray(route.unloaded_modules)) {
     throw new AdaptivePreflightError("adaptive_plan.py output is missing route.unloaded_modules", {

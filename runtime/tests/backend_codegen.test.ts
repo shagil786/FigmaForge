@@ -130,6 +130,19 @@ function redBaselineHtml(): string {
     "</body></html>";
 }
 
+const RUN_BROWSER_TESTS = process.env.FIGMAFORGE_SKIP_MONEY_TESTS !== "1";
+
+async function browserIt(
+  name: string,
+  fn: () => void | Promise<void>,
+): Promise<void> {
+  if (RUN_BROWSER_TESTS) {
+    await it(name, fn);
+  } else {
+    await it(`skipped — ${name} (FIGMAFORGE_SKIP_MONEY_TESTS set)`, () => {});
+  }
+}
+
 function makeConfig(dir: string, overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
   return {
     runId: "run-codegen",
@@ -155,6 +168,12 @@ function makeConfig(dir: string, overrides: Partial<RuntimeConfig> = {}): Runtim
 
 export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
   const results: SuiteResult[] = [];
+
+  if (!process.argv.includes("--integration")) {
+    return [await describe("backend codegen", async () => {
+      await it("skipped — run npm run test:integration for Python pipeline coverage", () => {});
+    })];
+  }
 
   results.push(await describe("backend codegen", async () => {
     await it("target map covers every preset with a real Python backend", async () => {
@@ -273,7 +292,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
     await it("demo command generates all six backends from a local fixture", async () => {
       const dir = tmpDir();
       try {
-        const cli = path.resolve("dist/runtime/src/cli/main.js");
+        const cli = path.resolve("runtime/dist/src/cli/main.js");
         const res = spawnSync(process.execPath, [cli, "demo", `--file=${FIXTURE}`, `--out=${dir}`], {
           cwd: path.resolve("."),
           env: { ...process.env, PYTHON_BIN },
@@ -305,7 +324,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
     await it("demo falls back to the offline fixture without a token or file", async () => {
       const dir = tmpDir();
       try {
-        const cli = path.resolve("dist/runtime/src/cli/main.js");
+        const cli = path.resolve("runtime/dist/src/cli/main.js");
         const env: Record<string, string> = { ...process.env, PYTHON_BIN };
         delete env.FIGMA_TOKEN;
         const res = spawnSync(process.execPath, [cli, "demo", `--out=${dir}`], {
@@ -660,7 +679,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
       }
     });
 
-    await it("invokeRender renders a generated HTML file to a real screenshot", async () => {
+    await browserIt("invokeRender renders a generated HTML file to a real screenshot", async () => {
       const dir = tmpDir();
       try {
         const html = path.join(dir, "screen.html");
@@ -686,7 +705,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
       }
     });
 
-    await it("render stage captures a real screenshot of generated html_css output", async () => {
+    await browserIt("render stage captures a real screenshot of generated html_css output", async () => {
       const dir = tmpDir();
       try {
         const config = makeConfig(dir, {
@@ -966,7 +985,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
       }
     });
 
-    await it("compare stage measures a diff_report against the reference baseline", async () => {
+    await browserIt("compare stage measures a diff_report against the reference baseline", async () => {
       const dir = tmpDir();
       try {
         const config = makeConfig(dir, {
@@ -1009,8 +1028,10 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
           screens: Array<{ file: string; similarity: number }>;
           baseline: string;
           baseline_kind: string;
+          resized: boolean;
         };
         assertEqual(report.baseline_kind, "reference");
+        assertEqual(report.resized, false);
         assert(fs.existsSync(report.baseline), "reference baseline PNG should exist");
         assert(typeof report.raster_stats.ssim_clean === "boolean",
           "SSIM verdict should be a real boolean");
@@ -1046,7 +1067,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
       }
     });
 
-    await it("explicit --baseline override wins and detects a real visual change", async () => {
+    await browserIt("explicit --baseline override wins and detects a real visual change", async () => {
       const dir = tmpDir();
       try {
         // A deliberately-different baseline: a full-red render at the exact
@@ -1162,7 +1183,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
     // Part 20 — repair stage handler (Task 5)
     // -----------------------------------------------------------------
 
-    await it("repair short-circuits when the gate is already satisfied", async () => {
+    await browserIt("repair short-circuits when the gate is already satisfied", async () => {
       const dir = tmpDir();
       try {
         // Threshold 0.5: the reference-baseline score (≈ 1.0, proven > 0.9
@@ -1220,7 +1241,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
       }
     });
 
-    await it("repair short-circuits on the reference-baseline contract when the gate fails", async () => {
+    await browserIt("repair short-circuits on the reference-baseline contract when the gate fails", async () => {
       const dir = tmpDir();
       try {
         // Threshold 1.5 forces the gate check to fail on the reference
@@ -1319,7 +1340,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
       }
     });
 
-    await it("repair runs the real Python loop and regenerates html_css against an external baseline", async () => {
+    await browserIt("repair runs the real Python loop and regenerates html_css against an external baseline", async () => {
       const dir = tmpDir();
       try {
         // A deliberately-different external baseline: a full-red page at the
@@ -1455,7 +1476,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
     // Part 20 — verify stage handler (Task 6)
     // -----------------------------------------------------------------
 
-    await it("verify passes against the reference baseline when repair short-circuits", async () => {
+    await browserIt("verify passes against the reference baseline when repair short-circuits", async () => {
       const dir = tmpDir();
       try {
         // Threshold 0.5: the reference score (≈ 1.0) is deterministically
@@ -1520,7 +1541,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
       }
     });
 
-    await it("verify re-measures the regenerated code after repair against the same baseline", async () => {
+    await browserIt("verify re-measures the regenerated code after repair against the same baseline", async () => {
       const dir = tmpDir();
       try {
         // The red external baseline (Part 19 trick) → compare scores it low →
@@ -1664,7 +1685,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
       }
     });
 
-    await it("--no-repair path: repair short-circuits and verify still reports honestly", async () => {
+    await browserIt("--no-repair path: repair short-circuits and verify still reports honestly", async () => {
       const dir = tmpDir();
       try {
         // A low-scoring external baseline where repair WOULD run, but the
@@ -1756,7 +1777,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
     // Part 22 — repair/verify backend threading (Task 3)
     // -----------------------------------------------------------------
 
-    await it("invokeRepair threads --backend and --resolution into the real regeneration", async () => {
+    await browserIt("invokeRepair threads --backend and --resolution into the real regeneration", async () => {
       const dir = tmpDir();
       try {
         // A red external baseline → the loop must patch toward red; the
@@ -1817,7 +1838,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
       }
     });
 
-    await it("repair stage regenerates the run's react backend; verify re-bundles and re-measures", async () => {
+    await browserIt("repair stage regenerates the run's react backend; verify re-bundles and re-measures", async () => {
       const dir = tmpDir();
       try {
         const redHtml = path.join(dir, "red.html");
@@ -1957,7 +1978,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
       }
     });
 
-    await it("repair stage defaults to html_css with a note when generatedManifest is missing", async () => {
+    await browserIt("repair stage defaults to html_css with a note when generatedManifest is missing", async () => {
       const dir = tmpDir();
       try {
         const redHtml = path.join(dir, "red.html");
