@@ -416,6 +416,16 @@ class TestFlutterBackend(unittest.TestCase):
         self.assertIn("Widget build(BuildContext context) {", content)
         self.assertIn("import 'package:flutter/material.dart';", content)
 
+    def test_root_absolute_layout_is_safe_and_uses_screen_width(self):
+        """The screen boundary must not emit an invalid root Positioned."""
+        self.plan.screens[0].display = DISPLAY_ABSOLUTE
+
+        content = self._widget().content
+
+        self.assertIn("width: 400,", content)
+        self.assertNotIn("width: 390,", content)
+        self.assertNotIn("Positioned(", content)
+
     def test_container_lowering(self):
         content = self._widget().content
         # Flex column -> Column with axis alignments + gap separators.
@@ -450,6 +460,23 @@ class TestFlutterBackend(unittest.TestCase):
         # Alignment -> Align wrapper.
         self.assertIn("Align(", content)
         self.assertIn("alignment: Alignment.center", content)
+
+    def test_zero_font_weight_is_omitted(self):
+        """Missing Figma weight must not become invalid Flutter FontWeight.w0."""
+        node = IRNode(
+            id="weight:0", name="DefaultWeight", kind=KIND_TEXT, node_type="TEXT",
+            source=IRSource(file_key="dart", node_id="weight:0"),
+            typography=IRTypography(font_size=16.0, font_weight=0.0),
+            text=IRTextContent(characters="Default"),
+        )
+        plan_node = LayoutNodePlan(
+            node_id="weight:0", name="DefaultWeight", kind="text",
+            display=DISPLAY_NONE, text=TextModel(characters="Default"),
+        )
+
+        content = "\n".join(self.backend._text_widget(plan_node, node))
+
+        self.assertNotIn("FontWeight.w0", content)
 
     # -- real sizing idioms: Expanded / IntrinsicWidth+Height / FractionallySizedBox --
     def test_fill_size_main_axis_expanded(self):

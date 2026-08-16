@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -42,6 +43,7 @@ logger = logging.getLogger("figmaforge.figma_assets")
 
 DEFAULT_TIMEOUT_SECONDS = 30.0
 DEFAULT_MAX_RETRIES = 2
+DEFAULT_MAX_DURATION_SECONDS = 120.0
 MAX_BASELINE_BYTES = 50 * 1024 * 1024  # hard cap on a single baseline body
 _READ_CHUNK_SIZE = 65536
 
@@ -123,6 +125,7 @@ def fetch_with_retry(
     url: str,
     timeout_seconds: float,
     max_retries: int,
+    deadline: Optional[float] = None,
 ) -> bytes:
     """Bounded retry. 403 gets exactly one immediate retry, then expiry error.
 
@@ -136,8 +139,16 @@ def fetch_with_retry(
     seen_403 = False
     last: Optional[Exception] = None
     for attempt in range(attempts):
+        remaining = None if deadline is None else deadline - time.monotonic()
+        if remaining is not None and remaining <= 0:
+            raise BaselineDownloadError(
+                "asset download stage exceeded its time budget"
+            ) from last
+        request_timeout = timeout_seconds
+        if remaining is not None:
+            request_timeout = min(request_timeout, max(remaining, 0.001))
         try:
-            return fetch(url, timeout_seconds)
+            return fetch(url, request_timeout)
         except FigmaError as exc:
             if exc.status_code == 403:
                 if seen_403 or attempt >= attempts - 1:
@@ -166,6 +177,7 @@ def download_baselines(
     transport: Optional[Callable[[str, float], bytes]] = None,
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     max_retries: int = DEFAULT_MAX_RETRIES,
+    max_duration_seconds: Optional[float] = DEFAULT_MAX_DURATION_SECONDS,
 ) -> Dict[str, BaselineAsset]:
     """Download baseline images for ``node_ids`` and ingest them.
 
@@ -185,13 +197,19 @@ def download_baselines(
         ) from exc
 
     results: Dict[str, BaselineAsset] = {}
+    deadline = (
+        None if max_duration_seconds is None
+        else time.monotonic() + max(max_duration_seconds, 0.0)
+    )
     for node_id in node_ids:
         url = image_set.images.get(node_id)
         if not url:
             raise BaselineDownloadError(
                 f"no render URL returned for node {node_id!r}"
             )
-        raw = fetch_with_retry(fetch, url, timeout_seconds, max_retries)
+        raw = fetch_with_retry(
+            fetch, url, timeout_seconds, max_retries, deadline=deadline,
+        )
         content_hash = hashlib.sha256(raw).hexdigest()
         deduped = content_hash in asset_manager.manifest.assets
         stored_hash = asset_manager.ingest(

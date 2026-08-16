@@ -294,6 +294,7 @@ class FlutterBackend(BackendAdapter):
         body = self._render(screen, root_ir, ir_by_id, indent=4)
         body_lines = body.split("\n")
         first, rest = body_lines[0].lstrip(), body_lines[1:]
+        screen_width = screen.box.width if screen.box is not None else 390
         return f"""\
 import 'package:flutter/material.dart';
 
@@ -307,7 +308,7 @@ class {name}Screen extends StatelessWidget {{
   Widget build(BuildContext context) {{
     return Scaffold(
       body: SizedBox(
-        width: 390,
+        width: {_fmt_num(screen_width)},
         child: {first}
 {"\n".join(rest)}
       ),
@@ -392,7 +393,16 @@ class {name}Screen extends StatelessWidget {{
             )
 
         # Absolute positioning -> Positioned (declared supported).
-        if plan_node.display == DISPLAY_ABSOLUTE and plan_node.box is not None:
+        # Positioned is only valid as a direct child of Stack.  The generated
+        # screen itself is already the Scaffold body boundary, so its
+        # absolute coordinates are represented by that boundary rather than a
+        # root Positioned.  Descendants are emitted as Positioned and their
+        # container is lowered to Stack by _container_widget.
+        if (
+            plan_node.display == DISPLAY_ABSOLUTE
+            and plan_node.box is not None
+            and parent is not None
+        ):
             widget_lines = _wrap(
                 "Positioned(",
                 [f"left: {_fmt_num(plan_node.box.x)},"
@@ -423,10 +433,12 @@ class {name}Screen extends StatelessWidget {{
                 style_args.append(f"fontFamily: '{typo.font_family}',")
             if typo.font_size is not None:
                 style_args.append(f"fontSize: {_fmt_num(typo.font_size)},")
-            if typo.font_weight is not None:
-                style_args.append(
-                    f"fontWeight: FontWeight.w{int(round(float(typo.font_weight)))},"
-                )
+            if typo.font_weight is not None and float(typo.font_weight) > 0:
+                # Flutter only exposes hundred-step weights from w100 to w900.
+                # Figma fixtures may omit weight as 0, which must not become
+                # the invalid FontWeight.w0 constant.
+                weight = min(900, max(100, int(float(typo.font_weight) / 100 + 0.5) * 100))
+                style_args.append(f"fontWeight: FontWeight.w{weight},")
             if typo.line_height is not None and typo.font_size:
                 ratio = round(typo.line_height / typo.font_size, 2)
                 style_args.append(f"height: {_fmt_num(ratio)},")
@@ -653,6 +665,7 @@ class {name}Screen extends StatelessWidget {{
                 if shadow.spread:
                     args.append(f"  spreadRadius: {_fmt_num(shadow.spread)},")
                 args.append(f"  offset: Offset({_fmt_num(shadow.x)}, {_fmt_num(shadow.y)}),")
+                args.append("),")
                 args.append("],")
                 break
         return args

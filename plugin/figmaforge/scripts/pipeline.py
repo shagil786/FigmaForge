@@ -28,8 +28,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -53,9 +55,11 @@ from backends.web_common import (  # noqa: E402
     styles_to_dict,
 )
 from core.asset_collector import AssetRef, collect_asset_refs  # noqa: E402
+from core.accessibility import analyze_document  # noqa: E402
 from core.asset_manager import AssetManager  # noqa: E402
 from core.figma_assets import (  # noqa: E402
     DEFAULT_MAX_RETRIES,
+    DEFAULT_MAX_DURATION_SECONDS,
     DEFAULT_TIMEOUT_SECONDS,
     default_transport,
     download_baselines,
@@ -86,6 +90,7 @@ DEFAULT_REPAIR_HEIGHT = 900
 _DEFAULT_REPAIR_THRESHOLD = 0.95
 _DEFAULT_REPAIR_ITERATIONS = 10
 _TOKEN_ENV = "FIGMA_TOKEN"
+_ASSET_STAGE_TIMEOUT_ENV = "FIGMAFORGE_ASSET_STAGE_TIMEOUT_SECONDS"
 
 
 class _CliError(Exception):
@@ -409,6 +414,7 @@ def _cmd_render(
         "screenshot": str(result.screenshot_path),
         "html": str(html_path),
         "meta": result.layout_metadata,
+        "accessibility_findings": result.accessibility_findings,
         "viewport": viewport,
     })
     return 0
@@ -592,6 +598,13 @@ def _cmd_assets(args: argparse.Namespace) -> int:
 
     storage_dir = Path(args.assets_dir).resolve()
     manager = AssetManager(storage_dir)
+    try:
+        max_duration = float(
+            os.environ.get(_ASSET_STAGE_TIMEOUT_ENV, DEFAULT_MAX_DURATION_SECONDS)
+        )
+    except (TypeError, ValueError):
+        max_duration = DEFAULT_MAX_DURATION_SECONDS
+    deadline = time.monotonic() + max(max_duration, 0.0)
     entries: List[Dict[str, Any]] = []
     downloaded = 0
     unresolved_count = 0
@@ -607,7 +620,8 @@ def _cmd_assets(args: argparse.Namespace) -> int:
             })
             continue
         raw = fetch_with_retry(
-            default_transport, ref.url, DEFAULT_TIMEOUT_SECONDS, DEFAULT_MAX_RETRIES
+            default_transport, ref.url, DEFAULT_TIMEOUT_SECONDS, DEFAULT_MAX_RETRIES,
+            deadline=deadline,
         )
         extension = "svg" if ref.kind == "svg" else "png"
         try:
@@ -788,6 +802,7 @@ def _cmd_generate(args: argparse.Namespace) -> int:
         "backend": backend.name,
         "files": [f.to_dict() for f in sorted(output.files, key=lambda f: f.path)],
         "fidelity_losses": [loss.to_dict() for loss in output.fidelity_losses],
+        "accessibility_report": analyze_document(doc).to_dict(),
         "metadata": dict(output.metadata),
     }
     _emit(manifest)
@@ -909,6 +924,8 @@ def _run_repair(args: argparse.Namespace, harness_cls: Any) -> int:
         max_iterations=args.max_iterations,
         baseline_png=args.baseline,
         ssim_enabled=not args.no_ssim,
+        refresh_baseline=args.refresh_baseline,
+        max_baseline_refreshes_per_run=args.max_baseline_refreshes,
         require_approval=args.require_approval,
     )
     loop = RepairLoop(
@@ -995,6 +1012,14 @@ def _build_repair_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-iterations", type=int, default=_DEFAULT_REPAIR_ITERATIONS)
     parser.add_argument("--threshold", type=float, default=_DEFAULT_REPAIR_THRESHOLD)
     parser.add_argument("--no-ssim", action="store_true", help="disable SSIM gating")
+    parser.add_argument(
+        "--refresh-baseline", action="store_true",
+        help="adopt clean renders as versioned baselines (never overwrites the original)",
+    )
+    parser.add_argument(
+        "--max-baseline-refreshes", type=int, default=3,
+        help="maximum versioned baseline adoptions per run (default: 3)",
+    )
     parser.add_argument("--require-approval", action="store_true", help="deny non-interactively")
     return parser
 

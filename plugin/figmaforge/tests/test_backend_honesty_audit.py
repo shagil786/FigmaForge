@@ -403,12 +403,12 @@ _REACT_TW_SIGNALS: Dict[str, Tuple[str, ...]] = {
 _SWIFTUI_SIGNALS: Dict[str, Tuple[str, ...]] = {
     Feature.FLEX: ("VStack(",),
     Feature.AUTO_LAYOUT: ("VStack(",),
-    Feature.ABSOLUTE_POSITIONING: (".position(x: 8, y: 8)",),
+    Feature.ABSOLUTE_POSITIONING: (".position(x:",),
     Feature.FIXED_SIZE: (".frame(width: 400",),
     Feature.FILL_SIZE: (".frame(maxWidth: .infinity)",),
     Feature.HUG_SIZE: (".fixedSize()",),
     Feature.PADDING: (".padding(24)",),
-    Feature.GAP: ("VStack(spacing:",),
+    Feature.GAP: ("spacing:",),
     Feature.JUSTIFY: ("Spacer()",),
     Feature.ALIGN_ITEMS: ("VStack(alignment: .trailing",),
     Feature.FILLS_SOLID: ("Color(red: 0.20, green: 0.40, blue: 0.80)",),
@@ -417,7 +417,7 @@ _SWIFTUI_SIGNALS: Dict[str, Tuple[str, ...]] = {
     Feature.CORNER_RADIUS: (".cornerRadius(8)",),
     Feature.OPACITY: (".opacity(0.5)",),
     Feature.FONT_FAMILY: ('.font(.custom("Inter"',),
-    Feature.FONT_WEIGHT: ("weight: .bold",),
+    Feature.FONT_WEIGHT: (".fontWeight(.bold)",),
     Feature.FONT_SIZE: ("size: 32",),
     Feature.LINE_HEIGHT: (".lineSpacing(40)",),
     Feature.TEXT_ALIGN: (".multilineTextAlignment(.center)",),
@@ -537,6 +537,20 @@ class TestBackendHonestyAudit(unittest.TestCase):
             "Capability-vs-output honesty violations found:\n"
             + "\n".join(f"  - {v}" for v in violations),
         )
+
+    def test_unsupported_positioning_is_reported_by_preflight(self):
+        node = IRNode(
+            id="interactive:1", name="Screen", kind="frame", node_type="FRAME",
+            source=IRSource(file_key="test", node_id="interactive:1"),
+            position=IRPosition(mode="relative"),
+        )
+
+        losses = FlutterBackend().preflight(
+            IRDocument(file_key="test", root=node),
+            LayoutPlan(file_key="test", viewport=390.0, screens=[]),
+        )
+
+        self.assertTrue(any(loss.feature == Feature.RELATIVE_POSITIONING for loss in losses))
 
     def test_fixture_covers_every_exercised_feature_for_some_backend(self):
         """Sanity: the fixture exercises at least one supported feature of

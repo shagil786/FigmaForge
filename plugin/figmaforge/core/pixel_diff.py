@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .png_codec import PngError, PngImage, decode_png
+from .png_codec import PngError, PngImage, decode_png, encode_png
 from .ssim import DEFAULT_WINDOW, ssim, ssim_region
 
 DEFAULT_COLOR_THRESHOLD = 16
@@ -134,6 +134,47 @@ def compare_images(
         },
     )
     return stats, mask
+
+
+def resize_nearest(image: PngImage, width: int, height: int) -> PngImage:
+    """Resize an image deterministically with nearest-neighbor sampling."""
+    if width <= 0 or height <= 0:
+        raise ValueError("resize dimensions must be positive")
+    if (image.width, image.height) == (width, height):
+        return image
+    pixels = bytearray(width * height * image.channels)
+    for y in range(height):
+        source_y = min(image.height - 1, (y * image.height) // height)
+        for x in range(width):
+            source_x = min(image.width - 1, (x * image.width) // width)
+            source = (source_y * image.width + source_x) * image.channels
+            target = (y * width + x) * image.channels
+            pixels[target:target + image.channels] = image.pixels[source:source + image.channels]
+    return PngImage(width, height, image.channels, bytes(pixels))
+
+
+def build_heatmap(image: PngImage, mask: bytearray) -> PngImage:
+    """Build a deterministic RGBA diagnostic image from a diff mask.
+
+    Changed pixels are opaque red; unchanged pixels retain a dimmed grayscale
+    version of the source so the location of the change remains legible.
+    """
+    if len(mask) != image.width * image.height:
+        raise ValueError("heatmap mask has the wrong size")
+    pixels = bytearray()
+    for index in range(image.width * image.height):
+        offset = index * image.channels
+        if mask[index]:
+            pixels.extend((255, 32, 32, 220))
+            continue
+        gray = int(round(
+            0.2126 * image.pixels[offset]
+            + 0.7152 * image.pixels[offset + 1]
+            + 0.0722 * image.pixels[offset + 2]
+        ))
+        dim = gray // 3
+        pixels.extend((dim, dim, dim, 100))
+    return PngImage(image.width, image.height, 4, bytes(pixels))
 
 
 def detect_regions(
@@ -312,6 +353,8 @@ def compare_png_files(
     path_b: Any,
     color_threshold: int = DEFAULT_COLOR_THRESHOLD,
     ssim_threshold: float = DEFAULT_SSIM_THRESHOLD,
+    heatmap_out: Any = None,
+    resize: bool = False,
 ) -> Dict[str, Any]:
     """Compare two PNG files. Never raises.
 
@@ -325,6 +368,11 @@ def compare_png_files(
     try:
         img_a = decode_png(Path(path_a).read_bytes())
         img_b = decode_png(Path(path_b).read_bytes())
+        if resize and (img_a.width, img_a.height) != (img_b.width, img_b.height):
+            target_width = min(img_a.width, img_b.width)
+            target_height = min(img_a.height, img_b.height)
+            img_a = resize_nearest(img_a, target_width, target_height)
+            img_b = resize_nearest(img_b, target_width, target_height)
         stats, mask = compare_images(img_a, img_b, color_threshold)
     except (OSError, ValueError, MemoryError, PngError) as exc:
         return {"ok": False, "error": str(exc)}
@@ -335,6 +383,9 @@ def compare_png_files(
     result["ssim"] = ssim_value
     result["min_region_ssim"] = min_region_ssim
     result["ssim_clean"] = clean
+    if heatmap_out is not None:
+        Path(heatmap_out).write_bytes(encode_png(build_heatmap(img_a, mask)))
+        result["heatmap_path"] = str(heatmap_out)
     result["ok"] = True
     return result
 
@@ -354,6 +405,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         "--ssim-threshold", type=float, default=DEFAULT_SSIM_THRESHOLD,
         help="min region SSIM for a clean perceptual verdict (default 0.95)",
     )
+    parser.add_argument("--heatmap-out", help="optional output path for a PNG diff heatmap")
+    parser.add_argument("--resize", action="store_true", help="resize both images to the smaller dimensions")
     try:
         args = parser.parse_args(argv)
     except ValueError as exc:
@@ -369,7 +422,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 1
 
     result = compare_png_files(
-        args.path_a, args.path_b, args.threshold, args.ssim_threshold,
+        args.path_a, args.path_b, args.threshold, args.ssim_threshold, args.heatmap_out,
+        args.resize,
     )
     if not result.pop("ok"):
         print(json.dumps({"error": result["error"]}))

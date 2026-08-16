@@ -252,14 +252,45 @@ struct {name}View: View {{
                 if plan_node.alignment is not None
                 else None
             )
-            rendered_children = [
-                self._render(
-                    child, ir_by_id.get(child.node_id), ir_by_id, indent + 1,
-                )
-                for child in plan_node.children
+            absolute = [
+                child for child in plan_node.children
+                if child.display == DISPLAY_ABSOLUTE
             ]
-            spacer = f"{pad}  Spacer()"
-            lines.extend(_justify_items(justify, rendered_children, spacer))
+            flow = [
+                child for child in plan_node.children
+                if child.display != DISPLAY_ABSOLUTE
+            ]
+            mixed = head == "ZStack" and flow and absolute
+            if mixed:
+                # A ZStack is the overlay layer for absolute children. Keep
+                # normal-flow siblings in their original stack so SwiftUI
+                # does not center/overlap them as ZStack items.
+                flow_head = (
+                    "VStack" + _stack_params(plan_node, vertical=True)
+                    if plan_node.direction == "column"
+                    else "HStack" + _stack_params(plan_node, vertical=False)
+                )
+                lines.append(f"{pad}  {flow_head} {{")
+                rendered_flow = [
+                    self._render(child, ir_by_id.get(child.node_id), ir_by_id, indent + 2)
+                    for child in flow
+                ]
+                spacer = f"{pad}    Spacer()"
+                lines.extend(_justify_items(justify, rendered_flow, spacer))
+                lines.append(f"{pad}  }}")
+                lines.extend(
+                    self._render(child, ir_by_id.get(child.node_id), ir_by_id, indent + 1)
+                    for child in absolute
+                )
+            else:
+                rendered_children = [
+                    self._render(
+                        child, ir_by_id.get(child.node_id), ir_by_id, indent + 1,
+                    )
+                    for child in plan_node.children
+                ]
+                spacer = f"{pad}  Spacer()"
+                lines.extend(_justify_items(justify, rendered_children, spacer))
             lines.append(f"{pad}}}")
         else:
             lines.append(f"{pad}{head}")
@@ -285,7 +316,15 @@ struct {name}View: View {{
         if is_text:
             head = f'Text("{_escape_swift(plan_node.text.characters)}")'
         elif is_container:
-            if plan_node.direction == "column":
+            has_absolute_child = any(
+                child.display == DISPLAY_ABSOLUTE for child in plan_node.children
+            )
+            if has_absolute_child:
+                # Absolute Figma layers overlay their siblings; putting them
+                # in an HStack/VStack makes SwiftUI's layout engine allocate
+                # them normal flow space and shifts/clips the design.
+                head = "ZStack"
+            elif plan_node.direction == "column":
                 head = "VStack" + _stack_params(plan_node, vertical=True)
             else:
                 head = "HStack" + _stack_params(plan_node, vertical=False)
@@ -332,8 +371,12 @@ struct {name}View: View {{
             modifiers.append(".fixedSize()")
 
         if plan_node.display == DISPLAY_ABSOLUTE and plan_node.box is not None:
+            # Figma positions are top-left coordinates; SwiftUI's position
+            # modifier places the view's center at the supplied coordinates.
+            center_x = plan_node.box.x + plan_node.box.width / 2.0
+            center_y = plan_node.box.y + plan_node.box.height / 2.0
             modifiers.append(
-                f".position(x: {_fmt_num(plan_node.box.x)}, y: {_fmt_num(plan_node.box.y)})"
+                f".position(x: {_fmt_num(center_x)}, y: {_fmt_num(center_y)})"
             )
 
         if plan_node.spacing is not None and plan_node.spacing.padding is not None:
@@ -392,9 +435,13 @@ struct {name}View: View {{
                 weight_arg = f", weight: {weight}" if weight else ""
                 if t.font_family:
                     modifiers.append(
-                        f".font(.custom(\"{_escape_swift(t.font_family)}\", "
-                        f"{size_arg}{weight_arg}))"
+                        f".font(.custom(\"{_escape_swift(t.font_family)}\", {size_arg}))"
                     )
+                    # The `weight:` overload is not available for custom
+                    # fonts in all installed SwiftUI SDKs. Keep the weight
+                    # as a separate modifier for broad SDK compatibility.
+                    if weight:
+                        modifiers.append(f".fontWeight({weight})")
                 else:
                     modifiers.append(f".font(.system({size_arg}{weight_arg}))")
             if t.line_height is not None:

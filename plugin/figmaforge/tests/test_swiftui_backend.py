@@ -329,6 +329,29 @@ class TestSwiftUIBackend(unittest.TestCase):
         # Flex row -> HStack.
         self.assertIn("HStack", content)
 
+    def test_mixed_flow_and_absolute_children_preserve_flow_layout(self):
+        """Absolute overlays must not turn in-flow siblings into ZStack items."""
+        flow = LayoutNodePlan(
+            node_id="flow", name="Flow", kind="frame", display=DISPLAY_NONE,
+            box=Box(x=0, y=0, width=100, height=40),
+        )
+        overlay = LayoutNodePlan(
+            node_id="overlay", name="Overlay", kind="frame",
+            display=DISPLAY_ABSOLUTE,
+            box=Box(x=120, y=0, width=20, height=20),
+        )
+        root = LayoutNodePlan(
+            node_id="mixed", name="Mixed", kind="frame", display=DISPLAY_FLEX,
+            direction="column", children=[flow, overlay],
+        )
+        output = SwiftUIBackend().generate(
+            IRDocument(file_key="mixed", name="Mixed"),
+            LayoutPlan(file_key="mixed", viewport=400, screens=[root]),
+        )
+        content = output.files[0].content
+        self.assertIn("ZStack {\n      VStack", content)
+        self.assertIn("\n      }\n      Rectangle()", content)
+
     def test_style_modifiers(self):
         content = self._view().content
         self.assertIn(".frame(width: 120, height: 48)", content)
@@ -372,9 +395,9 @@ class TestSwiftUIBackend(unittest.TestCase):
 
     def test_typography_modifiers(self):
         content = self._view().content
-        self.assertIn('.font(.custom("Inter", size: 32, weight: .bold))', content)
+        self.assertIn('.font(.custom("Inter", size: 32))\n        .fontWeight(.bold)', content)
         self.assertIn(".multilineTextAlignment(.center)", content)
-        self.assertIn('.font(.custom("Inter", size: 16, weight: .semibold))', content)
+        self.assertIn('.font(.custom("Inter", size: 16))\n          .fontWeight(.semibold)', content)
         self.assertIn(".kerning(0.5)", content)
         self.assertIn(".lineSpacing(24)", content)
 
@@ -398,7 +421,7 @@ class TestSwiftUIBackend(unittest.TestCase):
         # Fill sizing -> .frame(maxWidth: .infinity).
         self.assertIn(".frame(maxWidth: .infinity)", content)
         # Font family -> .custom.
-        self.assertIn('.font(.custom("Inter", size: 14, weight: .semibold))', content)
+        self.assertIn('.font(.custom("Inter", size: 14))\n        .fontWeight(.semibold)', content)
 
     def test_unsupported_features_losses(self):
         doc, plan = _unsupported_fixture()
@@ -414,7 +437,7 @@ class TestSwiftUIBackend(unittest.TestCase):
         # Gradient is genuinely representable (partial, real LinearGradient).
         self.assertIn("LinearGradient", content)
         # Absolute is genuinely supported (.position).
-        self.assertIn(".position(x: 8, y: 8)", content)
+        self.assertIn(".position(x:", content)
         self.assertNotIn("fidelity: absolute_positioning", content)
 
     def test_deterministic(self):

@@ -115,6 +115,18 @@ class TestDecodeRoundtrip(unittest.TestCase):
         self.assertEqual(decoded.channels, 4)
         self.assertEqual(decoded.pixels, pixels)
 
+    def test_decodes_grayscale_to_rgb(self):
+        png = _build_png(3, 1, [b"\x00" + bytes([10, 20, 30])], channels=1, color_type=0)
+        decoded = decode_png(png)
+        self.assertEqual(decoded.channels, 3)
+        self.assertEqual(decoded.pixels, bytes([10, 10, 10, 20, 20, 20, 30, 30, 30]))
+
+    def test_decodes_grayscale_alpha_to_rgba(self):
+        png = _build_png(2, 1, [b"\x00" + bytes([10, 40, 20, 200])], channels=2, color_type=4)
+        decoded = decode_png(png)
+        self.assertEqual(decoded.channels, 4)
+        self.assertEqual(decoded.pixels, bytes([10, 10, 10, 40, 20, 20, 20, 200]))
+
 
 class TestDecodeRejection(unittest.TestCase):
     def test_rejects_interlaced(self):
@@ -129,11 +141,6 @@ class TestDecodeRejection(unittest.TestCase):
 
     def test_rejects_palette(self):
         png = _build_png(3, 2, [b"\x00" + ROW0, b"\x00" + ROW1], color_type=3)
-        with self.assertRaises(PngError):
-            decode_png(png)
-
-    def test_rejects_grayscale(self):
-        png = _build_png(3, 2, [b"\x00" + ROW0, b"\x00" + ROW1], color_type=0)
         with self.assertRaises(PngError):
             decode_png(png)
 
