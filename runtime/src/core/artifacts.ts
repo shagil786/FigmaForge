@@ -16,6 +16,7 @@ import type { PipelineStage, RunId } from "./types.js";
 // ---------------------------------------------------------------------------
 
 export type ArtifactKind =
+  | "adaptive_plan"     // Adaptive preflight routing plan
   | "figma_raw"         // Raw Figma API JSON
   | "design_ir"         // Normalized Design IR
   | "resolution_report" // Component/token resolution
@@ -32,13 +33,15 @@ export type ArtifactKind =
   | "checkpoint"        // Run checkpoint
   | "metrics";          // Evaluation metrics
 
+export type ArtifactStage = PipelineStage | "preflight";
+
 export interface Artifact {
   /** Unique artifact ID (content hash). */
   id: string;
   /** Artifact kind. */
   kind: ArtifactKind;
   /** Pipeline stage that produced this artifact. */
-  stage: PipelineStage;
+  stage: ArtifactStage;
   /** Run ID. */
   runId: RunId;
   /** File path relative to the run's output directory. */
@@ -81,7 +84,7 @@ export class ArtifactStore {
   /** Store an artifact from a JSON-serializable value. */
   storeJSON(
     kind: ArtifactKind,
-    stage: PipelineStage,
+    stage: ArtifactStage,
     name: string,
     data: unknown,
   ): Artifact {
@@ -109,7 +112,7 @@ export class ArtifactStore {
   /** Store an artifact from a binary buffer (e.g. screenshot). */
   storeBuffer(
     kind: ArtifactKind,
-    stage: PipelineStage,
+    stage: ArtifactStage,
     name: string,
     buffer: Buffer,
     ext: string = "png",
@@ -141,7 +144,7 @@ export class ArtifactStore {
   }
 
   /** Get all artifacts for a stage. */
-  byStage(stage: PipelineStage): Artifact[] {
+  byStage(stage: ArtifactStage): Artifact[] {
     return this.artifacts.filter((a) => a.stage === stage);
   }
 

@@ -14,6 +14,7 @@ import type { PipelineStage, RunId, TaskId } from "./types.js";
 export type EventLevel = "info" | "warn" | "error" | "debug";
 
 export type EventKind =
+  | "adaptive_plan_created"
   | "run_started"
   | "run_completed"
   | "run_failed"

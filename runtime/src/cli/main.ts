@@ -14,6 +14,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import { PIPELINE_STAGES, DEFAULT_CONFIG, DEFAULT_BUDGETS, DEFAULT_RETRY, makeRunId, PRESET_TARGETS, parseTargetKey, targetKey } from "../core/types.js";
 import type { RuntimeConfig, PipelineStage, CodegenTarget } from "../core/types.js";
 import { EventLog } from "../core/events.js";
@@ -24,6 +25,8 @@ import { BudgetTracker } from "../core/budget.js";
 import { PipelineCoordinator } from "../core/pipeline.js";
 import { ScreenshotComparator } from "../core/screenshot_compare.js";
 import { buildBrowserRenderScript, parseBrowserRenderOutput } from "../core/render_handler.js";
+import { invokeAdaptivePreflight } from "../core/adaptive_preflight.js";
+import type { AdaptivePlan } from "../core/adaptive_preflight.js";
 import {
   createIngestStageHandler,
   createNormalizeStageHandler,
@@ -109,6 +112,8 @@ Options:
                            Format: <framework>+<styling> — any combination is valid.
                            Presets: html+css, react+css, react+tailwind, vue+scoped_css,
                            svelte+scoped_css, swiftui+swiftui_modifiers, flutter+flutter_widgets
+  --adaptive               Run adaptive preflight with the default request
+  --adaptive-request=<text>  Run adaptive preflight with a custom request
   --run-id=<id>            Run ID (auto-generated if not specified)
   --resume                 Resume from latest checkpoint
   --threshold=<0.0-1.0>    Similarity threshold (default: 0.95)
@@ -195,6 +200,49 @@ function buildConfig(args: CliArgs): RuntimeConfig {
 // Commands
 // ---------------------------------------------------------------------------
 
+const DEFAULT_ADAPTIVE_REQUEST =
+  "Convert this Figma design into the selected code-generation target";
+
+type PipelineRunner = Pick<
+  PipelineCoordinator,
+  "setAbortSignal" | "setShared" | "onStage" | "run"
+>;
+
+interface CliRuntimeDeps {
+  invokeAdaptivePreflight: (
+    cfg: { pythonBin: string; pluginDir: string },
+    root: string,
+    request: string,
+  ) => Promise<AdaptivePlan>;
+  createPipeline: (
+    config: RuntimeConfig,
+    events: EventLog,
+    checkpoints: CheckpointManager,
+    artifacts: ArtifactStore,
+    tools: ToolRegistry,
+    budget: BudgetTracker,
+    approvalCallback?: (req: { action: string; description: string }) => Promise<boolean>,
+  ) => PipelineRunner;
+}
+
+const defaultCliRuntimeDeps: CliRuntimeDeps = {
+  invokeAdaptivePreflight,
+  createPipeline: (config, events, checkpoints, artifacts, tools, budget, approvalCallback) =>
+    new PipelineCoordinator(
+      config, events, checkpoints, artifacts, tools, budget, approvalCallback,
+    ),
+};
+
+let cliRuntimeDeps: CliRuntimeDeps = defaultCliRuntimeDeps;
+
+export function setCliTestDepsForTesting(overrides: Partial<CliRuntimeDeps>): void {
+  cliRuntimeDeps = { ...defaultCliRuntimeDeps, ...overrides };
+}
+
+export function resetCliTestDepsForTesting(): void {
+  cliRuntimeDeps = defaultCliRuntimeDeps;
+}
+
 function generateSimpleHtml(vnode: unknown, viewport: { width: number; height: number }): string {
   const data = vnode as Record<string, unknown>;
   const tag = (data.tag as string) ?? "div";
@@ -249,7 +297,7 @@ async function cmdRun(args: CliArgs): Promise<void> {
       }
     : undefined;
 
-  const pipeline = new PipelineCoordinator(
+  const pipeline = cliRuntimeDeps.createPipeline(
     config, events, checkpoints, artifacts, tools, budget, approvalCallback,
   );
 
@@ -295,6 +343,25 @@ async function cmdRun(args: CliArgs): Promise<void> {
   pipeline.onStage("compare", createCompareStageHandler());
   pipeline.onStage("repair", createRepairStageHandler());
   pipeline.onStage("verify", createVerifyStageHandler());
+
+  const adaptiveRequest = args.flags["adaptive-request"]
+    ?? (args.flags["adaptive"] === "true" ? DEFAULT_ADAPTIVE_REQUEST : undefined);
+  if (adaptiveRequest !== undefined) {
+    const plan = await cliRuntimeDeps.invokeAdaptivePreflight(
+      { pythonBin: config.pythonBin, pluginDir: config.pluginDir },
+      process.cwd(),
+      adaptiveRequest,
+    );
+    artifacts.storeJSON("adaptive_plan", "preflight", "adaptive_plan", plan);
+    events.emit("adaptive_plan_created", "Adaptive preflight completed", {
+      data: {
+        stack_status: plan.route.stack_status,
+        execution_mode: plan.route.execution_mode,
+        phases: plan.route.phases,
+        approval_gates: plan.route.approval_gates,
+      },
+    });
+  }
 
   const result = await pipeline.run();
 
@@ -753,7 +820,11 @@ async function cmdRepair(args: CliArgs): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
-  const args = parseArgs(process.argv);
+  await runMainForTests(process.argv);
+}
+
+export async function runMainForTests(argv: string[]): Promise<void> {
+  const args = parseArgs(argv);
 
   switch (args.command) {
     case "run":
@@ -789,7 +860,9 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  console.error("Fatal error:", err);
-  process.exit(1);
-});
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((err) => {
+    console.error("Fatal error:", err);
+    process.exit(1);
+  });
+}
