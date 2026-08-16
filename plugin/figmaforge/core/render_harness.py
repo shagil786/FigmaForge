@@ -12,8 +12,9 @@ naming the install command instead of leaking an ``ImportError`` traceback.
 
 from __future__ import annotations
 
+import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict
 
@@ -70,6 +71,41 @@ def normalize_viewport(viewport_spec: Dict[str, Any]) -> Dict[str, int]:
 class RenderResult:
     screenshot_path: Path
     layout_metadata: Dict[str, Any]
+    accessibility_findings: list[Dict[str, Any]] = field(default_factory=list)
+
+
+def _browser_accessibility_script() -> str:
+    """Return a dependency-free browser accessibility smoke audit.
+
+    This is intentionally a small deterministic guardrail, not a replacement
+    for axe-core. It catches common generated-markup regressions while keeping
+    the render harness usable without adding a browser-side dependency.
+    """
+    return """() => {
+      const findings = [];
+      const name = (el) => (el.getAttribute('aria-label') ||
+        el.getAttribute('title') || el.textContent || '').trim();
+      if (!document.documentElement.getAttribute('lang')) {
+        findings.push({rule: 'document_lang', severity: 'error',
+          message: 'Document has no lang attribute'});
+      }
+      document.querySelectorAll('img').forEach((el) => {
+        if (!el.hasAttribute('alt')) findings.push({rule: 'image_alt', severity: 'error',
+          message: 'Image has no alt attribute'});
+      });
+      document.querySelectorAll('button, [role="button"], a[href]').forEach((el) => {
+        if (!name(el)) findings.push({rule: 'interactive_name', severity: 'error',
+          message: 'Interactive element has no accessible name'});
+      });
+      document.querySelectorAll('input, select, textarea').forEach((el) => {
+        const id = el.getAttribute('id');
+        const labelled = el.getAttribute('aria-label') ||
+          (id && document.querySelector(`label[for="${CSS.escape(id)}"]`));
+        if (!labelled) findings.push({rule: 'form_label', severity: 'error',
+          message: 'Form control has no accessible label'});
+      });
+      return findings;
+    }"""
 
 
 class RenderHarness:
@@ -118,7 +154,10 @@ class RenderHarness:
 
         try:
             with sync_playwright() as p:
-                browser = p.chromium.launch()
+                launch_args = (["--no-sandbox"]
+                               if os.environ.get("FIGMAFORGE_PLAYWRIGHT_NO_SANDBOX") == "1"
+                               else [])
+                browser = p.chromium.launch(**({"args": launch_args} if launch_args else {}))
                 try:
                     page = browser.new_page(
                         viewport=viewport, device_scale_factor=1
@@ -127,6 +166,7 @@ class RenderHarness:
                     page.wait_for_load_state("networkidle", timeout=15_000)
                     # Deterministic capture: wait for fonts before shooting.
                     page.evaluate("document.fonts.ready")
+                    accessibility_findings = page.evaluate(_browser_accessibility_script())
                     page.screenshot(
                         path=str(screenshot_path), full_page=full_page
                     )
@@ -144,8 +184,11 @@ class RenderHarness:
 
         if not isinstance(meta, dict):
             meta = {}
+        if not isinstance(accessibility_findings, list):
+            accessibility_findings = []
 
         return RenderResult(
             screenshot_path=screenshot_path,
             layout_metadata=meta,
+            accessibility_findings=accessibility_findings,
         )

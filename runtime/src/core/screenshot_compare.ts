@@ -44,6 +44,7 @@ export interface ScreenshotComparison {
   /** Perceptual verdict: true = clean (identical or visually identical),
    *  false = real change, null = unavailable (Part 13). */
   ssimClean?: boolean | null;
+  heatmapPath?: string;
 }
 
 export interface ComparisonOptions {
@@ -51,6 +52,8 @@ export interface ComparisonOptions {
   colorThreshold?: number;
   /** Resize larger image to match smaller? Default: false. */
   resize?: boolean;
+  /** Optional path for a generated PNG diff heatmap. */
+  heatmapPath?: string;
 }
 
 /** Fields parsed from the python CLI's JSON line. */
@@ -66,6 +69,7 @@ export interface PixelDiffResult {
   ssim?: number | null;
   minRegionSsim?: number | null;
   ssimClean?: boolean | null;
+  heatmapPath?: string;
 }
 
 const DEFAULT_PLUGIN_DIR = "./plugin/figmaforge";
@@ -117,6 +121,7 @@ export function parsePixelDiffOutput(stdout: string): PixelDiffResult | null {
         minRegionSsim:
           typeof obj.min_region_ssim === "number" ? obj.min_region_ssim : null,
         ssimClean: typeof obj.ssim_clean === "boolean" ? obj.ssim_clean : null,
+        heatmapPath: typeof obj.heatmap_path === "string" ? obj.heatmap_path : undefined,
       };
     }
   } catch {
@@ -151,6 +156,7 @@ export class ScreenshotComparator {
     this.options = {
       colorThreshold: options?.colorThreshold ?? 16,
       resize: options?.resize ?? false,
+      heatmapPath: options?.heatmapPath ?? "",
     };
     // Same resolution pattern as ctx_pythonBin() in render_handler.ts.
     this.pythonBin = runtime?.pythonBin ?? (process.env.PYTHON_BIN ?? "python3");
@@ -237,6 +243,8 @@ export class ScreenshotComparator {
           "--a", fileA,
           "--b", fileB,
           "--threshold", String(this.options.colorThreshold),
+          ...(this.options.resize ? ["--resize"] : []),
+          ...(this.options.heatmapPath ? ["--heatmap-out", this.options.heatmapPath] : []),
         ],
         { cwd: this.pluginDir, encoding: "utf-8", timeout: 30_000 },
       );

@@ -52,20 +52,26 @@ export async function runSuite(name: string, fn: () => void | Promise<void>): Pr
 
 export async function it(name: string, fn: () => void | Promise<void>): Promise<void> {
   const start = Date.now();
+  const progress = process.env.FIGMAFORGE_TEST_PROGRESS === "1";
+  if (progress) console.log(`  … ${name}`);
   try {
     await fn();
-    currentResults.push({
+    const result = {
       name,
       passed: true,
       durationMs: Date.now() - start,
-    });
+    };
+    currentResults.push(result);
+    if (progress) console.log(`  ✓ ${name} (${result.durationMs}ms)`);
   } catch (err) {
-    currentResults.push({
+    const result = {
       name,
       passed: false,
       error: err instanceof Error ? err.stack ?? err.message : String(err),
       durationMs: Date.now() - start,
-    });
+    };
+    currentResults.push(result);
+    if (progress) console.log(`  ✗ ${name} (${result.durationMs}ms)`);
   }
 }
 

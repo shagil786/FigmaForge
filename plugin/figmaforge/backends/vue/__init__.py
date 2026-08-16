@@ -135,6 +135,7 @@ class VueBackend(BackendAdapter):
             vue_content = self._generate_sfc(
                 root_vnode, screen, component_name, style_gen, ir_by_id,
                 assets=assets, instance_names=instance_names,
+                overrides=opts.get("styles_override"),
             )
             node_ids = [n.node_id for n in screen.walk() if n.node_id]
 
@@ -164,6 +165,7 @@ class VueBackend(BackendAdapter):
         ir_by_id: Dict[str, IRNode],
         assets: Optional[Dict[str, Dict[str, Any]]] = None,
         instance_names: Optional[frozenset] = None,
+        overrides: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> str:
         template_lines = ["<template>"]
         template_lines.append(self._render_template(
@@ -197,9 +199,9 @@ class VueBackend(BackendAdapter):
         template_lines.append("</script>")
         template_lines.append("")
         template_lines.append("<style scoped>")
-        rules, media = ScopedCssGenerator(ir_by_id, assets=assets).collect(
-            root_vnode, screen,
-        )
+        rules, media = ScopedCssGenerator(
+            ir_by_id, assets=assets, overrides=overrides,
+        ).collect(root_vnode, screen)
         template_lines.extend(rules)
         for bp_width in sorted(media):
             template_lines.append(f"@media (max-width: {bp_width}) {{")

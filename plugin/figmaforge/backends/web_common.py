@@ -551,6 +551,7 @@ def extend_ir_style(
 def reference_styles_from_plan(
     document: Any,
     layout_plan: Any,
+    assets: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Dict[str, VStyle]:
     """Compute the intended per-node VStyles from a LayoutPlan (Part 20).
 
@@ -561,6 +562,12 @@ def reference_styles_from_plan(
     produce the *reference render* — and, in the repair stage, is the style
     layer the loop mutates.  Reusing the shared lowering keeps the reference
     and the generated code on one style rule.
+
+    ``assets`` (Part 22) threads the run's resolved asset paths into the
+    image-fill lowering so the style layer matches what the backends compute
+    WITH assets — the repair-loop ``styles_override`` serialization of an
+    un-repaired image node then carries the real ``backgroundImage`` (an
+    idempotent union) instead of the unresolved-fill fallback color.
     """
     ir_by_id = {n.id: n for n in document.all_nodes()}
     style_gen = CssStyleGenerator()
@@ -569,7 +576,9 @@ def reference_styles_from_plan(
     def _walk(node_plan: LayoutNodePlan) -> None:
         if node_plan.node_id:
             style = style_gen.generate_style(node_plan)
-            extend_ir_style(style, node_plan, ir_by_id.get(node_plan.node_id))
+            extend_ir_style(
+                style, node_plan, ir_by_id.get(node_plan.node_id), assets=assets,
+            )
             styles[node_plan.node_id] = style
         for child in node_plan.children:
             _walk(child)
@@ -608,9 +617,11 @@ class ScopedCssGenerator:
         self,
         ir_by_id: Dict[str, IRNode],
         assets: Optional[Dict[str, Dict[str, Any]]] = None,
+        overrides: Optional[Dict[str, Dict[str, Any]]] = None,
     ):
         self._ir_by_id = ir_by_id
         self._assets = assets
+        self._overrides = overrides or {}
         self._style_gen = CssStyleGenerator()
 
     def collect(
@@ -638,6 +649,19 @@ class ScopedCssGenerator:
     ) -> None:
         style = self._style_gen.generate_style(plan_node)
         self._extend(style, plan_node, self._ir_by_id.get(vnode.node_id))
+
+        # Repair override (Part 22): the html_css ``styles_override`` union —
+        # ``{node_id: {base, breakpoints}}`` applied ON TOP of the computed
+        # style.  Must run BEFORE the absolute-position pop below: the
+        # serialized layer carries ``position: absolute`` for absolute nodes
+        # (generate_style adds it), so applying the union after the pop would
+        # re-attach absolute positioning (design review F6).  Absent/empty
+        # override is a no-op (byte-identical output).
+        override = self._overrides.get(vnode.node_id) or {}
+        if override.get("base"):
+            style.base.update(override["base"])
+        if override.get("breakpoints"):
+            style.breakpoints.update(override["breakpoints"])
 
         # Absolute positioning is a preflight loss; degrade to in-flow by
         # dropping the positioning props (the backend's template carries the

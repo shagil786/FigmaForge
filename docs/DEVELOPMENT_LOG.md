@@ -1134,3 +1134,108 @@ bundler targets measure but don't auto-repair yet); a production
 scaffold, not a template library); bundling swiftui/flutter (native
 simulators remain out of scope); vendoring node_modules for fully-offline
 installs.
+
+## Part 22 — Web-backend repair regeneration and runtime test tiers (2026-08-16)
+
+Part 22 extends repair beyond the HTML/CSS reference backend. The runtime now
+threads the generated backend, resolution report, and asset manifest into the
+Python repair command. React, Vue, and Svelte repairs are regenerated through
+the same backend that was measured, then re-bundled and compared against the
+same baseline during verification. Native SwiftUI and Flutter output remains
+an honest non-browser degrade.
+
+The TypeScript runtime packaging was also made self-contained: `runtime` now
+has its own `tsconfig.json`, compiled output is emitted under `runtime/dist`,
+and runtime CLI tests resolve the repository fixture paths from the monorepo
+root. `npm test` is the fast runtime tier; `npm run test:integration` enables
+the real Python/Chromium/Vite acceptance suites.
+
+### Current verification
+
+- TypeScript build: passing.
+- Runtime fast tier: 122 tests passing.
+- Python non-toolchain tier: 606 tests passing, one skipped.
+- Browser/Vite integration: environment-dependent; it requires Chromium
+  process permissions and network/package installation for the bundler smoke
+  tests.
+- Restricted-environment integration: `FIGMAFORGE_SKIP_MONEY_TESTS=1
+  npm run test:integration` passes the Python/native/adaptive coverage while
+  explicitly skipping real npm/Vite/Chromium checks; no screenshots or visual
+  scores are fabricated.
+
+### Remaining work
+
+Deeper adaptive-platform/lifecycle integration, native SwiftUI/Flutter
+compile-and-run validation, and production acceptance coverage remain open.
+
+## Task 4: Adaptive Preflight Documentation and Portability Handoff (2026-08-16)
+
+### Overview
+
+Documented the opt-in adaptive preflight across the user-facing docs without touching code. The updated references now show both invocation forms (`--adaptive` and `--adaptive-request=<text>`), the default unchanged behavior when neither flag is present, the `adaptive_plan` artifact and `adaptive_plan_created` event, and the `unclassified` continue behavior.
+
+## Adaptive lifecycle context integration (2026-08-16)
+
+Adaptive preflight now has an explicit lifecycle handoff: after creating the
+`adaptive_plan` artifact, the CLI places the typed plan in the pipeline shared
+context and emits `adaptive_plan_applied`. All ten stage handlers receive that
+context through their normal stage input path, while non-adaptive runs remain
+unchanged. Route-driven stage policies are intentionally deferred until their
+contract is defined. Adaptive artifacts are also restored when a run resumes
+from checkpoints, so the resumed pipeline keeps the original route without
+re-running repository detection.
+
+## Resume, CI, and live acceptance hardening (2026-08-16)
+
+Checkpoint outputs now restore shared stage inputs and prior artifact manifests
+are rehydrated when a new process resumes. Fresh runs refuse to reuse an
+existing run id unless `--resume` is supplied. Added fast and opt-in integration
+GitHub workflows, a local release metadata check, and a credential-gated live
+Figma ingest acceptance test that is skipped by default.
+
+### Portability Note
+
+The docs now call out the portability boundary explicitly: the detector, router, lifecycle state, Python pipeline, TypeScript runtime, JSON schemas, and backend generators are host-neutral. The Claude Code-specific layer is the plugin manifest, skill files, agent files, hook registration, and `/figmaforge:*` command UX; other LLM hosts need a thin adapter around those interfaces.
+
+### Files Updated
+
+- `README.md`
+- `docs/runtime-architecture.md`
+- `docs/runtime-troubleshooting.md`
+- `docs/real-figma-demo.md`
+- `CLAUDE.md`
+
+## Task 5: Native Artifact Acceptance Validation (2026-08-16)
+
+Added `scripts/native_acceptance.py` and focused tests that run the real
+SwiftUI and Flutter generators, validate both manifests and generated files,
+and perform capability-aware native syntax checks. SwiftUI is parsed with
+`swiftc -parse`; Flutter uses `dart format` when Dart is installed and reports
+an explicit structured skip otherwise.
+
+Verification: native acceptance tests pass with Swift parsing enabled and
+Flutter validation explicitly skipped in environments without Dart.
+
+The acceptance path was then exercised in Docker with the official Flutter
+SDK image. Flutter initially rejected generated `FontWeight.w0` values from
+Figma text nodes whose weight was absent; the backend now omits zero weights
+and rounds valid weights to Flutter's hundred-step `w100`–`w900` constants.
+The corrected widget passes `flutter analyze` with no issues in the container.
+
+The native acceptance command now supports `--flutter-docker-image`, which
+creates a minimal Flutter project around the generated widget and runs
+`flutter pub get`, `flutter analyze`, and a widget test inside the selected
+Docker image. The widget test uses the fixture viewport so desktop layouts do
+not produce false overflow failures. The generated Flutter root also avoids
+invalid root `Positioned` widgets. Verified with
+`ghcr.io/cirruslabs/flutter:stable`: SwiftUI `swiftc -parse` and the full
+Flutter analyze/widget-test flow both passed.
+## Final compatibility and operational audit (2026-08-16)
+
+Added the compatibility matrix at `docs/compatibility-matrix.md`. The final
+hardening pass includes per-run locking, stale-lock recovery, bounded artifact
+retention, deterministic accessibility reports, backend fidelity preflight
+coverage, generic JSON/HTTP providers, and optional PNG diff heatmaps. The
+runtime build and test suite currently reports 139 passing tests with no
+failures. Registry-dependent Vite tests remain a separate integration tier and
+now fail fast with actionable npm timeout/install diagnostics.

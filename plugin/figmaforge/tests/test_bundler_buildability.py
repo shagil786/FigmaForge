@@ -14,6 +14,7 @@ Skipped when chromium or npm are unavailable so suites stay green elsewhere
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import socket
 import subprocess
@@ -21,6 +22,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 plugin_root = Path(__file__).resolve().parent.parent
@@ -45,6 +47,11 @@ def _chromium_available() -> bool:
 
 
 _HAVE_TOOLS = _chromium_available() and shutil.which("npm") is not None
+
+
+def _toolchain_tests_enabled() -> bool:
+    """Return whether tests that may contact the npm registry are enabled."""
+    return os.environ.get("FIGMAFORGE_RUN_TOOLCHAIN_TESTS") == "1"
 
 
 def _write(path: Path, content: str) -> None:
@@ -163,10 +170,23 @@ def _svelte_project(root: Path, svelte_sfc: str) -> None:
 
 
 def _build(root: Path) -> None:
-    result = subprocess.run(
-        ["npm", "install", "--no-audit", "--no-fund"],
-        cwd=root, capture_output=True, text=True, timeout=300,
-    )
+    try:
+        install_args = ["npm", "install", "--no-audit", "--no-fund"]
+        if os.environ.get("FIGMAFORGE_NPM_OFFLINE") == "1":
+            install_args.append("--offline")
+        result = subprocess.run(
+            install_args,
+            cwd=root, capture_output=True, text=True, timeout=60,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise AssertionError(
+            "npm install timed out after 60s; check registry access or provide a cached/offline environment"
+        ) from exc
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or "no npm output"
+        raise AssertionError(
+            f"npm install failed with exit code {result.returncode}:\n{detail}"
+        )
     # npm 11 blocks esbuild's postinstall; approve it when supported (S4).
     approve = subprocess.run(
         ["npm", "approve-scripts", "esbuild"], cwd=root,
@@ -183,7 +203,38 @@ def _build(root: Path) -> None:
         )
 
 
-@unittest.skipUnless(_HAVE_TOOLS, "chromium and/or npm unavailable")
+class TestBuildDependencyFailure(unittest.TestCase):
+    def test_npm_install_failure_stops_before_build(self):
+        failed_install = subprocess.CompletedProcess(
+            args=["npm", "install"], returncode=1,
+            stdout="", stderr="npm ERR! registry unavailable",
+        )
+
+        with patch("test_bundler_buildability.subprocess.run", return_value=failed_install) as run:
+            with self.assertRaisesRegex(AssertionError, "npm install failed"):
+                _build(Path("/tmp/figmaforge-test-build"))
+
+        self.assertEqual(run.call_count, 1)
+
+    def test_npm_install_timeout_is_reported_as_dependency_failure(self):
+        timeout = subprocess.TimeoutExpired(["npm", "install"], 60)
+        with patch("test_bundler_buildability.subprocess.run", side_effect=timeout):
+            with self.assertRaisesRegex(AssertionError, "npm install timed out"):
+                _build(Path("/tmp/figmaforge-test-build"))
+
+
+class TestToolchainGate(unittest.TestCase):
+    def test_real_toolchain_requires_explicit_opt_in(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(_toolchain_tests_enabled())
+        with patch.dict(os.environ, {"FIGMAFORGE_RUN_TOOLCHAIN_TESTS": "1"}, clear=True):
+            self.assertTrue(_toolchain_tests_enabled())
+
+
+@unittest.skipUnless(
+    _HAVE_TOOLS and _toolchain_tests_enabled(),
+    "set FIGMAFORGE_RUN_TOOLCHAIN_TESTS=1 with npm and chromium available",
+)
 class TestWebBackendBuildability(unittest.TestCase):
     """Canonical web-backend output must build AND render with zero errors."""
 

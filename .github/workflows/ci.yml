@@ -1,0 +1,37 @@
+name: FigmaForge CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  fast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: runtime/package-lock.json
+      - name: Install runtime dependencies
+        run: npm ci --prefix runtime
+      - name: Build and test runtime
+        run: npm run build && npm test
+        working-directory: runtime
+      - name: Run Python unit tests (discovery; optional external tests self-skip)
+        run: python -m unittest discover -s plugin/figmaforge/tests -p 'test_*.py' -q
+      - name: Check whitespace
+        run: git diff --check
+      - name: Validate JSON contracts
+        run: >-
+          python -c "import json, pathlib;
+          [json.load(open(p)) for p in pathlib.Path('plugin/figmaforge').rglob('*.json')]
+          "

@@ -11,6 +11,7 @@ Run:  python3 -m unittest tests.test_render_harness -v
 from __future__ import annotations
 
 import sys
+import os
 import tempfile
 import types
 import unittest
@@ -140,6 +141,13 @@ class TestRenderHarnessContract(unittest.TestCase):
         self.assertEqual(result.screenshot_path, self.out_dir / "build1.png")
         self.assertEqual(result.layout_metadata, META_FIXTURE)
 
+    def test_no_sandbox_mode_passes_chromium_argument(self):
+        fake = _FakePlaywright(META_FIXTURE)
+        fake.install(self)
+        with mock.patch.dict(os.environ, {"FIGMAFORGE_PLAYWRIGHT_NO_SANDBOX": "1"}):
+            self.harness.render("<html></html>", {"w": 800, "h": 600}, "sandbox")
+        fake.p.chromium.launch.assert_called_once_with(args=["--no-sandbox"])
+
     def test_render_writes_html_file(self):
         fake = _FakePlaywright({})
         fake.install(self)
@@ -204,6 +212,24 @@ class TestRenderHarnessContract(unittest.TestCase):
         )
         fake.page.screenshot.assert_called_once_with(
             path=str(self.out_dir / "fixed.png"), full_page=False
+        )
+
+    def test_render_returns_browser_accessibility_findings(self):
+        fake = _FakePlaywright(META_FIXTURE)
+        fake.page.evaluate.side_effect = [
+            None,
+            [{"rule": "image_alt", "severity": "error"}],
+            META_FIXTURE,
+        ]
+        fake.install(self)
+        result = self.harness.render(
+            "<html><body><img src='x.png'></body></html>",
+            {"w": 800, "h": 600},
+            "a11y",
+        )
+        self.assertEqual(
+            result.accessibility_findings,
+            [{"rule": "image_alt", "severity": "error"}],
         )
 
 

@@ -4,12 +4,13 @@
   "description": "TypeScript orchestration runtime for the FigmaForge visual repair pipeline",
   "type": "module",
   "bin": {
-    "figmaforge": "./dist/cli/main.js"
+    "figmaforge": "./dist/src/cli/main.js"
   },
   "scripts": {
     "build": "tsc",
-    "test": "node --experimental-vm-modules dist/tests/run_all.js",
-    "figmaforge": "node dist/cli/main.js"
+    "test": "cd .. && node --experimental-vm-modules runtime/dist/tests/run_all.js",
+    "test:integration": "cd .. && node --experimental-vm-modules runtime/dist/tests/run_all.js --integration",
+    "figmaforge": "node dist/src/cli/main.js"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

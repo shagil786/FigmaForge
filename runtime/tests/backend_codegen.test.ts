@@ -23,6 +23,7 @@ import {
   invokeBackendGenerator,
   invokeBackendGeneratorFromStages,
   invokeNormalize,
+  invokeResolve,
   invokeLayout,
   invokeAssets,
   invokeRender,
@@ -104,6 +105,44 @@ function buildAssetsManifest(nodeId: string, localPath: string): Record<string, 
   };
 }
 
+/**
+ * A minimal PNG-shaped buffer (signature + IHDR width/height).  Enough for
+ * the comparator's identical-content fast path (which only reads the
+ * signature + dimensions); a real pixel-diff against it fails honestly.
+ */
+function fakePngBytes(width: number, height: number): Buffer {
+  const buf = Buffer.alloc(24);
+  Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(buf, 0);
+  buf.writeUInt32BE(13, 8);   // IHDR length
+  buf.write("IHDR", 12);      // chunk type
+  buf.writeUInt32BE(width, 16);
+  buf.writeUInt32BE(height, 20);
+  return buf;
+}
+
+/** The red external-baseline HTML used by the repair/verify tests. */
+function redBaselineHtml(): string {
+  return "<!DOCTYPE html><html><head><style>" +
+    "*{margin:0;padding:0;box-sizing:border-box}" +
+    "body{width:1440px;height:900px;overflow:hidden}" +
+    "</style></head><body>" +
+    '<div style="width:1440px;height:900px;background:#ff0000"></div>' +
+    "</body></html>";
+}
+
+const RUN_BROWSER_TESTS = process.env.FIGMAFORGE_SKIP_MONEY_TESTS !== "1";
+
+async function browserIt(
+  name: string,
+  fn: () => void | Promise<void>,
+): Promise<void> {
+  if (RUN_BROWSER_TESTS) {
+    await it(name, fn);
+  } else {
+    await it(`skipped — ${name} (FIGMAFORGE_SKIP_MONEY_TESTS set)`, () => {});
+  }
+}
+
 function makeConfig(dir: string, overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
   return {
     runId: "run-codegen",
@@ -129,6 +168,12 @@ function makeConfig(dir: string, overrides: Partial<RuntimeConfig> = {}): Runtim
 
 export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
   const results: SuiteResult[] = [];
+
+  if (!process.argv.includes("--integration")) {
+    return [await describe("backend codegen", async () => {
+      await it("skipped — run npm run test:integration for Python pipeline coverage", () => {});
+    })];
+  }
 
   results.push(await describe("backend codegen", async () => {
     await it("target map covers every preset with a real Python backend", async () => {
@@ -247,7 +292,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
     await it("demo command generates all six backends from a local fixture", async () => {
       const dir = tmpDir();
       try {
-        const cli = path.resolve("dist/runtime/src/cli/main.js");
+        const cli = path.resolve("runtime/dist/src/cli/main.js");
         const res = spawnSync(process.execPath, [cli, "demo", `--file=${FIXTURE}`, `--out=${dir}`], {
           cwd: path.resolve("."),
           env: { ...process.env, PYTHON_BIN },
@@ -279,7 +324,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
     await it("demo falls back to the offline fixture without a token or file", async () => {
       const dir = tmpDir();
       try {
-        const cli = path.resolve("dist/runtime/src/cli/main.js");
+        const cli = path.resolve("runtime/dist/src/cli/main.js");
         const env: Record<string, string> = { ...process.env, PYTHON_BIN };
         delete env.FIGMA_TOKEN;
         const res = spawnSync(process.execPath, [cli, "demo", `--out=${dir}`], {
@@ -634,7 +679,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
       }
     });
 
-    await it("invokeRender renders a generated HTML file to a real screenshot", async () => {
+    await browserIt("invokeRender renders a generated HTML file to a real screenshot", async () => {
       const dir = tmpDir();
       try {
         const html = path.join(dir, "screen.html");
@@ -660,7 +705,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
       }
     });
 
-    await it("render stage captures a real screenshot of generated html_css output", async () => {
+    await browserIt("render stage captures a real screenshot of generated html_css output", async () => {
       const dir = tmpDir();
       try {
         const config = makeConfig(dir, {
@@ -940,7 +985,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
       }
     });
 
-    await it("compare stage measures a diff_report against the reference baseline", async () => {
+    await browserIt("compare stage measures a diff_report against the reference baseline", async () => {
       const dir = tmpDir();
       try {
         const config = makeConfig(dir, {
@@ -983,8 +1028,10 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
           screens: Array<{ file: string; similarity: number }>;
           baseline: string;
           baseline_kind: string;
+          resized: boolean;
         };
         assertEqual(report.baseline_kind, "reference");
+        assertEqual(report.resized, false);
         assert(fs.existsSync(report.baseline), "reference baseline PNG should exist");
         assert(typeof report.raster_stats.ssim_clean === "boolean",
           "SSIM verdict should be a real boolean");
@@ -1020,7 +1067,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
       }
     });
 
-    await it("explicit --baseline override wins and detects a real visual change", async () => {
+    await browserIt("explicit --baseline override wins and detects a real visual change", async () => {
       const dir = tmpDir();
       try {
         // A deliberately-different baseline: a full-red render at the exact
@@ -1136,7 +1183,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
     // Part 20 — repair stage handler (Task 5)
     // -----------------------------------------------------------------
 
-    await it("repair short-circuits when the gate is already satisfied", async () => {
+    await browserIt("repair short-circuits when the gate is already satisfied", async () => {
       const dir = tmpDir();
       try {
         // Threshold 0.5: the reference-baseline score (≈ 1.0, proven > 0.9
@@ -1194,7 +1241,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
       }
     });
 
-    await it("repair short-circuits on the reference-baseline contract when the gate fails", async () => {
+    await browserIt("repair short-circuits on the reference-baseline contract when the gate fails", async () => {
       const dir = tmpDir();
       try {
         // Threshold 1.5 forces the gate check to fail on the reference
@@ -1293,7 +1340,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
       }
     });
 
-    await it("repair runs the real Python loop and regenerates html_css against an external baseline", async () => {
+    await browserIt("repair runs the real Python loop and regenerates html_css against an external baseline", async () => {
       const dir = tmpDir();
       try {
         // A deliberately-different external baseline: a full-red page at the
@@ -1429,7 +1476,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
     // Part 20 — verify stage handler (Task 6)
     // -----------------------------------------------------------------
 
-    await it("verify passes against the reference baseline when repair short-circuits", async () => {
+    await browserIt("verify passes against the reference baseline when repair short-circuits", async () => {
       const dir = tmpDir();
       try {
         // Threshold 0.5: the reference score (≈ 1.0) is deterministically
@@ -1494,7 +1541,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
       }
     });
 
-    await it("verify re-measures the regenerated code after repair against the same baseline", async () => {
+    await browserIt("verify re-measures the regenerated code after repair against the same baseline", async () => {
       const dir = tmpDir();
       try {
         // The red external baseline (Part 19 trick) → compare scores it low →
@@ -1638,7 +1685,7 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
       }
     });
 
-    await it("--no-repair path: repair short-circuits and verify still reports honestly", async () => {
+    await browserIt("--no-repair path: repair short-circuits and verify still reports honestly", async () => {
       const dir = tmpDir();
       try {
         // A low-scoring external baseline where repair WOULD run, but the
@@ -1721,6 +1768,438 @@ export async function runBackendCodegenTests(): Promise<SuiteResult[]> {
           "a 1.0 threshold vs the red baseline must honestly fail verification");
         assertEqual(budget.current.repairIterations, 0,
           "no repair ran → no budget spend");
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    // -----------------------------------------------------------------
+    // Part 22 — repair/verify backend threading (Task 3)
+    // -----------------------------------------------------------------
+
+    await browserIt("invokeRepair threads --backend and --resolution into the real regeneration", async () => {
+      const dir = tmpDir();
+      try {
+        // A red external baseline → the loop must patch toward red; the
+        // regenerated output must be the requested react_tailwind backend
+        // (not the html_css default) — proving --backend reached Python.
+        const redHtml = path.join(dir, "red.html");
+        fs.writeFileSync(redHtml, redBaselineHtml(), "utf-8");
+        const red = await invokeRender(
+          { pythonBin: PYTHON_BIN, pluginDir: PLUGIN_DIR },
+          redHtml,
+          { width: 1440, height: 900 },
+          dir,
+        );
+
+        const fileJson = JSON.parse(fs.readFileSync(FIXTURE, "utf-8"));
+        const irJson = await invokeNormalize(
+          { pythonBin: PYTHON_BIN, pluginDir: PLUGIN_DIR }, fileJson,
+        );
+        const layoutJson = await invokeLayout(
+          { pythonBin: PYTHON_BIN, pluginDir: PLUGIN_DIR }, irJson, 1440,
+        );
+        const resolutionJson = await invokeResolve(
+          { pythonBin: PYTHON_BIN, pluginDir: PLUGIN_DIR }, irJson,
+        );
+
+        const repairDir = path.join(dir, "repair");
+        const payload = await invokeRepair(
+          { pythonBin: PYTHON_BIN, pluginDir: PLUGIN_DIR },
+          irJson,
+          layoutJson,
+          red.screenshot,
+          repairDir,
+          {
+            viewport: { width: 1440, height: 900 },
+            maxIterations: 3,
+            threshold: 1.0,
+            backend: "react_tailwind",
+            resolutionJson,
+          },
+        );
+        const generated = (payload.generated as
+          | { backend: string; files: Array<{ path: string }> }
+          | null) ?? null;
+        assert(generated !== null, "repair must regenerate");
+        assertEqual(generated!.backend, "react_tailwind",
+          "the run's backend must reach Python (--backend), not html_css");
+        const tsx = path.join(
+          repairDir, "generated", "react_tailwind", "Desktop.tsx",
+        );
+        assert(fs.existsSync(tsx), `regenerated TSX missing: ${tsx}`);
+        const content = fs.readFileSync(tsx, "utf-8");
+        assertIncludes(content, "bg-[#ff0000]",
+          "the repaired (red) background must reach the regenerated TSX");
+        assert(!fs.existsSync(path.join(repairDir, "generated", "html_css")),
+          "html_css must not be regenerated when a backend is requested");
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await browserIt("repair stage regenerates the run's react backend; verify re-bundles and re-measures", async () => {
+      const dir = tmpDir();
+      try {
+        const redHtml = path.join(dir, "red.html");
+        fs.writeFileSync(redHtml, redBaselineHtml(), "utf-8");
+        const red = await invokeRender(
+          { pythonBin: PYTHON_BIN, pluginDir: PLUGIN_DIR },
+          redHtml,
+          { width: 1440, height: 900 },
+          dir,
+        );
+        const RED_BYTES = fs.readFileSync(red.screenshot);
+
+        const bundleCalls: Array<{
+          backend: string;
+          generatedDir: string;
+          assetManifest: unknown;
+          viewport: { width: number; height: number };
+          outDir: string;
+        }> = [];
+        const fakeBundle = async (
+          _cfg: { pythonBin: string; pluginDir: string },
+          backend: string,
+          generatedDir: string,
+          assetManifest: unknown,
+          viewport: { width: number; height: number },
+          outDir: string,
+        ) => {
+          bundleCalls.push({ backend, generatedDir, assetManifest, viewport, outDir });
+          const png = path.join(outDir, "screens", "Root.png");
+          fs.mkdirSync(path.dirname(png), { recursive: true });
+          // Render stage: bytes that differ from the baseline → the real
+          // compare fails → repair runs.  Verify stage: bytes identical to
+          // the baseline → the comparator's fast path gives a real 1.0
+          // re-measurement of the regenerated output.
+          const bytes = outDir.includes("verify-renders") ? RED_BYTES : fakePngBytes(1440, 900);
+          fs.writeFileSync(png, bytes);
+          return {
+            backend,
+            screens: [{
+              component: "Root", png: "screens/Root.png", html: "Root.html",
+            }],
+            viewport,
+          };
+        };
+
+        const config = makeConfig(dir, {
+          target: { framework: "react", styling: "tailwind" },
+          similarityThreshold: 1.0,
+          budgets: {
+            maxTokens: 10000,
+            maxTimeMs: 180000,
+            maxIterations: 100,
+            maxRepairIterations: 3,
+          },
+        });
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.setShared("filePath", FIXTURE);
+        pipeline.setShared("baselinePath", red.screenshot);
+        pipeline.onStage("ingest", createIngestStageHandler());
+        pipeline.onStage("normalize", createNormalizeStageHandler());
+        pipeline.onStage("resolve", createResolveStageHandler());
+        pipeline.onStage("layout", createLayoutStageHandler());
+        pipeline.onStage("assets", createAssetsStageHandler());
+        pipeline.onStage("generate", createGenerateStageHandler());
+        pipeline.onStage("render", createRenderStageHandler({ bundleInvoker: fakeBundle }));
+        pipeline.onStage("compare", createCompareStageHandler());
+        pipeline.onStage("repair", createRepairStageHandler());
+        pipeline.onStage("verify", createVerifyStageHandler({ bundleInvoker: fakeBundle }));
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "completed");
+
+        // Repair regenerated the RUN's backend, not html_css.
+        const repairArtifacts = artifacts.byStage("repair");
+        const repair = artifacts.loadJSON(repairArtifacts[0]) as {
+          generated: { backend: string } | null;
+          iterations_run: number;
+        };
+        assert(repair.generated !== null, "repair must regenerate output");
+        assertEqual(repair.generated!.backend, "react_tailwind",
+          "the repair stage must regenerate the run's backend (Part 22)");
+        assert(
+          fs.existsSync(path.join(
+            dir, config.runId, "repair", "generated", "react_tailwind",
+            "Desktop.tsx",
+          )),
+          "regenerated react TSX missing under repair/generated/react_tailwind",
+        );
+        assertGreaterThan(repair.iterations_run, 0);
+
+        // Verify re-bundled the regenerated dir against the same baseline.
+        assertEqual(bundleCalls.length, 2, "render + verify each invoke the bundler");
+        const verifyCall = bundleCalls[1];
+        assertEqual(verifyCall.backend, "react_tailwind");
+        assert(
+          verifyCall.generatedDir.endsWith(
+            path.join("repair", "generated", "react_tailwind"),
+          ),
+          `verify must re-bundle the regenerated dir, got: ${verifyCall.generatedDir}`,
+        );
+        assert(verifyCall.outDir.endsWith("verify-renders"),
+          `verify must re-render into verify-renders, got: ${verifyCall.outDir}`);
+        assert(
+          typeof verifyCall.assetManifest === "object"
+            && verifyCall.assetManifest !== null,
+          "the shared asset manifest must thread into the verify re-bundle",
+        );
+
+        const verifyArtifacts = artifacts.byKind("metrics");
+        assertEqual(verifyArtifacts.length, 1);
+        const verify = artifacts.loadJSON(verifyArtifacts[0]) as {
+          passed: boolean | null;
+          similarity_score: number | null;
+          source: string | null;
+          baseline_kind: string | null;
+        };
+        assertEqual(verify.source, "re-rendered",
+          "after repair, verify must re-render the regenerated output");
+        assertEqual(verify.similarity_score, 1.0,
+          "identical bytes vs the same baseline → a real 1.0 re-measurement");
+        assertEqual(verify.passed, true);
+        assertEqual(verify.baseline_kind, "explicit");
+        const cp = checkpoints.loadLatest();
+        assert(cp !== null);
+        assertEqual(cp!.metrics.similarityScore, 1.0,
+          "verify must update the checkpoint metric to the re-measured score");
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await browserIt("repair stage defaults to html_css with a note when generatedManifest is missing", async () => {
+      const dir = tmpDir();
+      try {
+        const redHtml = path.join(dir, "red.html");
+        fs.writeFileSync(redHtml, redBaselineHtml(), "utf-8");
+        const red = await invokeRender(
+          { pythonBin: PYTHON_BIN, pluginDir: PLUGIN_DIR },
+          redHtml,
+          { width: 1440, height: 900 },
+          dir,
+        );
+        const fileJson = JSON.parse(fs.readFileSync(FIXTURE, "utf-8"));
+        const irJson = await invokeNormalize(
+          { pythonBin: PYTHON_BIN, pluginDir: PLUGIN_DIR }, fileJson,
+        );
+        const layoutJson = await invokeLayout(
+          { pythonBin: PYTHON_BIN, pluginDir: PLUGIN_DIR }, irJson, 1440,
+        );
+
+        const config = makeConfig(dir, {
+          target: { framework: "react", styling: "tailwind" },
+          similarityThreshold: 1.0,
+          budgets: {
+            maxTokens: 10000,
+            maxTimeMs: 120000,
+            maxIterations: 100,
+            maxRepairIterations: 2,
+          },
+        });
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        // Repair-only pipeline (no generate/render/compare): the shared
+        // compare state is pre-set so the stage runs its real loop, and no
+        // generatedManifest exists — the F7 defensive default applies.
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.setShared("irJson", irJson);
+        pipeline.setShared("layoutJson", layoutJson);
+        pipeline.setShared("diffReport", { similarity_score: 0.2, screens: [] });
+        pipeline.setShared("compareBaseline", red.screenshot);
+        pipeline.setShared("compareBaselineKind", "explicit");
+        pipeline.onStage("repair", createRepairStageHandler());
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "completed");
+        const repairArtifacts = artifacts.byStage("repair");
+        const repair = artifacts.loadJSON(repairArtifacts[0]) as {
+          generated: { backend: string } | null;
+          note: string | null;
+          iterations_run: number;
+        };
+        assert(repair.generated !== null, "repair must regenerate");
+        assertEqual(repair.generated!.backend, "html_css",
+          "missing generatedManifest → html_css default (F7)");
+        assert(
+          repair.note !== null && repair.note.includes("generatedManifest"),
+          `expected the F7 default note, got: ${repair.note}`,
+        );
+        assertGreaterThan(repair.iterations_run, 0);
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("verify re-bundles regenerated web output against the same baseline", async () => {
+      const dir = tmpDir();
+      try {
+        const baselinePath = path.join(dir, "baseline.png");
+        const pngBytes = fakePngBytes(1440, 900);
+        fs.writeFileSync(baselinePath, pngBytes);
+
+        const calls: Array<{
+          backend: string;
+          generatedDir: string;
+          assetManifest: unknown;
+          viewport: { width: number; height: number };
+          outDir: string;
+        }> = [];
+        const fakeBundle = async (
+          _cfg: { pythonBin: string; pluginDir: string },
+          backend: string,
+          generatedDir: string,
+          assetManifest: unknown,
+          viewport: { width: number; height: number },
+          outDir: string,
+        ) => {
+          calls.push({ backend, generatedDir, assetManifest, viewport, outDir });
+          const png = path.join(outDir, "screens", "Root.png");
+          fs.mkdirSync(path.dirname(png), { recursive: true });
+          fs.writeFileSync(png, pngBytes); // identical → 1.0 fast path
+          return {
+            backend,
+            screens: [{
+              component: "Root", png: "screens/Root.png", html: "Root.html",
+            }],
+            viewport,
+          };
+        };
+
+        const config = makeConfig(dir, {
+          target: { framework: "react", styling: "tailwind" },
+          similarityThreshold: 0.9,
+        });
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        // Verify-only pipeline: the shared compare/repair state is pre-set,
+        // so the handler's bundler branch runs with a faked invoker (no real
+        // npm/chromium — the money test covers the real toolchain).
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.setShared("diffReport", { similarity_score: 0.2, screens: [] });
+        pipeline.setShared("compareBaseline", baselinePath);
+        pipeline.setShared("compareBaselineKind", "explicit");
+        pipeline.setShared("repairManifest", {
+          generated: { backend: "react_tailwind", files: [{ path: "Root.tsx" }] },
+        });
+        pipeline.setShared("assetManifest", {
+          schema_version: 1, file_key: "x", assets: [],
+          counts: { total: 0, downloaded: 0, unresolved: 0 },
+          assets_dir: "",
+        });
+        pipeline.onStage("verify", createVerifyStageHandler({ bundleInvoker: fakeBundle }));
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "completed");
+        assertEqual(calls.length, 1, "the verify bundler branch must invoke the bundler");
+        assertEqual(calls[0].backend, "react_tailwind");
+        assert(
+          calls[0].generatedDir.endsWith(
+            path.join("repair", "generated", "react_tailwind"),
+          ),
+          `verify must re-bundle the regenerated dir, got: ${calls[0].generatedDir}`,
+        );
+        assert(calls[0].outDir.endsWith("verify-renders"),
+          `unexpected verify outDir: ${calls[0].outDir}`);
+        assertEqual(calls[0].viewport.width, 1440);
+
+        const verifyArtifacts = artifacts.byKind("metrics");
+        assertEqual(verifyArtifacts.length, 1);
+        const verify = artifacts.loadJSON(verifyArtifacts[0]) as {
+          passed: boolean | null;
+          similarity_score: number | null;
+          source: string | null;
+          baseline_kind: string | null;
+          screens: Array<{ file: string; similarity: number }>;
+        };
+        assertEqual(verify.source, "re-rendered");
+        assertEqual(verify.similarity_score, 1.0);
+        assertEqual(verify.passed, true);
+        assertEqual(verify.baseline_kind, "explicit");
+        assertEqual(verify.screens.length, 1);
+        const cp = checkpoints.loadLatest();
+        assert(cp !== null);
+        assertEqual(cp!.metrics.similarityScore, 1.0);
+      } finally {
+        cleanDir(dir);
+      }
+    });
+
+    await it("verify guards a non-browser regenerated backend without spawning", async () => {
+      const dir = tmpDir();
+      try {
+        const baselinePath = path.join(dir, "baseline.png");
+        fs.writeFileSync(baselinePath, fakePngBytes(1440, 900));
+
+        let spawns = 0;
+        const fakeBundle = async () => {
+          spawns++;
+          return {
+            backend: "flutter", screens: [],
+            viewport: { width: 1440, height: 900 },
+          };
+        };
+
+        const config = makeConfig(dir); // flutter target
+        const events = new EventLog(config.runId);
+        const checkpoints = new CheckpointManager(config.runId, config.outputDir);
+        const artifacts = new ArtifactStore(config.runId, config.outputDir);
+        const tools = new ToolRegistry();
+        const budget = new BudgetTracker(config.budgets);
+
+        const pipeline = new PipelineCoordinator(
+          config, events, checkpoints, artifacts, tools, budget,
+        );
+        pipeline.setShared("diffReport", { similarity_score: 0.2, screens: [] });
+        pipeline.setShared("compareBaseline", baselinePath);
+        pipeline.setShared("compareBaselineKind", "explicit");
+        pipeline.setShared("repairManifest", {
+          generated: { backend: "flutter", files: [{ path: "Root.dart" }] },
+        });
+        pipeline.onStage("verify", createVerifyStageHandler({ bundleInvoker: fakeBundle }));
+
+        const result = await pipeline.run();
+        assertEqual(result.status, "completed");
+        assertEqual(spawns, 0, "a native regenerated backend must never spawn");
+        const verifyArtifacts = artifacts.byKind("metrics");
+        assertEqual(verifyArtifacts.length, 1);
+        const verify = artifacts.loadJSON(verifyArtifacts[0]) as {
+          passed: boolean | null;
+          similarity_score: number | null;
+          source: string | null;
+          note: string;
+        };
+        assertEqual(verify.source, "re-rendered");
+        assertEqual(verify.passed, null, "never a fabricated verdict");
+        assertEqual(verify.similarity_score, null);
+        assert(verify.note.includes("flutter"),
+          `expected the native no-browser-harness note, got: ${verify.note}`);
+        const cp = checkpoints.loadLatest();
+        assert(cp !== null);
+        assertEqual(cp!.metrics.similarityScore, 0,
+          "metrics must stay untouched for the native guard");
       } finally {
         cleanDir(dir);
       }

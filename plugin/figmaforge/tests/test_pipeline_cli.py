@@ -49,8 +49,13 @@ def _run(args, env=None):
 
 
 def _no_token_env():
-    """Environment with FIGMA_TOKEN removed (may not be set at all)."""
-    return {k: v for k, v in os.environ.items() if k != "FIGMA_TOKEN"}
+    """Environment with both environment and OAuth credentials removed."""
+    env = {k: v for k, v in os.environ.items() if k != "FIGMA_TOKEN"}
+    # OAuth login is intentionally supported by the CLI, so removing only
+    # FIGMA_TOKEN is no longer sufficient for a deterministic missing-auth
+    # test when a developer has connected a local Figma account.
+    env["FIGMAFORGE_CREDENTIALS_PATH"] = "/nonexistent/figmaforge-test-creds.json"
+    return env
 
 
 class TestIngest(unittest.TestCase):
@@ -258,6 +263,8 @@ class TestGenerate(unittest.TestCase):
                     self.assertEqual(manifest["backend"], backend)
                     self.assertIn("files", manifest)
                     self.assertIn("fidelity_losses", manifest)
+                    self.assertIn("accessibility_report", manifest)
+                    self.assertIn("findings", manifest["accessibility_report"])
                     self.assertIn("metadata", manifest)
                     self.assertTrue(manifest["files"])
 

@@ -188,7 +188,7 @@ class TestRenderMain(unittest.TestCase):
         self.assertTrue(payload.pop("ok"))
         self.assertEqual(payload["kind"], "generated")
         self.assertEqual(
-            set(payload.keys()), {"kind", "screenshot", "html", "meta", "viewport"},
+            set(payload.keys()), {"kind", "screenshot", "html", "meta", "accessibility_findings", "viewport"},
         )
         # The harness received the file content + the default viewport.
         self.assertEqual(len(harness.calls), 1)
@@ -241,7 +241,7 @@ class TestRenderMain(unittest.TestCase):
         self.assertTrue(payload.pop("ok"))
         self.assertEqual(payload["kind"], "reference")
         self.assertEqual(
-            set(payload.keys()), {"kind", "screenshot", "html", "meta", "viewport"},
+            set(payload.keys()), {"kind", "screenshot", "html", "meta", "accessibility_findings", "viewport"},
         )
         # The reference HTML carries node ids AND layout-derived styles.
         html = harness.calls[0]["html"]

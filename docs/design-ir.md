@@ -171,6 +171,16 @@ Notes on the example:
   reported by `unsupported_properties()`. `fills` is the canonical source and is
   fully modeled.
 
+## Accessibility diagnostics
+
+`core.accessibility.analyze_document()` produces a separate deterministic
+report rather than mixing usability findings into backend fidelity losses. It
+currently checks accessible names for interactive-looking nodes and WCAG AA
+text contrast when foreground and parent background colors are available.
+`pipeline.py generate` includes this report under `accessibility_report` in
+every backend manifest. Findings are node-level and do not block generation;
+the caller decides whether errors require remediation.
+
 ## Unsupported Figma properties
 
 `IRBuilder.unsupported_properties()` returns `{node_id: [property_key, …]}` for

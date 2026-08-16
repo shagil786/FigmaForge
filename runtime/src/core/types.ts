@@ -209,6 +209,13 @@ export interface RuntimeConfig {
   outputDir: string;
   approvedDirs: string[];        // Filesystem access whitelist
   requireApproval: boolean;
+  /** Resume an existing run only when explicitly requested by the CLI. */
+  resume?: boolean;
+  /** Optional artifact-retention limits; omitted means unlimited. */
+  maxArtifacts?: number;
+  maxArtifactBytes?: number;
+  /** Optional HTTP(S) endpoint for explicit remote artifact delivery. */
+  artifactUploadUrl?: string;
   retry: RetryPolicy;
   budgets: Budgets;
   similarityThreshold: number;
@@ -268,12 +275,28 @@ export const DEFAULT_CONFIG: Omit<RuntimeConfig, "runId" | "fileKey" | "outputDi
 export interface ModelProvider {
   readonly name: string;
   complete(prompt: string, options?: ModelOptions): Promise<ModelResult>;
+  stream?(prompt: string, options?: ModelOptions): AsyncIterable<ModelStreamChunk>;
 }
 
 export interface ModelOptions {
+  model?: string;
   maxTokens?: number;
   temperature?: number;
   timeout?: number;
+  signal?: AbortSignal;
+  tools?: ModelToolDefinition[];
+}
+
+export interface ModelToolDefinition {
+  name: string;
+  description?: string;
+  inputSchema: Record<string, unknown>;
+}
+
+export interface ModelToolCall {
+  id?: string;
+  name: string;
+  arguments: Record<string, unknown>;
 }
 
 export interface ModelResult {
@@ -281,6 +304,13 @@ export interface ModelResult {
   tokensUsed: number;
   model: string;
   latencyMs: number;
+  toolCalls?: ModelToolCall[];
+}
+
+export interface ModelStreamChunk {
+  text: string;
+  done?: boolean;
+  toolCalls?: ModelToolCall[];
 }
 
 /**

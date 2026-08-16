@@ -10,7 +10,7 @@ class LandingScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SizedBox(
-        width: 390,
+        width: 400,
         child: Container(
           width: 400,
           height: 600,

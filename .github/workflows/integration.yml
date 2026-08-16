@@ -1,0 +1,63 @@
+name: FigmaForge Integration
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: runtime/package-lock.json
+      - name: Install runtime dependencies
+        run: npm ci --prefix runtime
+      - name: Install Playwright and Chromium
+        run: python -m pip install playwright && python -m playwright install --with-deps chromium
+      - name: Run full runtime integration
+        run: npm run build && npm run test:integration
+        working-directory: runtime
+      - name: Run Vite and Chromium acceptance tier
+        run: >-
+          FIGMAFORGE_RUN_TOOLCHAIN_TESTS=1 python3 -m unittest
+          plugin.figmaforge.tests.test_bundler_buildability.TestWebBackendBuildability
+          plugin.figmaforge.tests.test_bundler_harness_smoke.TestBundlerHarnessRealToolchain
+
+  flutter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Docker-backed native acceptance
+        run: >-
+          python3 plugin/figmaforge/scripts/native_acceptance.py
+          --fixture plugin/figmaforge/fixtures/figma/layout_desktop.json
+          --flutter-docker-image ghcr.io/cirruslabs/flutter:stable
+
+  live-figma:
+    if: ${{ secrets.FIGMA_TOKEN != '' && secrets.FIGMAFORGE_LIVE_FILE_KEY != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install browser acceptance dependencies
+        run: python -m pip install playwright && python -m playwright install --with-deps chromium
+      - name: Run authenticated Figma acceptance
+        env:
+          FIGMAFORGE_LIVE_ACCEPTANCE: "1"
+          FIGMAFORGE_LIVE_FILE_KEY: ${{ secrets.FIGMAFORGE_LIVE_FILE_KEY }}
+          FIGMA_TOKEN: ${{ secrets.FIGMA_TOKEN }}
+        run: python3 -m unittest plugin.figmaforge.tests.test_live_figma_acceptance

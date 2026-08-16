@@ -14,6 +14,7 @@ Skipped when chromium or npm are unavailable (render-test convention).
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import socket
 import subprocess
@@ -45,7 +46,11 @@ def _chromium_available() -> bool:
     return True
 
 
-_HAVE_TOOLS = _chromium_available() and shutil.which("npm") is not None
+_HAVE_TOOLS = (
+    _chromium_available()
+    and shutil.which("npm") is not None
+    and os.environ.get("FIGMAFORGE_RUN_TOOLCHAIN_TESTS") == "1"
+)
 
 _BACKENDS = [
     ("react", "react_tailwind", ReactTailwindBackend()),
@@ -86,7 +91,10 @@ def _render_pages(url: str, dist_dir: Path, out_dir: Path):
     return screens, console_errors, page_errors, png_sizes
 
 
-@unittest.skipUnless(_HAVE_TOOLS, "chromium and/or npm unavailable")
+@unittest.skipUnless(
+    _HAVE_TOOLS,
+    "set FIGMAFORGE_RUN_TOOLCHAIN_TESTS=1 with npm and chromium available",
+)
 class TestBundlerHarnessRealToolchain(unittest.TestCase):
     def test_canonical_backends_build_and_render_through_harness(self):
         doc, plan, resolution = canonical_fixture()

@@ -29,6 +29,7 @@ Design points (from the Part 21 spec + Task 0 spike):
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import socket
@@ -330,21 +331,43 @@ def _npm_build(out_dir: Path) -> Any:
     failed install result so ``build()`` surfaces the real error.
     """
     out_dir = Path(out_dir)
+    install_timeout = float(os.environ.get("FIGMAFORGE_NPM_INSTALL_TIMEOUT", "60"))
+    build_timeout = float(os.environ.get("FIGMAFORGE_NPM_BUILD_TIMEOUT", "300"))
+    if install_timeout <= 0 or build_timeout <= 0:
+        raise BundleBuildError("npm timeouts must be positive")
+
     if not (out_dir / "node_modules").is_dir():
-        install = subprocess.run(
-            ["npm", "install", "--no-audit", "--no-fund"],
-            cwd=out_dir, capture_output=True, text=True, timeout=300,
-        )
+        install_args = [
+            "npm", "install", "--no-audit", "--no-fund",
+            "--fetch-retries=0", "--fetch-timeout=30000",
+        ]
+        if os.environ.get("FIGMAFORGE_NPM_OFFLINE") == "1":
+            install_args.append("--offline")
+        try:
+            install = subprocess.run(
+                install_args,
+                cwd=out_dir, capture_output=True, text=True, timeout=install_timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise BundleBuildError(
+                f"npm install timed out after {install_timeout:g}s; "
+                "check registry access or use FIGMAFORGE_NPM_OFFLINE=1"
+            ) from exc
         if install.returncode != 0:
             return install
-    subprocess.run(
-        ["npm", "approve-scripts", "esbuild"], cwd=out_dir,
-        capture_output=True, text=True, timeout=60,
-    )
-    return subprocess.run(
-        ["npm", "run", "build"], cwd=out_dir,
-        capture_output=True, text=True, timeout=300,
-    )
+    try:
+        subprocess.run(
+            ["npm", "approve-scripts", "esbuild"], cwd=out_dir,
+            capture_output=True, text=True, timeout=min(60.0, build_timeout),
+        )
+        return subprocess.run(
+            ["npm", "run", "build"], cwd=out_dir,
+            capture_output=True, text=True, timeout=build_timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise BundleBuildError(
+            f"npm run build timed out after {build_timeout:g}s"
+        ) from exc
 
 
 def build(out_dir: Path, builder: Optional[Builder] = None) -> None:

@@ -16,6 +16,7 @@ import contextlib
 import io
 import json
 import sys
+import socket
 import tempfile
 import unittest
 from pathlib import Path
@@ -26,6 +27,16 @@ if str(plugin_root) not in sys.path:
 
 from bundler_harness import BundleBuildError  # noqa: E402
 from scripts.pipeline import render_main  # noqa: E402
+
+
+def _local_http_available() -> bool:
+    """Whether this environment permits the ephemeral localhost server tests."""
+    try:
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", 0))
+        return True
+    except OSError:
+        return False
 
 
 class _FakeResult:
@@ -92,6 +103,7 @@ class _BundleTest(unittest.TestCase):
         return json.loads(out.strip().splitlines()[-1])
 
 
+@unittest.skipUnless(_local_http_available(), "localhost sockets unavailable")
 class TestBundleSuccess(_BundleTest):
     def test_success_emits_one_json_line(self):
         builder = FakeBuilder(_FakeResult(0))
@@ -137,6 +149,7 @@ class TestBundleSuccess(_BundleTest):
         self.assertEqual(builder.cwd, self.tmp / "out" / "bundle")
 
 
+@unittest.skipUnless(_local_http_available(), "localhost sockets unavailable")
 class TestBundleViewport(_BundleTest):
     def test_viewport_threads_to_screenshot(self):
         shot = FakeScreenshot()

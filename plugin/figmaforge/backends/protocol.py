@@ -339,6 +339,13 @@ class BackendAdapter(ABC):
                     node_id=node.id,
                     message=f"Absolute positioning not supported by {self.name}",
                 ))
+        if node.position and node.position.mode == "relative":
+            if caps.supports(Feature.RELATIVE_POSITIONING) == "unsupported":
+                losses.append(FidelityLoss(
+                    feature=Feature.RELATIVE_POSITIONING,
+                    node_id=node.id,
+                    message=f"Relative positioning not supported by {self.name}",
+                ))
 
         # Style checks
         if node.style:
@@ -395,6 +402,41 @@ class BackendAdapter(ABC):
                 node_id=node.id,
                 message=f"Component instances not supported by {self.name}",
             ))
+
+        # Responsive and interaction metadata must not disappear silently.
+        if node.responsive is not None and caps.supports(Feature.RESPONSIVE_CONSTRAINTS) == "unsupported":
+            losses.append(FidelityLoss(
+                feature=Feature.RESPONSIVE_CONSTRAINTS,
+                node_id=node.id,
+                message=f"Responsive constraints not supported by {self.name}",
+            ))
+        if node.prototype is not None:
+            if (node.prototype.links or node.prototype.url) and caps.supports(Feature.PROTOTYPE_LINKS) == "unsupported":
+                losses.append(FidelityLoss(
+                    feature=Feature.PROTOTYPE_LINKS,
+                    node_id=node.id,
+                    message=f"Prototype links not supported by {self.name}",
+                ))
+            if node.prototype.interactions and caps.supports(Feature.INTERACTIONS) == "unsupported":
+                losses.append(FidelityLoss(
+                    feature=Feature.INTERACTIONS,
+                    node_id=node.id,
+                    message=f"Interactions not supported by {self.name}",
+                ))
+
+        if node.style:
+            if node.style.borders and caps.supports(Feature.BORDERS) == "unsupported":
+                losses.append(FidelityLoss(
+                    feature=Feature.BORDERS,
+                    node_id=node.id,
+                    message=f"Borders not supported by {self.name}",
+                ))
+            if node.style.opacity < 1.0 and caps.supports(Feature.OPACITY) == "unsupported":
+                losses.append(FidelityLoss(
+                    feature=Feature.OPACITY,
+                    node_id=node.id,
+                    message=f"Opacity not supported by {self.name}",
+                ))
 
 
 # ---------------------------------------------------------------------------

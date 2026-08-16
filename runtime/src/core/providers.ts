@@ -7,12 +7,13 @@
 
 import type { ModelProvider, ModelOptions, ModelResult } from "./types.js";
 import { NullModelProvider } from "./types.js";
+import { JsonProtocolProvider } from "../adapters/provider_protocol.js";
 
 // ---------------------------------------------------------------------------
 // Provider factory
 // ---------------------------------------------------------------------------
 
-export type ProviderName = "null" | "anthropic" | "openai";
+export type ProviderName = "null" | "anthropic" | "openai" | "json_http";
 
 export interface ProviderConfig {
   name: ProviderName;
@@ -20,6 +21,7 @@ export interface ProviderConfig {
   defaultModel?: string;
   baseUrl?: string;         // Override API base URL
   defaultTimeout?: number;  // Default request timeout in ms
+  endpoint?: string;        // Required for json_http providers
 }
 
 /**
@@ -44,6 +46,17 @@ export function createProvider(config: ProviderConfig): ModelProvider {
         config.baseUrl ?? "https://api.openai.com",
         config.defaultTimeout ?? 30_000,
       );
+    case "json_http":
+      if (!config.endpoint) {
+        throw new Error("JSON HTTP provider requires an endpoint");
+      }
+      return new JsonProtocolProvider({
+        endpoint: config.endpoint,
+        name: "json-http",
+        apiKey: config.apiKey,
+        defaultModel: config.defaultModel,
+        defaultTimeout: config.defaultTimeout,
+      });
     default:
       throw new Error(`Unknown provider: ${config.name}`);
   }
@@ -189,15 +202,5 @@ export class OpenAIProvider implements ModelProvider {
     } finally {
       clearTimeout(timer);
     }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Model options extension (with model field)
-// ---------------------------------------------------------------------------
-
-declare module "./types.js" {
-  interface ModelOptions {
-    model?: string;
   }
 }

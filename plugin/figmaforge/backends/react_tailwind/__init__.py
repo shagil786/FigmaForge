@@ -104,6 +104,9 @@ _ORDER = [
     "flex", "gap", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
     "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight",
     "position",
+    # Repair-override surface (Part 22): the loop's category fallback can
+    # patch these, and react emits no layout class for them otherwise.
+    "background", "color", "fontSize",
 ]
 
 _WEIGHT_CLASSES = {
@@ -227,6 +230,20 @@ def _css_class(prop: str, value: str) -> Optional[str]:
         return _px_class(prefix, value)
     if prop == "position" and value == "relative":
         return "relative"
+    # Repair-override surface (Part 22, F2/F3): the pixel path always patches
+    # #rrggbb (patch_planner gates on it), so these arbitrary values are
+    # Tailwind-safe.  fontSize arrives as a number (px).
+    if prop == "background":
+        return f"bg-[{value}]"
+    if prop == "color":
+        return f"text-[{value}]"
+    if prop == "fontSize":
+        # The style layer serializes sizes as "32px" strings (Part 22, F5)
+        # — normalize so a raw number never double-appends the unit.
+        size = str(value)
+        if not size.endswith("px"):
+            size = f"{_fmt_num(value)}px"
+        return f"text-[{size}]"
     return None  # unmapped (e.g. absolute positioning) -> handled via markers
 
 
@@ -296,6 +313,7 @@ class ReactTailwindBackend(BackendAdapter):
             tsx_content = self._render_component(
                 root_vnode, screen, component_name, style_gen, ir_by_id,
                 assets=assets, instance_names=instance_names,
+                overrides=opts.get("styles_override"),
             )
             node_ids = [n.node_id for n in screen.walk() if n.node_id]
 
@@ -335,6 +353,7 @@ class ReactTailwindBackend(BackendAdapter):
         ir_by_id: Dict[str, IRNode],
         assets: Optional[Dict[str, Dict[str, Any]]] = None,
         instance_names: Optional[frozenset] = None,
+        overrides: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> str:
         lines = ["import React from 'react';", ""]
         lines.append(
@@ -344,6 +363,7 @@ class ReactTailwindBackend(BackendAdapter):
         lines.append("  return (")
         lines.append(self._render_node(
             root_vnode, screen, style_gen, ir_by_id, indent=3, assets=assets,
+            overrides=overrides,
         ))
         lines.append("  );")
         lines.append("}")
@@ -364,7 +384,7 @@ class ReactTailwindBackend(BackendAdapter):
             lines.append("  return (")
             lines.append(self._render_node(
                 ref_vnode, ref_plan, style_gen, ir_by_id, indent=3,
-                assets=assets, tag_override="div",
+                assets=assets, tag_override="div", overrides=overrides,
             ))
             lines.append("  );")
             lines.append("}")
@@ -382,10 +402,13 @@ class ReactTailwindBackend(BackendAdapter):
         indent: int,
         assets: Optional[Dict[str, Dict[str, Any]]] = None,
         tag_override: Optional[str] = None,
+        overrides: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> str:
         pad = "  " * indent
         ir = ir_by_id.get(vnode.node_id)
-        classes, markers = self._classes_for(vnode, plan_node, style_gen, ir, assets=assets)
+        classes, markers = self._classes_for(
+            vnode, plan_node, style_gen, ir, assets=assets, overrides=overrides,
+        )
         tag = tag_override if tag_override is not None else vnode.tag
         # A component reference at the call site is a self-closing tag with
         # identifying attrs only — the styling + subtree live in its fallback.
@@ -419,7 +442,7 @@ class ReactTailwindBackend(BackendAdapter):
                 children_html = "\n".join(
                     self._render_node(
                         child_vn, child_plan, style_gen, ir_by_id, indent + 1,
-                        assets=assets,
+                        assets=assets, overrides=overrides,
                     )
                     for child_vn, child_plan in zip(vnode.children, plan_node.children)
                 )
@@ -435,7 +458,7 @@ class ReactTailwindBackend(BackendAdapter):
             children_html = "\n".join(
                 self._render_node(
                     child_vn, child_plan, style_gen, ir_by_id, indent + 1,
-                    assets=assets,
+                    assets=assets, overrides=overrides,
                 )
                 for child_vn, child_plan in zip(vnode.children, plan_node.children)
             )
@@ -449,11 +472,20 @@ class ReactTailwindBackend(BackendAdapter):
         style_gen: CssStyleGenerator,
         ir: Optional[IRNode],
         assets: Optional[Dict[str, Dict[str, Any]]] = None,
+        overrides: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> Tuple[List[str], List[str]]:
         """Return (classes, fidelity markers) for one node."""
         classes: List[str] = []
         markers: List[str] = []
         style = style_gen.generate_style(plan_node)
+
+        # Repair override (Part 22, F2): the html_css ``styles_override``
+        # union — ``{node_id: {base, breakpoints}}`` applied ON TOP of the
+        # computed style so the existing class loops emit it.  Absent/empty
+        # override is a no-op (byte-identical output).
+        override = (overrides or {}).get(vnode.node_id) or {}
+        override_base = override.get("base") or {}
+        style.base.update(override_base)
 
         for prop in _ORDER:
             value = style.base.get(prop)
@@ -468,8 +500,21 @@ class ReactTailwindBackend(BackendAdapter):
             markers.append("fidelity: absolute_positioning approximated (in-flow)")
 
         if ir is not None:
-            self._ir_style_classes(ir, classes, markers, assets=assets)
-            self._ir_typography_classes(ir, classes)
+            # An override ``background`` REPLACES the IR fills entirely (F3)
+            # — the repair loop converges pixels, and html_css's override
+            # wins over a computed ``background: url(...)`` the same way.
+            # Image fills are covered too (``bg-[url(...)] bg-cover
+            # bg-center`` suppressed); shadows/blur/radius/borders/opacity
+            # still emit.
+            suppress_fills = "background" in override_base
+            self._ir_style_classes(
+                ir, classes, markers, assets=assets, suppress_fills=suppress_fills,
+            )
+            # A ``fontSize`` override replaces the IR typography size so the
+            # node carries exactly one ``text-[…px]`` class.
+            self._ir_typography_classes(
+                ir, classes, suppress_font_size="fontSize" in override_base,
+            )
 
         if plan_node.overflow is not None:
             if (plan_node.overflow.x == OVERFLOW_CLIP
@@ -479,10 +524,25 @@ class ReactTailwindBackend(BackendAdapter):
                     or plan_node.overflow.y == OVERFLOW_SCROLL):
                 classes.append("overflow-auto")
 
-        for bp in plan_node.breakpoints:
-            cls = _breakpoint_class(bp)
-            if cls is not None:
-                classes.append(cls)
+        # Breakpoint variants come from ONE source: the plan loop, or — when
+        # the repair override carries breakpoints (the serialized style layer,
+        # keys like "768px") — the override, which is authoritative (it
+        # already reflects any plan mutations) and must not double-emit.
+        override_bps = override.get("breakpoints") or {}
+        if override_bps:
+            for bp_width, props in override_bps.items():
+                width = str(bp_width)
+                if width.endswith("px"):
+                    width = width[:-2]
+                for prop, value in (props or {}).items():
+                    cls = _css_class(prop, value)
+                    if cls is not None:
+                        classes.append(f"max-[{width}px]:{cls}")
+        else:
+            for bp in plan_node.breakpoints:
+                cls = _breakpoint_class(bp)
+                if cls is not None:
+                    classes.append(cls)
 
         return classes, markers
 
@@ -492,39 +552,51 @@ class ReactTailwindBackend(BackendAdapter):
         classes: List[str],
         markers: List[str],
         assets: Optional[Dict[str, Dict[str, Any]]] = None,
+        suppress_fills: bool = False,
     ) -> None:
         """Solid/gradient/image fills, shadows, blur, borders, radius, opacity."""
         if ir.style is None:
             return
         style = ir.style
 
-        for fill in style.fills:
-            if not fill.visible or fill.kind == "none":
-                continue
-            if fill.kind == "solid" and fill.color is not None:
-                classes.append(f"bg-[{_hex6(fill.color)}]")
-                break
-            if fill.kind == "gradient":
-                stops = [st for st in fill.gradient_stops if st.color is not None]
-                if stops:
-                    classes.append("bg-gradient-to-b")
-                    classes.append(f"from-[{_hex6(stops[0].color)}]")
-                    classes.append(f"to-[{_hex6(stops[-1].color)}]")
+        # suppress_fills (Part 22): a repair ``background`` override replaces
+        # the IR fills (incl. image fills) — the loop converges pixels and
+        # the override wins, matching html_css.
+        if suppress_fills:
+            for fill in style.fills:
+                if not fill.visible or fill.kind == "none":
+                    continue
+                if fill.kind in ("solid", "gradient", "image"):
+                    markers.append(f"fidelity: fills_{fill.kind} approximated (overridden)")
                     break
-                markers.append("fidelity: fills_gradient approximated (omitted)")
+        else:
+            for fill in style.fills:
+                if not fill.visible or fill.kind == "none":
+                    continue
+                if fill.kind == "solid" and fill.color is not None:
+                    classes.append(f"bg-[{_hex6(fill.color)}]")
+                    break
+                if fill.kind == "gradient":
+                    stops = [st for st in fill.gradient_stops if st.color is not None]
+                    if stops:
+                        classes.append("bg-gradient-to-b")
+                        classes.append(f"from-[{_hex6(stops[0].color)}]")
+                        classes.append(f"to-[{_hex6(stops[-1].color)}]")
+                        break
+                    markers.append("fidelity: fills_gradient approximated (omitted)")
+                    break
+                if fill.kind == "image":
+                    asset = (assets or {}).get(ir.id)
+                    if asset and asset.get("path"):
+                        # Real background image (Figma's default cover/center fit).
+                        classes.append(f"bg-[url({asset['path']})]")
+                        classes.append("bg-cover")
+                        classes.append("bg-center")
+                    else:
+                        markers.append("fidelity: fills_image approximated (omitted)")
+                    break
+                markers.append(f"fidelity: fills_{fill.kind} approximated (omitted)")
                 break
-            if fill.kind == "image":
-                asset = (assets or {}).get(ir.id)
-                if asset and asset.get("path"):
-                    # Real background image (Figma's default cover/center fit).
-                    classes.append(f"bg-[url({asset['path']})]")
-                    classes.append("bg-cover")
-                    classes.append("bg-center")
-                else:
-                    markers.append("fidelity: fills_image approximated (omitted)")
-                break
-            markers.append(f"fidelity: fills_{fill.kind} approximated (omitted)")
-            break
 
         for shadow in style.shadows:
             if shadow.visible and shadow.color is not None:
@@ -561,11 +633,16 @@ class ReactTailwindBackend(BackendAdapter):
         if ir.opacity < 1.0:
             classes.append(f"opacity-[{_fmt_num(ir.opacity)}]")
 
-    def _ir_typography_classes(self, ir: IRNode, classes: List[str]) -> None:
+    def _ir_typography_classes(
+        self,
+        ir: IRNode,
+        classes: List[str],
+        suppress_font_size: bool = False,
+    ) -> None:
         if ir.typography is None:
             return
         t = ir.typography
-        if t.font_size is not None:
+        if t.font_size is not None and not suppress_font_size:
             classes.append(f"text-[{_fmt_num(t.font_size)}px]")
         if t.font_weight is not None:
             weight = int(round(float(t.font_weight)))

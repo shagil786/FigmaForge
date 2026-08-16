@@ -25,6 +25,7 @@ if str(plugin_root) not in sys.path:
 
 from core.pixel_diff import (
     attribute_regions,
+    build_heatmap,
     compare_images,
     compare_png_files,
     detect_regions,
@@ -56,6 +57,18 @@ class TestCompareImages(unittest.TestCase):
         self.assertEqual(stats.similarity, 1.0)
         self.assertEqual(stats.mae, {"r": 0.0, "g": 0.0, "b": 0.0})
         self.assertEqual(sum(mask), 0)
+
+    def test_heatmap_is_deterministic_and_marks_diff_pixels(self):
+        a = _solid(4, 4, (255, 255, 255))
+        b = _solid(4, 4, (255, 255, 255), rect=(1, 1, 2, 2, (255, 0, 0)))
+        _, mask = compare_images(a, b)
+
+        first = build_heatmap(a, mask)
+        second = build_heatmap(a, mask)
+
+        self.assertEqual(encode_png(first), encode_png(second))
+        self.assertEqual(first.channels, 4)
+        self.assertEqual(tuple(first.pixels[(1 * 4 + 1) * 4:(1 * 4 + 2) * 4]), (255, 32, 32, 220))
 
     def test_sub_threshold_jitter_ignored(self):
         a = _solid(4, 4, (100, 100, 100))
@@ -136,6 +149,14 @@ class TestComparePngFiles(unittest.TestCase):
         result = compare_png_files(a, b)
         self.assertFalse(result["ok"])
         self.assertIn("size mismatch", result["error"])
+
+    def test_resize_option_compares_different_dimensions(self):
+        a = self._write("a.png", _solid(4, 4, (10, 20, 30)))
+        b = self._write("b.png", _solid(8, 8, (10, 20, 30)))
+        result = compare_png_files(a, b, resize=True)
+        self.assertTrue(result["ok"])
+        self.assertEqual((result["width"], result["height"]), (4, 4))
+        self.assertEqual(result["similarity"], 1.0)
 
     def test_corrupt_file_is_clean_error(self):
         a = self._write("a.png", _solid(4, 4, (0, 0, 0)))
@@ -253,6 +274,17 @@ class TestCli(unittest.TestCase):
         self.assertEqual(payload["identical"], True)
         self.assertEqual(payload["similarity"], 1.0)
         self.assertEqual(payload["totalPixels"], 16)
+
+    def test_cli_writes_heatmap_when_requested(self):
+        a = self._write("a.png", _solid(4, 4, (255, 255, 255)))
+        b = self._write("b.png", _solid(4, 4, (255, 255, 255), rect=(0, 0, 2, 2, (255, 0, 0))))
+        heatmap = self.dir / "heatmap.png"
+        code, out = self._run_main([
+            "--a", str(a), "--b", str(b), "--heatmap-out", str(heatmap),
+        ])
+        self.assertEqual(code, 0)
+        self.assertTrue(heatmap.is_file())
+        self.assertEqual(json.loads(out)["heatmap_path"], str(heatmap))
 
     def test_cli_error_exits_one_with_sentinel(self):
         a = self._write("a.png", _solid(4, 4, (0, 0, 0)))

@@ -12,9 +12,11 @@ in these unit tests).
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 plugin_root = Path(__file__).resolve().parent.parent
@@ -26,6 +28,7 @@ from bundler_harness import (  # noqa: E402
     BundleScaffoldError,
     build,
     scaffold,
+    _npm_build,
 )
 
 
@@ -260,6 +263,13 @@ class TestBuild(unittest.TestCase):
                 build(tmp, builder=fake)
             self.assertIn("boom: bad class", str(ctx.exception))
             self.assertIn("building...", str(ctx.exception))
+
+    def test_npm_timeout_becomes_bounded_bundle_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            timeout = subprocess.TimeoutExpired(["npm", "install"], 60)
+            with patch("bundler_harness.subprocess.run", side_effect=timeout):
+                with self.assertRaisesRegex(BundleBuildError, "npm install timed out"):
+                    build(Path(tmp), builder=_npm_build)
 
 
 if __name__ == "__main__":

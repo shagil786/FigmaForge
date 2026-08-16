@@ -28,8 +28,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -53,9 +55,11 @@ from backends.web_common import (  # noqa: E402
     styles_to_dict,
 )
 from core.asset_collector import AssetRef, collect_asset_refs  # noqa: E402
+from core.accessibility import analyze_document  # noqa: E402
 from core.asset_manager import AssetManager  # noqa: E402
 from core.figma_assets import (  # noqa: E402
     DEFAULT_MAX_RETRIES,
+    DEFAULT_MAX_DURATION_SECONDS,
     DEFAULT_TIMEOUT_SECONDS,
     default_transport,
     download_baselines,
@@ -86,6 +90,7 @@ DEFAULT_REPAIR_HEIGHT = 900
 _DEFAULT_REPAIR_THRESHOLD = 0.95
 _DEFAULT_REPAIR_ITERATIONS = 10
 _TOKEN_ENV = "FIGMA_TOKEN"
+_ASSET_STAGE_TIMEOUT_ENV = "FIGMAFORGE_ASSET_STAGE_TIMEOUT_SECONDS"
 
 
 class _CliError(Exception):
@@ -409,6 +414,7 @@ def _cmd_render(
         "screenshot": str(result.screenshot_path),
         "html": str(html_path),
         "meta": result.layout_metadata,
+        "accessibility_findings": result.accessibility_findings,
         "viewport": viewport,
     })
     return 0
@@ -592,6 +598,13 @@ def _cmd_assets(args: argparse.Namespace) -> int:
 
     storage_dir = Path(args.assets_dir).resolve()
     manager = AssetManager(storage_dir)
+    try:
+        max_duration = float(
+            os.environ.get(_ASSET_STAGE_TIMEOUT_ENV, DEFAULT_MAX_DURATION_SECONDS)
+        )
+    except (TypeError, ValueError):
+        max_duration = DEFAULT_MAX_DURATION_SECONDS
+    deadline = time.monotonic() + max(max_duration, 0.0)
     entries: List[Dict[str, Any]] = []
     downloaded = 0
     unresolved_count = 0
@@ -607,7 +620,8 @@ def _cmd_assets(args: argparse.Namespace) -> int:
             })
             continue
         raw = fetch_with_retry(
-            default_transport, ref.url, DEFAULT_TIMEOUT_SECONDS, DEFAULT_MAX_RETRIES
+            default_transport, ref.url, DEFAULT_TIMEOUT_SECONDS, DEFAULT_MAX_RETRIES,
+            deadline=deadline,
         )
         extension = "svg" if ref.kind == "svg" else "png"
         try:
@@ -788,6 +802,7 @@ def _cmd_generate(args: argparse.Namespace) -> int:
         "backend": backend.name,
         "files": [f.to_dict() for f in sorted(output.files, key=lambda f: f.path)],
         "fidelity_losses": [loss.to_dict() for loss in output.fidelity_losses],
+        "accessibility_report": analyze_document(doc).to_dict(),
         "metadata": dict(output.metadata),
     }
     _emit(manifest)
@@ -846,13 +861,22 @@ def _last_categories(result: Any) -> Dict[str, Any]:
 
 
 def _run_repair(args: argparse.Namespace, harness_cls: Any) -> int:
-    """The repair flow: RepairLoop against the baseline, then regenerate
-    html_css with the repaired styles (one atomic unit)."""
-    if args.backend != "html_css":
+    """The repair flow: RepairLoop against the baseline, then regenerate the
+    browser-renderable backend with the repaired styles (one atomic unit).
+
+    ``--backend`` selects the regenerated backend: html_css (default) or one
+    of the bundler-backed web backends (react_tailwind / vue / svelte, Part
+    22).  ``--resolution`` keeps component/instance/token resolution in the
+    regenerated web output (F1), and ``--assets`` threads the run's resolved
+    image fills so regeneration doesn't drop them (Part 18 contract).
+    """
+    allowed = {"html_css", "react_tailwind", "vue", "svelte"}
+    if args.backend not in allowed:
         raise _CliError(
             2,
-            f"repair regeneration supports 'html_css' only (the browser-\n"
-            f"renderable standalone output), got {args.backend!r}",
+            f"repair regeneration supports the browser-renderable backends only "
+            f"({', '.join(sorted(allowed))}), got {args.backend!r} — native "
+            f"targets have no browser harness",
         )
     if not 0.0 <= args.threshold <= 1.0:
         raise _CliError(
@@ -867,14 +891,29 @@ def _run_repair(args: argparse.Namespace, harness_cls: Any) -> int:
         plan = LayoutPlan.from_dict(_load_file_payload(args.layout))
     except Exception as exc:  # noqa: BLE001 — CLI boundary
         raise _CliError(4, f"cannot load layout plan {args.layout!r}: {exc}")
+    try:
+        resolution = _load_resolution(args.resolution) if getattr(args, "resolution", None) else None
+    except _CliError as exc:
+        raise _CliError(4, f"--resolution: {exc.message}")
+    try:
+        assets_map = _load_asset_manifest(args.assets) if getattr(args, "assets", None) else None
+    except _CliError as exc:
+        raise _CliError(4, f"--assets: {exc.message}")
+    backend = get_registry().get(args.backend)
+    if backend is None:
+        raise _CliError(2, f"unknown backend {args.backend!r}")
     viewport = _parse_viewport(args.viewport)
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
     # The shared style layer the loop repairs (same lowering the html_css
-    # backend uses) + the project library for token patches.
-    styles = reference_styles_from_plan(doc, plan)
+    # backend uses) + the project library for token patches.  ``assets`` is
+    # threaded so image nodes lower to their real ``backgroundImage`` — the
+    # repaired-styles override then serializes idempotently for them (Part
+    # 22; without it the unresolved-fill fallback color would override the
+    # resolved image in regenerated code).
+    styles = reference_styles_from_plan(doc, plan, assets=assets_map)
     library = LibraryLoader().load()
     harness = harness_cls(out / "renders")
     default_height = viewport[1] if viewport else DEFAULT_REPAIR_HEIGHT
@@ -885,6 +924,8 @@ def _run_repair(args: argparse.Namespace, harness_cls: Any) -> int:
         max_iterations=args.max_iterations,
         baseline_png=args.baseline,
         ssim_enabled=not args.no_ssim,
+        refresh_baseline=args.refresh_baseline,
+        max_baseline_refreshes_per_run=args.max_baseline_refreshes,
         require_approval=args.require_approval,
     )
     loop = RepairLoop(
@@ -927,22 +968,27 @@ def _run_repair(args: argparse.Namespace, harness_cls: Any) -> int:
         "generated": None,
     }
 
-    # Regenerate html_css from the (mutated) plan + repaired styles so the
-    # fixes reach the generated code.  Skipped only when nothing ran.
+    # Regenerate the selected backend from the (mutated) plan + repaired
+    # styles so the fixes reach the generated code.  Skipped only when
+    # nothing ran.
     if result.iterations_run > 0:
-        generated = HtmlCssBackend().generate(
+        options: Dict[str, Any] = {"styles_override": repaired_styles}
+        if assets_map:
+            options["assets"] = assets_map
+        generated = backend.generate(
             document=doc,
             layout_plan=plan,
+            resolution=resolution,
             viewport=float(viewport[0]) if viewport else DEFAULT_VIEWPORT,
-            options={"styles_override": repaired_styles},
+            options=options,
         )
-        gen_dir = out / "generated" / "html_css"
+        gen_dir = out / "generated" / backend.name
         gen_dir.mkdir(parents=True, exist_ok=True)
         files = []
         for file_out in sorted(generated.files, key=lambda f: f.path):
             (gen_dir / file_out.path).write_text(file_out.content, encoding="utf-8")
             files.append({"path": file_out.path, "language": file_out.language})
-        payload["generated"] = {"backend": "html_css", "files": files}
+        payload["generated"] = {"backend": backend.name, "files": files}
 
     _emit(payload)
     return 0
@@ -957,10 +1003,23 @@ def _build_repair_parser() -> argparse.ArgumentParser:
     parser.add_argument("--baseline", required=True, help="baseline PNG the loop converges toward")
     parser.add_argument("--viewport", help="viewport WxH (default from the layout plan)")
     parser.add_argument("--out", default="repair", help="output directory (default repair)")
-    parser.add_argument("--backend", default="html_css", help="backend to regenerate (only html_css)")
+    parser.add_argument(
+        "--backend", default="html_css",
+        help="backend to regenerate (html_css | react_tailwind | vue | svelte)",
+    )
+    parser.add_argument("--resolution", help="resolution report JSON")
+    parser.add_argument("--assets", help="assets stage manifest JSON")
     parser.add_argument("--max-iterations", type=int, default=_DEFAULT_REPAIR_ITERATIONS)
     parser.add_argument("--threshold", type=float, default=_DEFAULT_REPAIR_THRESHOLD)
     parser.add_argument("--no-ssim", action="store_true", help="disable SSIM gating")
+    parser.add_argument(
+        "--refresh-baseline", action="store_true",
+        help="adopt clean renders as versioned baselines (never overwrites the original)",
+    )
+    parser.add_argument(
+        "--max-baseline-refreshes", type=int, default=3,
+        help="maximum versioned baseline adoptions per run (default: 3)",
+    )
     parser.add_argument("--require-approval", action="store_true", help="deny non-interactively")
     return parser
 
@@ -1127,13 +1186,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     rep = sub.add_parser(
-        "repair", help="run the visual repair loop against a baseline and regenerate html_css")
+        "repair", help="run the visual repair loop against a baseline and regenerate the backend")
     rep.add_argument("--ir", required=True, help="design IR JSON (normalize output)")
     rep.add_argument("--layout", required=True, help="layout plan JSON (layout output)")
     rep.add_argument("--baseline", required=True, help="baseline PNG the loop converges toward")
     rep.add_argument("--viewport", help="viewport WxH (default from the layout plan)")
     rep.add_argument("--out", default="repair", help="output directory (default repair)")
-    rep.add_argument("--backend", default="html_css", help="backend to regenerate (only html_css)")
+    rep.add_argument(
+        "--backend", default="html_css",
+        help="backend to regenerate (html_css | react_tailwind | vue | svelte)",
+    )
+    rep.add_argument("--resolution", help="resolution report JSON (keeps component/token resolution in regenerated web output)")
+    rep.add_argument("--assets", help="assets stage manifest JSON (keeps resolved image fills in regenerated output)")
     rep.add_argument(
         "--max-iterations", type=int, default=_DEFAULT_REPAIR_ITERATIONS,
         help="max repair iterations (default %d)" % _DEFAULT_REPAIR_ITERATIONS,

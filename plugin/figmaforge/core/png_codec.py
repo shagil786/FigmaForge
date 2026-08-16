@@ -1,8 +1,9 @@
 """
 PNG codec (Part 12).
 
-Pure-stdlib PNG decode/encode for 8-bit, non-interlaced RGB/RGBA images
-(color types 2 and 6). All five scanline filters (none/sub/up/average/paeth)
+Pure-stdlib PNG decode/encode for 8-bit, non-interlaced RGB/RGBA images and
+grayscale images (color types 0, 2, 4, and 6). All five scanline filters
+(none/sub/up/average/paeth)
 are supported on decode; encode writes deterministic filter-0 data.
 
 Unsupported input raises :class:`PngError` — wrong pixels are never
@@ -82,11 +83,10 @@ def encode_png(image: PngImage) -> bytes:
 
 
 def decode_png(data: bytes) -> PngImage:
-    """Decode an 8-bit non-interlaced RGB/RGBA PNG to raw pixels.
+    """Decode an 8-bit non-interlaced PNG to RGB/RGBA raw pixels.
 
     Raises :class:`PngError` for: bad signature, corrupt/truncated chunks,
-    bad CRC, interlacing, bit depths other than 8, and color types other
-    than 2 (RGB) and 6 (RGBA).
+    bad CRC, interlacing, bit depths other than 8, and unsupported color types.
     """
     if not data.startswith(PNG_SIGNATURE):
         raise PngError("not a PNG: bad signature")
@@ -123,9 +123,9 @@ def decode_png(data: bytes) -> PngImage:
                 raise PngError("unsupported compression/filter method")
             if bit_depth != 8:
                 raise PngError(f"unsupported bit depth {bit_depth} (only 8)")
-            if color_type not in (2, 6):
+            if color_type not in (0, 2, 4, 6):
                 raise PngError(
-                    f"unsupported color type {color_type} (only 2/6)"
+                    f"unsupported color type {color_type} (only 0/2/4/6)"
                 )
             if interlace != 0:
                 raise PngError("interlaced PNGs are not supported")
@@ -146,8 +146,8 @@ def decode_png(data: bytes) -> PngImage:
     if not idat_parts or not saw_iend:
         raise PngError("missing IDAT/IEND chunks")
 
-    channels = 3 if color_type == 2 else 4
-    stride = width * channels
+    source_channels = {0: 1, 2: 3, 4: 2, 6: 4}[color_type]
+    stride = width * source_channels
     expected = height * (stride + 1)
     raw = _decompress_limited(b"".join(idat_parts), expected)
     if len(raw) != expected:
@@ -155,7 +155,20 @@ def decode_png(data: bytes) -> PngImage:
             f"decompressed size {len(raw)} != expected {expected}"
         )
 
-    pixels = _unfilter(raw, width, height, channels)
+    source_pixels = _unfilter(raw, width, height, source_channels)
+    if color_type == 0:
+        pixels = bytes(channel for value in source_pixels for channel in (value, value, value))
+        channels = 3
+    elif color_type == 4:
+        expanded = bytearray()
+        for index in range(0, len(source_pixels), 2):
+            gray, alpha = source_pixels[index:index + 2]
+            expanded.extend((gray, gray, gray, alpha))
+        pixels = bytes(expanded)
+        channels = 4
+    else:
+        channels = source_channels
+        pixels = source_pixels
     return PngImage(width=width, height=height, channels=channels, pixels=pixels)
 
 

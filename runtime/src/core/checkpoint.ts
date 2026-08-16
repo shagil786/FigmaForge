@@ -50,6 +50,38 @@ export const EMPTY_METRICS: CheckpointMetrics = {
   similarityScore: 0,
 };
 
+const SENSITIVE_KEY = /(token|secret|password|authorization|api[_-]?key|client[_-]?secret|refresh[_-]?token)/i;
+const PATH_KEY = /(path|file|dir|directory|screenshot|artifact|output)/i;
+
+function isWithin(root: string, candidate: string): boolean {
+  const resolvedRoot = path.resolve(root);
+  const resolvedCandidate = path.resolve(candidate);
+  return resolvedCandidate === resolvedRoot
+    || resolvedCandidate.startsWith(`${resolvedRoot}${path.sep}`);
+}
+
+/** Keep checkpoint JSON resumable without persisting secrets or foreign paths. */
+function sanitizeCheckpointValue(value: unknown, key: string, runDir: string): unknown {
+  if (SENSITIVE_KEY.test(key)) return undefined;
+  if (typeof value === "string" && PATH_KEY.test(key) && path.isAbsolute(value)) {
+    return isWithin(runDir, value) ? value : undefined;
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => sanitizeCheckpointValue(item, key, runDir))
+      .filter((item) => item !== undefined);
+  }
+  if (value && typeof value === "object") {
+    const safe: Record<string, unknown> = {};
+    for (const [childKey, childValue] of Object.entries(value)) {
+      const sanitized = sanitizeCheckpointValue(childValue, childKey, runDir);
+      if (sanitized !== undefined) safe[childKey] = sanitized;
+    }
+    return safe;
+  }
+  return value;
+}
+
 // ---------------------------------------------------------------------------
 // Checkpoint manager
 // ---------------------------------------------------------------------------
@@ -87,13 +119,14 @@ export class CheckpointManager {
       stage,
       status,
       timestamp: new Date().toISOString(),
-      outputs,
+      outputs: sanitizeCheckpointValue(outputs, "outputs", path.dirname(this.dir)) as Record<string, unknown>,
       metrics: { ...metrics },
       nextStage,
     };
 
     const filePath = this.checkpointPath(stage);
     fs.writeFileSync(filePath, JSON.stringify(checkpoint, null, 2), "utf-8");
+    fs.chmodSync(filePath, 0o600);
     return checkpoint;
   }
 
