@@ -12,11 +12,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 import tempfile
+import time
 import unittest
 import urllib.error
 from pathlib import Path
+from unittest import mock
 from unittest import mock
 
 plugin_root = Path(__file__).resolve().parent.parent
@@ -35,7 +38,8 @@ from core.figma_assets import (
     download_baselines,
 )
 from core.figma_client import FigmaClient, _Response
-from core.figma_errors import FigmaError, FigmaServerError
+from core.figma_errors import FigmaAuthError, FigmaError, FigmaServerError
+from core.figma_oauth import save_credentials
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\nfake-baseline-bytes"
 URL_A = "https://figma-s3.example/baseline-a.png"
@@ -63,6 +67,37 @@ class TestDownloadBaselines(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.manager = AssetManager(Path(self._tmp.name) / "assets")
+
+    def test_expired_oauth_credentials_fail_with_actionable_error(self):
+        credentials = Path(self._tmp.name) / "credentials.json"
+        save_credentials(credentials, {
+            "access_token": "expired-token",
+            "token_type": "bearer",
+            "expires_at": int(time.time()) - 1,
+        })
+        with mock.patch.dict(
+            os.environ,
+            {"FIGMAFORGE_CREDENTIALS_PATH": str(credentials)},
+            clear=True,
+        ):
+            client = FigmaClient(rate_limit_delay=0.0)
+            with self.assertRaisesRegex(FigmaAuthError, "expired.*figmaforge auth login"):
+                client.require_token()
+
+    def test_bearer_token_can_be_selected_explicitly_from_environment(self):
+        with mock.patch.dict(os.environ, {
+            "FIGMA_TOKEN": "oauth-from-environment",
+            "FIGMA_TOKEN_SCHEME": "bearer",
+        }, clear=True):
+            client = FigmaClient(rate_limit_delay=0.0)
+            request = client._request_json
+            with mock.patch.object(client, "_open", return_value=_Response(
+                200, [("Content-Type", "application/json")], b"{}"
+            )) as opened:
+                request("GET", "/me")
+            request = opened.call_args.args[0]
+            self.assertEqual(request.get_header("Authorization"), "Bearer oauth-from-environment")
+            self.assertIsNone(request.get_header("X-Figma-Token"))
 
     def test_success_ingests_and_records(self):
         client = _make_client({"1:2": URL_A})
@@ -111,6 +146,29 @@ class TestDownloadBaselines(unittest.TestCase):
         )
         self.assertEqual(calls["n"], 2)
         self.assertIn("1:2", result)
+
+    def test_retry_after_is_capped(self):
+        response = _Response(429, [("Retry-After", "86400")], b"")
+        self.assertEqual(FigmaClient._retry_after_delay(response), 10.0)
+
+    def test_download_budget_limits_request_timeout_and_raises(self):
+        client = _make_client({"1:2": URL_A})
+        timeouts = []
+
+        def transport(url, timeout):
+            timeouts.append(timeout)
+            raise OSError("connection stalled")
+
+        with self.assertRaises(BaselineDownloadError) as ctx:
+            download_baselines(
+                client, "filekey", ["1:2"], self.manager,
+                transport=transport,
+                timeout_seconds=30.0,
+                max_retries=2,
+                max_duration_seconds=0.0,
+            )
+        self.assertIn("time budget", str(ctx.exception))
+        self.assertEqual(timeouts, [])
 
     def test_presigned_expiry_raises_typed_error_after_retry(self):
         client = _make_client({"1:2": URL_A})

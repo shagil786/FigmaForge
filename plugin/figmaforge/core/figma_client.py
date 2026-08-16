@@ -35,12 +35,15 @@ from .figma_errors import (
     FigmaValidationError,
 )
 from .figma_types import FigmaFile, FigmaNodeResponse, ImageSet
+from .figma_oauth import load_access_token, load_credentials
 
 DEFAULT_BASE_URL = "https://api.figma.com/v1"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 DEFAULT_MAX_RETRIES = 3
 DEFAULT_RATE_LIMIT_DELAY_SECONDS = 0.2
+MAX_RETRY_AFTER_SECONDS = 10.0
 TOKEN_ENV = "FIGMA_TOKEN"
+TOKEN_SCHEME_ENV = "FIGMA_TOKEN_SCHEME"
 _RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
 
 logger = logging.getLogger("figmaforge.figma_client")
@@ -80,7 +83,24 @@ class FigmaClient:
         rate_limit_delay: float = DEFAULT_RATE_LIMIT_DELAY_SECONDS,
         transport: Optional[Callable[[Any, float], _Response]] = None,
     ):
-        self._token = (token or os.environ.get(TOKEN_ENV, "") or "").strip()
+        stored = load_credentials() if token is None and not os.environ.get(TOKEN_ENV) else {}
+        self._token = (
+            token
+            or os.environ.get(TOKEN_ENV, "")
+            or str(stored.get("access_token", ""))
+            or ""
+        ).strip()
+        expires_at = stored.get("expires_at")
+        try:
+            self._oauth_expires_at = float(expires_at) if expires_at is not None else None
+        except (TypeError, ValueError):
+            self._oauth_expires_at = None
+        configured_scheme = os.environ.get(TOKEN_SCHEME_ENV, "").strip().lower()
+        stored_scheme = str(stored.get("token_type", "")).lower()
+        self._auth_scheme = (
+            "bearer" if configured_scheme == "bearer" or (not os.environ.get(TOKEN_ENV) and stored_scheme == "bearer")
+            else "x-figma-token"
+        )
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
         self.max_retries = max(max_retries, 0)
@@ -97,14 +117,24 @@ class FigmaClient:
     def token_source(self) -> str:
         """Describe where the token came from without revealing it."""
         if self._token:
-            return "environment (FIGMA_TOKEN)" if os.environ.get(TOKEN_ENV) else "constructor argument"
+            if os.environ.get(TOKEN_ENV):
+                return "environment (FIGMA_TOKEN)"
+            if load_access_token():
+                return "local OAuth credentials"
+            return "constructor argument"
         return "NOT CONFIGURED"
 
     def require_token(self) -> None:
         if not self._token:
             raise FigmaAuthError(
                 "Figma API token is not configured. Set the FIGMA_TOKEN "
-                "environment variable before running ingestion against the live API."
+                "environment variable or run `figmaforge auth login` before "
+                "running ingestion against the live API."
+            )
+        if self._auth_scheme == "bearer" and self._oauth_expires_at is not None \
+                and self._oauth_expires_at <= time.time():
+            raise FigmaAuthError(
+                "Figma OAuth token expired; run `figmaforge auth login` again"
             )
 
     # ------------------------------------------------------------------ API
@@ -174,8 +204,13 @@ class FigmaClient:
         if params:
             url += "?" + urllib.parse.urlencode(params)
 
+        auth_header = (
+            {"Authorization": f"Bearer {self._token}"}
+            if self._auth_scheme == "bearer"
+            else {"X-Figma-Token": self._token}
+        )
         request = urllib.request.Request(url, method=method, headers={
-            "X-Figma-Token": self._token,
+            **auth_header,
             "Accept": "application/json",
         })
 
@@ -243,7 +278,10 @@ class FigmaClient:
         if not value:
             return None
         try:
-            return max(float(value), 0.1)
+            # Figma can return a very large Retry-After during account-level
+            # throttling. Never let a server hint turn one pipeline run into
+            # an unbounded wait; retries remain bounded by max_retries.
+            return min(max(float(value), 0.1), MAX_RETRY_AFTER_SECONDS)
         except (TypeError, ValueError):
             return None
 
