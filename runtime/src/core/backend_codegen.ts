@@ -291,7 +291,7 @@ export async function invokeIngest(
  */
 async function invokeJsonStage(
   cfg: { pythonBin: string; pluginDir: string },
-  subcommand: "normalize" | "resolve" | "layout",
+  subcommand: "audit" | "normalize" | "resolve" | "layout",
   inputJson: unknown,
   extraArgs: string[] = [],
 ): Promise<Record<string, unknown>> {
@@ -501,12 +501,23 @@ export function createNormalizeStageHandler(): StageHandler {
     if (!fileJson) {
       throw new Error("normalize stage requires ingest output (no fileJson available)");
     }
+    const sourceAudit = await invokeJsonStage(
+      { pythonBin: ctx.toolCtx.pythonBin, pluginDir: ctx.config.pluginDir },
+      "audit",
+      fileJson,
+    );
+    ctx.shared.set("sourceAudit", sourceAudit);
+    if (sourceAudit.ready_for_generation !== true) {
+      throw new Error(
+        `Figma source is incomplete; generation stopped: ${JSON.stringify(sourceAudit)}`,
+      );
+    }
     const irJson = await invokeNormalize(
       { pythonBin: ctx.toolCtx.pythonBin, pluginDir: ctx.config.pluginDir },
       fileJson,
     );
     ctx.shared.set("irJson", irJson);
-    return { irJson };
+    return { irJson, sourceAudit };
   };
 }
 
