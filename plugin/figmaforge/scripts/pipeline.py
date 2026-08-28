@@ -778,7 +778,13 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     if file_mode:
         raw = _load_file_payload(args.file)
         file_key = raw.get("file_key") or Path(args.file).stem
-        doc = IRBuilder(images=raw.get("assets") or {}).build(FigmaFile.from_dict(file_key, raw))
+        # Detect IRDocument format (from image analyzer) vs Figma file format
+        if "schema_version" in raw and "root" in raw:
+            # Already an IRDocument — use directly
+            doc = IRDocument.from_dict(raw)
+        else:
+            # Figma file format — build IR via IRBuilder
+            doc = IRBuilder(images=raw.get("assets") or {}).build(FigmaFile.from_dict(file_key, raw))
         plan = LayoutAnalyzer().analyze(
             doc, library=LibraryLoader().load(), viewport=args.viewport,
         )
@@ -1092,18 +1098,20 @@ def _cmd_image_ingest(args: argparse.Namespace) -> int:
     if not Path(image_path).is_file():
         raise _CliError(4, f"image file not found: {image_path!r}")
 
+    # Set API key BEFORE creating the analyzer (env vars must be set first)
+    import os
+    if args.api_key:
+        if args.api_provider == "nvidia":
+            os.environ["NVIDIA_API_KEY"] = args.api_key
+        elif args.api_provider == "anthropic":
+            os.environ["ANTHROPIC_API_KEY"] = args.api_key
+        elif args.api_provider == "openai":
+            os.environ["OPENAI_API_KEY"] = args.api_key
+
     # Configure the analyzer
     config = ImageAnalyzerConfig(
         source_file_key=args.file_key or Path(image_path).stem,
     )
-
-    # Set API key if provided
-    if args.api_key:
-        import os
-        if args.api_provider == "anthropic":
-            os.environ["ANTHROPIC_API_KEY"] = args.api_key
-        elif args.api_provider == "openai":
-            os.environ["OPENAI_API_KEY"] = args.api_key
 
     try:
         analyzer = ImageAnalyzer(config)
@@ -1302,12 +1310,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     img.add_argument(
         "--api-key",
-        help="API key for the vision model (or set via ANTHROPIC_API_KEY / OPENAI_API_KEY)",
+        help="API key for the vision model (or set via NVIDIA_API_KEY / ANTHROPIC_API_KEY / OPENAI_API_KEY)",
     )
-    img.add_argument(
-        "--api-provider", default="anthropic",
-        choices=["anthropic", "openai"],
-        help="vision model provider (default: anthropic)",
+    img.add_argument("--api-provider", default="nvidia",
+        choices=["nvidia", "anthropic", "openai"],
+        help="vision model provider (default: nvidia)",
     )
     img.add_argument("--out", help="optional path to also write the IR JSON")
 
