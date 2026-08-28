@@ -12,7 +12,7 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
-from plugin.figmaforge.scripts import native_acceptance
+from scripts import native_acceptance
 
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent

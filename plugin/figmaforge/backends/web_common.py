@@ -23,6 +23,7 @@ html_css originals.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -449,7 +450,15 @@ def extend_ir_style(
                     for st in fill.gradient_stops
                     if st.color is not None
                 )
-                style.base["background"] = f"linear-gradient(to bottom, {stops})"
+                direction = "to bottom"
+                if len(fill.gradient_handles) >= 2:
+                    start, end = fill.gradient_handles[0], fill.gradient_handles[1]
+                    dx = end["x"] - start["x"]
+                    dy = end["y"] - start["y"]
+                    if abs(dx) + abs(dy) > 1e-6:
+                        angle = (math.degrees(math.atan2(dx, -dy)) + 360.0) % 360.0
+                        direction = f"{_fmt_num(angle)}deg"
+                style.base["background"] = f"linear-gradient({direction}, {stops})"
                 break
             if fill.kind == "image":
                 asset = (assets or {}).get(ir.id) if ir is not None else None
@@ -457,6 +466,11 @@ def extend_ir_style(
                     style.base["backgroundImage"] = f"url({asset['path']})"
                     style.base["backgroundSize"] = "cover"
                     style.base["backgroundPosition"] = "center"
+                    transform = fill.image_transform or {}
+                    if transform.get("cssBackgroundSize"):
+                        style.base["backgroundSize"] = str(transform["cssBackgroundSize"])
+                    if transform.get("cssBackgroundPosition"):
+                        style.base["backgroundPosition"] = str(transform["cssBackgroundPosition"])
                 else:
                     # unresolved image fill -> named fallback, never silent
                     style.base["background"] = "#f0f0f0"

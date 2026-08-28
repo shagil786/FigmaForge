@@ -378,7 +378,7 @@ _REACT_TW_SIGNALS: Dict[str, Tuple[str, ...]] = {
     Feature.JUSTIFY: ("justify-center",),
     Feature.ALIGN_ITEMS: ("items-end",),
     Feature.FILLS_SOLID: ("bg-[#3366cc]",),
-    Feature.FILLS_GRADIENT: ("bg-gradient-to-b from-[#ff0000] to-[#0000ff]",),
+    Feature.FILLS_GRADIENT: ("bg-[linear-gradient",),
     Feature.FILLS_IMAGE: ("bg-[url(assets/photo.png)]",),
     Feature.BORDERS: ("border-[2px]",),
     Feature.SHADOWS: ("shadow-[0px_4px_8px_rgba(0,0,0,0.25)]",),

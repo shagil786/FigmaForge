@@ -110,7 +110,9 @@ Commands:
 Options:
   --file-key=<key>         Figma file key (live ingest; requires FIGMA_TOKEN)
   --file=<path>            Local Figma file JSON (offline ingest)
-                           Exactly one of --file-key / --file is required for 'run'
+  --image=<path>           Any image file (screenshot, mockup, wireframe)
+                           Vision model extracts layout → same pipeline as Figma
+                           Exactly one of --file-key / --file / --image is required for 'run'
   --out=<dir>              Demo output directory (default: ./demo-out)
   --render                 Best-effort render of the html_css output (Playwright)
   --output-dir=<path>      Output directory (default: ./figmaforge-output)
@@ -319,9 +321,10 @@ body { width: ${viewport.width}px; min-height: ${viewport.height}px; font-family
 async function cmdRun(args: CliArgs): Promise<void> {
   const config = buildConfig(args);
   const localFile = args.flags["file"];
+  const imagePath = args.flags["image"];
 
-  if (!config.fileKey && !localFile) {
-    console.error("Error: --file-key or --file is required for 'run' command");
+  if (!config.fileKey && !localFile && !imagePath) {
+    console.error("Error: --file-key, --file, or --image is required for 'run' command");
     process.exit(1);
   }
 
@@ -333,6 +336,7 @@ async function cmdRun(args: CliArgs): Promise<void> {
   console.log(`Starting pipeline run ${config.runId}`);
   console.log(`  File key: ${config.fileKey || "(local file)"}`);
   if (localFile) console.log(`  Local file: ${path.resolve(localFile)}`);
+  if (imagePath) console.log(`  Image:     ${path.resolve(imagePath)}`);
   console.log(`  Output:   ${config.outputDir}`);
   console.log(`  Threshold: ${config.similarityThreshold}`);
   console.log(`  Viewport:  ${config.viewport.width}x${config.viewport.height}`);
@@ -378,6 +382,15 @@ async function cmdRun(args: CliArgs): Promise<void> {
     // auto-repair toward an external baseline and measure the final gate.
     if (localFile) {
       pipeline.setShared("filePath", path.resolve(localFile));
+    }
+    if (imagePath) {
+      pipeline.setShared("imagePath", path.resolve(imagePath));
+      if (args.flags["image-provider"] || args.flags["image-provider"] === undefined) {
+        pipeline.setShared("imageProvider", args.flags["image-provider"] ?? "anthropic");
+      }
+      if (args.flags["image-api-key"]) {
+        pipeline.setShared("imageApiKey", args.flags["image-api-key"]);
+      }
     }
     if (args.flags["baseline"]) {
       pipeline.setShared("baselinePath", path.resolve(args.flags["baseline"]));

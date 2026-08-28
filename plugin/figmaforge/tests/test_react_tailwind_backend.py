@@ -382,9 +382,8 @@ class TestReactTailwindBackend(unittest.TestCase):
         self.assertIn("absolute", tsx.content)
         self.assertNotIn("absolute_positioning approximated", tsx.content)
         # Gradient fills are genuinely representable via arbitrary classes.
-        self.assertIn("bg-gradient-to-b", tsx.content)
-        self.assertIn("from-[#ff0000]", tsx.content)
-        self.assertIn("to-[#0000ff]", tsx.content)
+        self.assertIn("bg-[linear-gradient(to_bottom,_#ff0000_0%_#0000ff_100%)]", tsx.content)
+        self.assertNotIn("bg-gradient-to-b", tsx.content)
         # Image fills (declared partial) degrade with a marker, never silently.
         self.assertIn("fidelity: fills_image", tsx.content)
 

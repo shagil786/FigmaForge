@@ -59,12 +59,34 @@ def make_render_callable(
         iteration: int,
     ) -> Tuple[Dict[str, Any], str]:
         width = int(plan.viewport) if plan.viewport and plan.viewport > 0 else DEFAULT_VIEWPORT_WIDTH
-        viewport = {"width": width, "height": int(default_height)}
-        content_html = generate_render_html(document, styles, viewport)
-        result = harness.render(
-            content_html, viewport, build_id=f"repair-iter-{iteration}",
-            full_page=False,
+        # Keep Chromium's interactive viewport bounded.  For a full-page
+        # Figma baseline, ask Playwright for a full-document screenshot
+        # instead of creating a 4600px-tall browser viewport, which can hang
+        # or exhaust the renderer on macOS.  Short viewport comparisons retain
+        # the fixed-viewport behavior used by the existing tests.
+        full_page = int(default_height) > DEFAULT_VIEWPORT_HEIGHT
+        browser_height = (
+            DEFAULT_VIEWPORT_HEIGHT if full_page else int(default_height)
         )
+        viewport = {"width": width, "height": browser_height}
+        content_html = generate_render_html(document, styles, viewport)
+        try:
+            result = harness.render(
+                content_html, viewport, build_id=f"repair-iter-{iteration}",
+                full_page=full_page,
+                tiled=full_page,
+            )
+        except TypeError as exc:
+            # Keep injected/third-party harnesses from older FigmaForge
+            # versions usable.  ``tiled`` is an optional capability; only
+            # retry when the harness explicitly rejects that keyword, and
+            # preserve every other TypeError as a real render failure.
+            if "tiled" not in str(exc):
+                raise
+            result = harness.render(
+                content_html, viewport, build_id=f"repair-iter-{iteration}",
+                full_page=full_page,
+            )
         return result.layout_metadata, str(result.screenshot_path)
 
     return render_fn

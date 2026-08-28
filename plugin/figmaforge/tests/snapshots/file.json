@@ -197,6 +197,7 @@
                       "g": 0.4,
                       "r": 0.9
                     },
+                    "gradient_handles": [],
                     "gradient_stops": [],
                     "kind": "solid",
                     "opacity": 1.0,
@@ -301,6 +302,7 @@
                           "g": 1.0,
                           "r": 1.0
                         },
+                        "gradient_handles": [],
                         "gradient_stops": [],
                         "kind": "solid",
                         "opacity": 1.0,
@@ -615,6 +617,7 @@
                   "g": 0.12,
                   "r": 0.08
                 },
+                "gradient_handles": [],
                 "gradient_stops": [],
                 "kind": "solid",
                 "opacity": 1.0,
@@ -1669,6 +1672,7 @@
                         "g": 0.4,
                         "r": 0.9
                       },
+                      "gradient_handles": [],
                       "gradient_stops": [],
                       "kind": "solid",
                       "opacity": 1.0,
@@ -1773,6 +1777,7 @@
                             "g": 1.0,
                             "r": 1.0
                           },
+                          "gradient_handles": [],
                           "gradient_stops": [],
                           "kind": "solid",
                           "opacity": 1.0,
@@ -2087,6 +2092,7 @@
                     "g": 0.12,
                     "r": 0.08
                   },
+                  "gradient_handles": [],
                   "gradient_stops": [],
                   "kind": "solid",
                   "opacity": 1.0,

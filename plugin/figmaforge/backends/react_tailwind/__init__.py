@@ -20,6 +20,7 @@ arbitrary pixel offsets; unsupported features remain explicitly marked.
 
 from __future__ import annotations
 
+import math
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..protocol import (
@@ -119,6 +120,18 @@ _WEIGHT_CLASSES = {
     900: "font-black",
 }
 
+# Figma files often reference licensed display/body families that are not
+# shipped with the generated bundle.  Keep the source family in the IR for
+# auditability, but use a deterministic browser fallback in emitted CSS until
+# the asset/font stage supplies the real font files.  Without this mapping a
+# missing display family silently falls back to the browser's default serif
+# and a missing body family can become serif as well.
+_WEB_FONT_FALLBACKS = {
+    "Gilroy": "Arial",
+    "Chronicle Display": "Georgia",
+    "Chronicle_Display": "Georgia",
+}
+
 _ALIGN_CLASSES = {
     "LEFT": "text-left",
     "CENTER": "text-center",
@@ -154,6 +167,26 @@ def _hex_from_rgba(value: Dict[str, Any]) -> str:
         _byte(value.get("r")), _byte(value.get("g")),
         _byte(value.get("b")), _byte(alpha),
     )
+
+
+def _gradient_arbitrary_class(fill: Any) -> Optional[str]:
+    """Lower a Figma gradient to one exact Tailwind arbitrary-value class."""
+    stops = [stop for stop in fill.gradient_stops if stop.color is not None]
+    if not stops:
+        return None
+    direction = "to_bottom"
+    if len(fill.gradient_handles) >= 2:
+        start, end = fill.gradient_handles[0], fill.gradient_handles[1]
+        dx = end["x"] - start["x"]
+        dy = end["y"] - start["y"]
+        if abs(dx) + abs(dy) > 1e-6:
+            angle = (math.degrees(math.atan2(dx, -dy)) + 360.0) % 360.0
+            direction = f"{_fmt_num(angle)}deg"
+    rendered_stops = "_".join(
+        f"{_hex_from_rgba(stop.color.to_dict())}_{_fmt_num(stop.position * 100)}%"
+        for stop in stops
+    )
+    return f"bg-[linear-gradient({direction},_{rendered_stops})]"
 
 
 def _px_class(prefix: str, value: str) -> Optional[str]:
@@ -576,21 +609,29 @@ class ReactTailwindBackend(BackendAdapter):
                     classes.append(f"text-[{_hex6(fill.color)}]" if ir.kind == "text" else f"bg-[{_hex6(fill.color)}]")
                     break
                 if fill.kind == "gradient":
-                    stops = [st for st in fill.gradient_stops if st.color is not None]
-                    if stops:
-                        classes.append("bg-gradient-to-b")
-                        classes.append(f"from-[{_hex6(stops[0].color)}]")
-                        classes.append(f"to-[{_hex6(stops[-1].color)}]")
+                    gradient_class = _gradient_arbitrary_class(fill)
+                    if gradient_class:
+                        classes.append(gradient_class)
                         break
                     markers.append("fidelity: fills_gradient approximated (omitted)")
                     break
                 if fill.kind == "image":
                     asset = (assets or {}).get(ir.id)
                     if asset and asset.get("path"):
-                        # Real background image (Figma's default cover/center fit).
+                        # Real background image. Preserve per-fill Figma crop
+                        # transforms when the source provides them.
                         classes.append(f"bg-[url({asset['path']})]")
-                        classes.append("bg-cover")
-                        classes.append("bg-center")
+                        transform = fill.image_transform or {}
+                        if transform.get("cssBackgroundSize"):
+                            size = str(transform["cssBackgroundSize"]).replace(" ", "_")
+                            classes.append(f"bg-[length:{size}]")
+                        else:
+                            classes.append("bg-cover")
+                        if transform.get("cssBackgroundPosition"):
+                            position = str(transform["cssBackgroundPosition"]).replace(" ", "_")
+                            classes.append(f"bg-[position:{position}]")
+                        else:
+                            classes.append("bg-center")
                     else:
                         markers.append("fidelity: fills_image approximated (omitted)")
                     break
@@ -645,9 +686,16 @@ class ReactTailwindBackend(BackendAdapter):
             classes.append(f"text-[{_fmt_num(t.font_size)}px]")
         if t.font_weight is not None:
             weight = int(round(float(t.font_weight)))
-            classes.append(_WEIGHT_CLASSES.get(weight, f"font-[{_fmt_num(t.font_weight)}]"))
+            fallback_family = _WEB_FONT_FALLBACKS.get(t.font_family or "")
+            # Georgia has no true semibold face; normal is visually closer to
+            # Chronicle Display than the browser's bold synthesis.
+            if fallback_family == "Georgia" and weight == 600:
+                classes.append("font-normal")
+            else:
+                classes.append(_WEIGHT_CLASSES.get(weight, f"font-[{_fmt_num(t.font_weight)}]"))
         if t.font_family:
-            classes.append(f"font-['{t.font_family.replace(' ', '_')}']")
+            family = _WEB_FONT_FALLBACKS.get(t.font_family, t.font_family.replace(" ", "_"))
+            classes.append(f"font-['{family}']")
         if t.line_height is not None:
             classes.append(f"leading-[{_fmt_num(t.line_height)}px]")
         if t.letter_spacing is not None:

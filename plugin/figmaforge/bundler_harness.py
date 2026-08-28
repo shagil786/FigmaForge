@@ -225,7 +225,13 @@ def scaffold(
     _write("package.json", json.dumps(pkg, indent=2) + "\n")
 
     # --- vite.config.ts (multi-page build) -----------------------------
-    inputs = ", ".join(f"      {name}: '{name}.html'" for name in names)
+    # Keep a conventional root entry in addition to the per-screen entries.
+    # Without it, Vite's dev server and the static preview both return 404 at
+    # `/`, even though `/ScreenName.html` works.
+    inputs = ", ".join(
+        ["      index: 'index.html'"]
+        + [f"      {name}: '{name}.html'" for name in names]
+    )
     vite_config = (
         f"{spec.vite_plugin}\n"
         "export default defineConfig({\n"
@@ -256,7 +262,7 @@ def scaffold(
                "@tailwind base;\n@tailwind components;\n@tailwind utilities;\n")
 
     # --- copy generated files + rewrite assets -------------------------
-    asset_map: Dict[str, Path] = {}
+    asset_map: Dict[str, Tuple[Path, str]] = {}
     for node_id, info in (assets or {}).items():
         path = (info or {}).get("path")
         if not path:
@@ -268,21 +274,44 @@ def scaffold(
             )
         basename = src.name
         if basename not in asset_map:
-            asset_map[basename] = src
+            # Asset storage is content-addressed and intentionally has no
+            # extension.  Vite treats extensionless SVG/PNG/JPEG imports as
+            # JavaScript during dev, so restore a safe media extension in the
+            # generated project.  Prefer the original suffix; otherwise use
+            # the file signature because manifests may point at hash-only
+            # files in a temporary asset store.
+            suffix = src.suffix.lower()
+            destination_name = basename
+            if not suffix:
+                header = src.read_bytes()[:16]
+                if header.startswith(b"<svg") or b"<svg" in header:
+                    suffix = ".svg"
+                elif header.startswith(b"\x89PNG"):
+                    suffix = ".png"
+                elif header.startswith(b"\xff\xd8\xff"):
+                    suffix = ".jpg"
+                elif header.startswith((b"GIF87a", b"GIF89a")):
+                    suffix = ".gif"
+                elif header.startswith(b"RIFF") and b"WEBP" in header[8:16]:
+                    suffix = ".webp"
+                else:
+                    suffix = ".bin"
+                destination_name = f"{basename}{suffix}"
+            asset_map[basename] = (src, destination_name)
 
     for comp in components:
         src = generated_dir / comp
         rel = f"src/generated/{comp}"
         content = src.read_text(encoding="utf-8")
-        for basename, asset_path in asset_map.items():
-            content = content.replace(str(asset_path), f"./assets/{basename}")
+        for basename, (asset_path, destination_name) in asset_map.items():
+            content = content.replace(str(asset_path), f"./assets/{destination_name}")
         _write(rel, content)
 
-    for basename, asset_path in asset_map.items():
-        dst = out_dir / "src" / "assets" / basename
+    for basename, (asset_path, destination_name) in asset_map.items():
+        dst = out_dir / "src" / "assets" / destination_name
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(asset_path, dst)
-        written.append(f"src/assets/{basename}")
+        written.append(f"src/assets/{destination_name}")
 
     # also copy any sidecar config (e.g. the tailwind token extension)
     for extra in sorted(generated_dir.iterdir()):
@@ -295,6 +324,12 @@ def scaffold(
     # --- one index.html + entry per component --------------------------
     for comp, name in zip(components, names):
         entry_imports = spec.entry_header.format(name=name)
+        if spec.tailwind:
+            # The generated Tailwind stylesheet is part of the scaffold, but
+            # Vite only emits it when the browser entry imports it.  Without
+            # this import the bundle can build successfully while Playwright
+            # captures an unstyled page.
+            entry_imports += "import '../index.css';\n"
         entry = entry_imports + "\n" + spec.entry_mount.format(name=name)
         _write(f"src/main/{name}.{spec.entry_extension}", entry)
         script_src = f"/src/main/{name}.{spec.entry_extension}"
@@ -314,6 +349,27 @@ def scaffold(
                "  <div id=\"app\"></div>\n"
                f"  <script type=\"module\" src=\"{script_src}\"></script>\n"
                "</body>\n</html>\n")
+
+    # Make `/` open the first generated screen.  Keep the screen-specific
+    # pages above for multi-screen screenshot jobs.
+    first_name = names[0]
+    first_spec = SPECS[backend]
+    first_imports = first_spec.entry_header.format(name=first_name)
+    if first_spec.tailwind:
+        first_imports += "import '../index.css';\n"
+    first_entry = first_imports + "\n" + first_spec.entry_mount.format(name=first_name)
+    _write(f"src/main/index.{first_spec.entry_extension}", first_entry)
+    _write("index.html",
+           "<!doctype html>\n<html lang=\"en\">\n<head>\n"
+           "  <meta charset=\"UTF-8\" />\n"
+           "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n"
+           f"  <title>{first_name}</title>\n"
+           "  <style>* { margin: 0; padding: 0; box-sizing: border-box; }</style>\n"
+           "</head>\n<body>\n"
+           "  <div id=\"root\"></div>\n"
+           "  <div id=\"app\"></div>\n"
+           f"  <script type=\"module\" src=\"/src/main/index.{first_spec.entry_extension}\"></script>\n"
+           "</body>\n</html>\n")
 
     return sorted(written)
 

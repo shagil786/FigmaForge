@@ -49,3 +49,18 @@ FigmaForge.backups/
 # Editors / IDEs
 .idea/
 *.iml
+.codex/
+
+# Pipeline output (large, regenerated)
+figmaforge-output/
+runtime/figmaforge-output/
+
+# node_modules
+node_modules/
+
+# TypeScript build output
+runtime/dist/
+
+# Temporary files
+/tmp/
+*.tmp
