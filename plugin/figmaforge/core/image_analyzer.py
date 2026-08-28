@@ -614,7 +614,12 @@ class ImageAnalyzer:
             visible=True,
             opacity=1.0,
             dimensions=IRDimensions(width=width, height=height),
+            position=IRPosition(mode="absolute", x=0, y=0, left=0, top=0),
             layout=IRLayout(mode="auto", direction="column"),
+            responsive=IResponsive(
+                constraints_horizontal="MIN",
+                constraints_vertical="MIN",
+            ),
         )
 
     def _build_ir_nodes(
@@ -703,7 +708,8 @@ class ImageAnalyzer:
                 if child_node:
                     children.append(child_node)
 
-        # Build the node
+        # Build the node with Figma-compatible constraints
+        # MIN constraints mean the element is anchored to top-left (default for absolute positioning)
         node = IRNode(
             id=eid,
             name=elem.get("name", eid),
@@ -724,6 +730,10 @@ class ImageAnalyzer:
             typography=typography,
             text=text_content,
             children=children,
+            responsive=IResponsive(
+                constraints_horizontal="MIN",
+                constraints_vertical="MIN",
+            ),
         )
 
         return node
