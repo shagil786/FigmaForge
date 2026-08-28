@@ -292,6 +292,7 @@ class _NvidiaVisionModel:
 
     MODELS = [
         "moonshotai/kimi-k3",
+        "minimaxai/minimax-m3",
         "meta/llama-3.2-11b-vision-instruct",
         "google/gemma-3-27b-it",
     ]
