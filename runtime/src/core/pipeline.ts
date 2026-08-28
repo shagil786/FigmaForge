@@ -319,6 +319,22 @@ export class PipelineCoordinator {
       // Complete the stage
       this.sm.completeStage(stage, result.value);
 
+      // Verification is a hard convergence gate.  A completed verify stage
+      // with `passed: false`/`null` means the pipeline did its checks, not
+      // that the design matched.  Never report such a run as completed: the
+      // caller must see a failed run and the verification artifact contains
+      // the exact score/categories needed for the next attempt.
+      if (stage === "verify" && Object.prototype.hasOwnProperty.call(result.value, "passed")) {
+        const passed = result.value["passed"];
+        if (passed !== true) {
+          const reason = passed === false
+            ? `visual verification failed (score=${String(result.value["similarity_score"] ?? "unknown")}, threshold=${String(result.value["threshold"] ?? "unknown")})`
+            : "visual verification could not be completed";
+          this.sm.fail(reason);
+          this.errors.push(`verify: ${reason}`);
+        }
+      }
+
       this.events.emit("stage_completed", `Stage ${stage} completed`, {
         stage,
         taskId,

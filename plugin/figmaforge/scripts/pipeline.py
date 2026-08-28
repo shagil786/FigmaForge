@@ -80,6 +80,8 @@ from core.render_harness import RenderHarness, RenderHarnessError  # noqa: E402
 from core.render_html import generate_render_html  # noqa: E402
 from core.repair_loop import RepairConfig, RepairLoop  # noqa: E402
 from core.resolver import ResolutionReport, Resolver  # noqa: E402
+from core.image_analyzer import ImageAnalyzer, ImageAnalyzerConfig  # noqa: E402
+from core.source_audit import audit_source  # noqa: E402
 from core.token_resolver import SemanticToken, TokenResolution  # noqa: E402
 
 DEFAULT_VIEWPORT = 1440.0
@@ -210,7 +212,10 @@ def _cmd_normalize(args: argparse.Namespace) -> int:
     """Build + schema-validate the design IR from a Figma file JSON."""
     raw = _load_file_payload(args.file)
     file_key = raw.get("file_key") or Path(args.file).stem
-    doc = IRBuilder().build(FigmaFile.from_dict(file_key, raw))
+    # A local MCP fallback fixture may carry a document-level ``assets`` map
+    # containing the temporary MCP asset URLs.  REST payloads normally get
+    # this map from the images endpoint, so preserve the same contract here.
+    doc = IRBuilder(images=raw.get("assets") or {}).build(FigmaFile.from_dict(file_key, raw))
     payload = doc.to_dict()
     try:
         ensure_valid(payload)
@@ -461,7 +466,12 @@ def _cmd_render_bundle(
     assets: Dict[str, Any] = {}
     if getattr(args, "assets", None):
         try:
-            assets = _load_file_payload(args.assets)
+            # Bundle scaffolding consumes a node_id -> {path, kind} map, not
+            # the serialized assets-stage wrapper.  Passing the wrapper
+            # through leaves absolute /private/tmp paths in generated CSS,
+            # which Vite refuses to serve and makes the page appear without
+            # images.
+            assets = _load_asset_manifest(args.assets)
         except Exception:  # noqa: BLE001 — CLI boundary
             raise _CliError(
                 4, f"render --bundle: unreadable asset manifest: {args.assets}",
@@ -768,7 +778,7 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     if file_mode:
         raw = _load_file_payload(args.file)
         file_key = raw.get("file_key") or Path(args.file).stem
-        doc = IRBuilder().build(FigmaFile.from_dict(file_key, raw))
+        doc = IRBuilder(images=raw.get("assets") or {}).build(FigmaFile.from_dict(file_key, raw))
         plan = LayoutAnalyzer().analyze(
             doc, library=LibraryLoader().load(), viewport=args.viewport,
         )
@@ -903,6 +913,12 @@ def _run_repair(args: argparse.Namespace, harness_cls: Any) -> int:
     if backend is None:
         raise _CliError(2, f"unknown backend {args.backend!r}")
     viewport = _parse_viewport(args.viewport)
+    # The layout artifact may have been produced at the default 1440px
+    # width. Repair's explicit viewport is authoritative; otherwise the
+    # renderer silently keeps the stale plan width and reports a false
+    # root-frame mismatch.
+    if viewport:
+        plan.viewport = float(viewport[0])
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -922,6 +938,11 @@ def _run_repair(args: argparse.Namespace, harness_cls: Any) -> int:
     config = RepairConfig(
         similarity_threshold=args.threshold,
         max_iterations=args.max_iterations,
+        # A production FigmaForge run must not stop merely because the
+        # planner cannot currently express a fix or because one iteration
+        # made little progress.  It must either converge or exhaust its hard
+        # budget and report the unresolved categories.
+        strict_convergence=not getattr(args, "allow_early_stop", False),
         baseline_png=args.baseline,
         ssim_enabled=not args.no_ssim,
         refresh_baseline=args.refresh_baseline,
@@ -955,13 +976,18 @@ def _run_repair(args: argparse.Namespace, harness_cls: Any) -> int:
             encoding="utf-8",
         )
 
+    # ``ok`` is the completion signal consumed by agent callers.  A repair
+    # stage can execute and write artifacts without converging; that must not
+    # be reported as success or the agent may stop after a partial fix.
     payload: Dict[str, Any] = {
-        "ok": True,
+        "ok": result.success,
+        "stage_ok": True,
         "success": result.success,
         "final_score": round(result.final_score, 6),
         "iterations_run": result.iterations_run,
         "stop_reason": result.stop_reason,
         "unresolved_differences": result.unresolved_differences,
+        "completion_gate": result.completion_gate,
         "repairs": _repair_summaries(result),
         "categories": _last_categories(result),
         "repaired_styles": "styles.repaired.json",
@@ -1011,6 +1037,10 @@ def _build_repair_parser() -> argparse.ArgumentParser:
     parser.add_argument("--assets", help="assets stage manifest JSON")
     parser.add_argument("--max-iterations", type=int, default=_DEFAULT_REPAIR_ITERATIONS)
     parser.add_argument("--threshold", type=float, default=_DEFAULT_REPAIR_THRESHOLD)
+    parser.add_argument(
+        "--allow-early-stop", action="store_true",
+        help="allow no-repair/low-progress stops (diagnostic compatibility mode)",
+    )
     parser.add_argument("--no-ssim", action="store_true", help="disable SSIM gating")
     parser.add_argument(
         "--refresh-baseline", action="store_true",
@@ -1045,6 +1075,52 @@ def repair_main(
 
 
 # ---------------------------------------------------------------------------
+# image_ingest — analyze any image and produce a design IR (Part 23)
+# ---------------------------------------------------------------------------
+
+
+def _cmd_image_ingest(args: argparse.Namespace) -> int:
+    """Analyze an image (screenshot, mockup, wireframe) and produce a design IR.
+
+    Uses a vision model to extract layout structure, colors, typography,
+    spacing, and component relationships from the image.  The resulting
+    IRDocument feeds the same layout → code pipeline as Figma JSON input.
+
+    Requires ANTHROPIC_API_KEY or OPENAI_API_KEY env var.
+    """
+    image_path = args.image
+    if not Path(image_path).is_file():
+        raise _CliError(4, f"image file not found: {image_path!r}")
+
+    # Configure the analyzer
+    config = ImageAnalyzerConfig(
+        source_file_key=args.file_key or Path(image_path).stem,
+    )
+
+    # Set API key if provided
+    if args.api_key:
+        import os
+        if args.api_provider == "anthropic":
+            os.environ["ANTHROPIC_API_KEY"] = args.api_key
+        elif args.api_provider == "openai":
+            os.environ["OPENAI_API_KEY"] = args.api_key
+
+    try:
+        analyzer = ImageAnalyzer(config)
+    except ValueError as exc:
+        raise _CliError(3, str(exc))
+
+    try:
+        doc = analyzer.analyze(image_path)
+    except Exception as exc:
+        raise _CliError(1, f"image analysis failed: {exc}")
+
+    payload = doc.to_dict()
+    _emit_with_out(payload, args.out)
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # entry point
 # ---------------------------------------------------------------------------
 
@@ -1072,6 +1148,11 @@ def build_parser() -> argparse.ArgumentParser:
         "normalize", help="build + validate the design IR from a Figma file JSON")
     normalize.add_argument("--file", required=True, help="Figma file JSON (ingest output or raw)")
     normalize.add_argument("--out", help="optional path to also write the IR JSON")
+
+    audit = sub.add_parser(
+        "audit", help="audit raw Figma source completeness before generation")
+    audit.add_argument("--file", required=True, help="Figma file JSON (ingest output or raw)")
+    audit.add_argument("--out", help="optional path to also write the audit report")
 
     resolve = sub.add_parser(
         "resolve", help="resolve a design IR against the project library")
@@ -1208,6 +1289,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     rep.add_argument("--no-ssim", action="store_true", help="disable SSIM gating")
     rep.add_argument("--require-approval", action="store_true", help="deny non-interactively")
+
+    # image_ingest — analyze any image and produce a design IR
+    img = sub.add_parser(
+        "image_ingest",
+        help="analyze an image (screenshot/mockup/wireframe) and produce a design IR",
+    )
+    img.add_argument("--image", required=True, help="path to the image file (PNG, JPG, etc.)")
+    img.add_argument(
+        "--file-key",
+        help="source identifier for the IR (default: image filename stem)",
+    )
+    img.add_argument(
+        "--api-key",
+        help="API key for the vision model (or set via ANTHROPIC_API_KEY / OPENAI_API_KEY)",
+    )
+    img.add_argument(
+        "--api-provider", default="anthropic",
+        choices=["anthropic", "openai"],
+        help="vision model provider (default: anthropic)",
+    )
+    img.add_argument("--out", help="optional path to also write the IR JSON")
+
     return parser
 
 
@@ -1217,6 +1320,10 @@ def _execute(args: argparse.Namespace) -> int:
         return _cmd_ingest(args)
     if args.command == "normalize":
         return _cmd_normalize(args)
+    if args.command == "audit":
+        raw = _load_file_payload(args.file)
+        _emit_with_out(audit_source(raw), args.out)
+        return 0
     if args.command == "resolve":
         return _cmd_resolve(args)
     if args.command == "layout":
@@ -1229,6 +1336,8 @@ def _execute(args: argparse.Namespace) -> int:
         return _cmd_generate(args)
     if args.command == "repair":
         return repair_main(_repair_argv_from_args(args))
+    if args.command == "image_ingest":
+        return _cmd_image_ingest(args)
     raise _CliError(2, f"unknown command {args.command!r}")
 
 

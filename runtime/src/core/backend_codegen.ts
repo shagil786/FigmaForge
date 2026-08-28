@@ -240,6 +240,12 @@ export interface IngestSource {
   file?: string;
   /** Live Figma file key (requires FIGMA_TOKEN). */
   fileKey?: string;
+  /** Any image file path (screenshot, mockup, wireframe). */
+  image?: string;
+  /** Vision model provider (anthropic | openai). */
+  imageProvider?: string;
+  /** Vision model API key (or set via env var). */
+  imageApiKey?: string;
 }
 
 /**
@@ -281,6 +287,67 @@ export async function invokeIngest(
   };
 }
 
+/**
+ * Analyze an image (screenshot, mockup, wireframe) via vision model and
+ * return the resulting design IR via ``scripts/pipeline.py image_ingest``.
+ *
+ * The image is passed directly to the CLI — no staging needed since it's
+ * a real file, not JSON.  The vision model extracts layout, colors,
+ * typography, spacing, and component relationships into a design IR that
+ * feeds the same layout → code pipeline as Figma JSON input.
+ */
+export async function invokeImageIngest(
+  cfg: { pythonBin: string; pluginDir: string },
+  source: {
+    image: string;
+    fileKey?: string;
+    provider?: string;
+    apiKey?: string;
+  },
+): Promise<{ fileKey: string; fileJson: Record<string, unknown> }> {
+  const args = [
+    "image_ingest",
+    "--image", source.image,
+  ];
+  if (source.fileKey) {
+    args.push("--file-key", source.fileKey);
+  }
+  if (source.provider) {
+    args.push("--api-provider", source.provider);
+  }
+  if (source.apiKey) {
+    args.push("--api-key", source.apiKey);
+  }
+
+  const result = await spawnPython(
+    cfg.pythonBin,
+    path.join(cfg.pluginDir, "scripts", "pipeline.py"),
+    args,
+    cfg.pluginDir,
+    {
+      timeoutMs: (() => {
+        // Vision API calls can be slow for large images
+        const configured = Number(
+          process.env.FIGMAFORGE_IMAGE_STAGE_TIMEOUT_SECONDS ?? 120,
+        );
+        return (Number.isFinite(configured) && configured > 0
+          ? configured : 120) * 1000;
+      })(),
+    },
+  );
+  if (result.exitCode !== 0) {
+    const detail = result.stderr.trim() || result.stdout.trim();
+    throw new Error(
+      `pipeline.py image_ingest exited ${result.exitCode}: ${detail}`,
+    );
+  }
+  const fileJson = parseJsonLine(result.stdout);
+  return {
+    fileKey: String(fileJson.file_key ?? source.fileKey ?? ""),
+    fileJson,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Front-half stages (Part 16) — normalize / resolve / layout
 // ---------------------------------------------------------------------------
@@ -291,7 +358,7 @@ export async function invokeIngest(
  */
 async function invokeJsonStage(
   cfg: { pythonBin: string; pluginDir: string },
-  subcommand: "normalize" | "resolve" | "layout",
+  subcommand: "audit" | "normalize" | "resolve" | "layout",
   inputJson: unknown,
   extraArgs: string[] = [],
 ): Promise<Record<string, unknown>> {
@@ -497,16 +564,33 @@ export async function invokeBackendGeneratorFromStages(
 /** Normalize stage handler — fileJson → irJson (shared + artifact). */
 export function createNormalizeStageHandler(): StageHandler {
   return async (ctx: PipelineContext) => {
+    // Image input: the ingest stage already produced a valid IRDocument —
+    // skip Figma-specific audit + normalize entirely.
+    const existingIr = ctx.shared.get("irJson");
+    if (existingIr && ctx.shared.get("imageIngestSource")) {
+      return { irJson: existingIr, sourceAudit: { ready_for_generation: true, image_source: true } };
+    }
     const fileJson = ctx.shared.get("fileJson");
     if (!fileJson) {
       throw new Error("normalize stage requires ingest output (no fileJson available)");
+    }
+    const sourceAudit = await invokeJsonStage(
+      { pythonBin: ctx.toolCtx.pythonBin, pluginDir: ctx.config.pluginDir },
+      "audit",
+      fileJson,
+    );
+    ctx.shared.set("sourceAudit", sourceAudit);
+    if (sourceAudit.ready_for_generation !== true) {
+      throw new Error(
+        `Figma source is incomplete; generation stopped: ${JSON.stringify(sourceAudit)}`,
+      );
     }
     const irJson = await invokeNormalize(
       { pythonBin: ctx.toolCtx.pythonBin, pluginDir: ctx.config.pluginDir },
       fileJson,
     );
     ctx.shared.set("irJson", irJson);
-    return { irJson };
+    return { irJson, sourceAudit };
   };
 }
 
@@ -1426,11 +1510,35 @@ export function createVerifyStageHandler(opts?: {
 export function createIngestStageHandler(): StageHandler {
   return async (ctx: PipelineContext, input: Record<string, unknown>) => {
     const filePath = ctx.shared.get("filePath");
+    const imagePath = ctx.shared.get("imagePath") as string | undefined;
     const fileKey = String(input.fileKey ?? ctx.config.fileKey ?? "");
-    const result = await invokeIngest(
-      { pythonBin: ctx.toolCtx.pythonBin, pluginDir: ctx.config.pluginDir },
-      filePath ? { file: String(filePath) } : { fileKey },
-    );
+    const cfg = { pythonBin: ctx.toolCtx.pythonBin, pluginDir: ctx.config.pluginDir };
+
+    let result: { fileKey: string; fileJson: Record<string, unknown> };
+    if (imagePath) {
+      // Image-to-IR path: vision model extracts structure from any image.
+      // The image_analyzer produces a valid IRDocument directly, so we store
+      // it as both fileJson (for backward compat) AND irJson (so downstream
+      // stages skip the Figma-specific normalize/audit).
+      result = await invokeImageIngest(
+        cfg,
+        {
+          image: imagePath,
+          fileKey: fileKey || undefined,
+          provider: ctx.shared.get("imageProvider") as string | undefined,
+          apiKey: ctx.shared.get("imageApiKey") as string | undefined,
+        },
+      );
+      // The image analyzer output IS the IR — store it so normalize skips
+      ctx.shared.set("irJson", result.fileJson);
+      ctx.shared.set("imageIngestSource", true);
+    } else {
+      // Figma JSON path: local file or live API
+      result = await invokeIngest(
+        cfg,
+        filePath ? { file: String(filePath) } : { fileKey },
+      );
+    }
     ctx.shared.set("fileJson", result.fileJson);
     return { fileKey: result.fileKey, fileJson: result.fileJson };
   };

@@ -136,7 +136,7 @@ class TestVueScopedOverride(unittest.TestCase):
         # The un-repaired child is untouched.
         self.assertIn(".n-t-1", vue)
 
-    def test_absolute_override_does_not_reattach_position(self):
+    def test_absolute_override_preserves_position(self):
         doc, plan = _absolute_root_fixture()
         # The serialized layer carries position: absolute (F6) — the pop must
         # run AFTER the union so the override cannot re-attach it.
@@ -149,7 +149,7 @@ class TestVueScopedOverride(unittest.TestCase):
             },
         })
         self.assertIn("background: #00ff00", vue)
-        self.assertNotIn("position: absolute", vue)
+        self.assertIn("position: absolute", vue)
 
     def test_empty_override_byte_identical(self):
         doc, plan = _plain_fixture()

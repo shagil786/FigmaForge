@@ -161,8 +161,10 @@ class IRFill:
     visible: bool = True
     image_ref: Optional[str] = None
     scale_mode: Optional[str] = None
+    image_transform: Optional[Dict[str, Any]] = None
     blend_mode: Optional[str] = None
     gradient_stops: List[IRGradientStop] = field(default_factory=list)
+    gradient_handles: List[Dict[str, float]] = field(default_factory=list)
     token_ref: Optional[str] = None  # bound-variable id, when one is bound
 
     def to_dict(self) -> Dict[str, Any]:
@@ -173,8 +175,10 @@ class IRFill:
             "visible": self.visible,
             "image_ref": self.image_ref,
             "scale_mode": self.scale_mode,
+            "image_transform": self.image_transform,
             "blend_mode": self.blend_mode,
             "gradient_stops": [s.to_dict() for s in self.gradient_stops],
+            "gradient_handles": self.gradient_handles,
             "token_ref": self.token_ref,
         })
 
@@ -857,8 +861,14 @@ def _fill_from_dict(data: Any) -> IRFill:
         visible=bool(data.get("visible", True)),
         image_ref=data.get("image_ref"),
         scale_mode=data.get("scale_mode"),
+        image_transform=data.get("image_transform"),
         blend_mode=data.get("blend_mode"),
         gradient_stops=[_gradient_stop_from_dict(s) for s in data.get("gradient_stops", []) or []],
+        gradient_handles=[
+            {"x": float(h["x"]), "y": float(h["y"])}
+            for h in data.get("gradient_handles", []) or []
+            if isinstance(h, dict) and "x" in h and "y" in h
+        ],
         token_ref=data.get("token_ref"),
     )
 

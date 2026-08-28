@@ -63,6 +63,11 @@ class RepairConfig:
     max_iterations: int = 10               # hard iteration limit
     min_progress: float = 0.005            # minimum improvement per iteration
     min_patches_per_iteration: int = 1     # stop if fewer patches generated
+    # In production FigmaForge runs in strict mode: an unresolved visual
+    # difference is never treated as a successful/terminal repair result.
+    # The loop continues until the threshold is reached or the hard budget is
+    # exhausted.  The latter is reported as a failed convergence, not a pass.
+    strict_convergence: bool = False
 
     # Safety
     require_approval: bool = False         # pause for human approval
@@ -118,6 +123,7 @@ class RepairConfig:
             "max_iterations": self.max_iterations,
             "min_progress": self.min_progress,
             "min_patches_per_iteration": self.min_patches_per_iteration,
+            "strict_convergence": self.strict_convergence,
             "require_approval": self.require_approval,
             "auto_rollback_on_regression": self.auto_rollback_on_regression,
             "max_rollback_iterations": self.max_rollback_iterations,
@@ -228,6 +234,23 @@ class RepairResult:
             return 0
         return len(last.diff_report.get("mismatches", []))
 
+    @property
+    def completion_gate(self) -> Dict[str, Any]:
+        """Machine-readable completion contract for agent callers.
+
+        A repair stage may produce useful artifacts while still failing to
+        converge.  Callers must use this gate, rather than treating a
+        successfully executed stage as a completed design.
+        """
+        passed = bool(self.success and self.unresolved_differences == 0)
+        return {
+            "passed": passed,
+            "completion_required": not passed,
+            "next_action": "complete" if passed else "continue_repair",
+            "unresolved_differences": self.unresolved_differences,
+            "stop_reason": self.stop_reason,
+        }
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "success": self.success,
@@ -235,6 +258,7 @@ class RepairResult:
             "iterations_run": self.iterations_run,
             "stop_reason": self.stop_reason,
             "unresolved_differences": self.unresolved_differences,
+            "completion_gate": self.completion_gate,
             "history": self.history.to_dict() if self.history else None,
         }
 
@@ -401,7 +425,7 @@ class RepairLoop:
 
             # Step 6: Check stopping conditions (before applying)
             stop_reason = self._check_stopping(
-                score, prev_score, patch_plan, iteration,
+                score, prev_score, patch_plan, iteration, diff_report,
             )
             if stop_reason is not None:
                 record.stopped = True
@@ -416,6 +440,13 @@ class RepairLoop:
                     stop_reason=stop_reason,
                     history=history,
                 )
+
+            # Strict mode deliberately does not terminate on an empty plan or
+            # a small improvement.  Those are useful diagnostics, but they do
+            # not mean that typography, overlays, geometry, assets, or
+            # content now match the Figma source.  Continue to the hard
+            # iteration budget so callers get an honest failed convergence
+            # instead of a prematurely stopped run.
 
             # Step 7: Approval gate
             if self._config.require_approval and self._approval_fn is not None:
@@ -511,19 +542,31 @@ class RepairLoop:
         prev_score: float,
         patch_plan: PatchPlan,
         iteration: int,
+        diff_report: Optional[DiffReport] = None,
     ) -> Optional[str]:
         """Check if any stopping condition is met.  Returns reason or None."""
         # 1. Threshold satisfied
         if score >= self._config.similarity_threshold:
+            if self._config.strict_convergence and diff_report is not None:
+                # The weighted headline score is not enough for 1:1 output:
+                # its pixel component is intentionally capped.  Strict mode
+                # therefore also requires zero classified structural/style
+                # mismatches and a clean raster/SSIM verdict when raster data
+                # is available.
+                if diff_report.mismatches:
+                    return None
+                raster = diff_report.raster_stats
+                if raster is not None and raster.get("ssim_clean") is not True:
+                    return None
             return STOP_THRESHOLD
 
         # 2. No safe repair available
-        if patch_plan.is_empty:
+        if patch_plan.is_empty and not self._config.strict_convergence:
             return STOP_NO_REPAIR
 
         # 3. Insufficient progress (after second iteration — need at least
         #    two data points to measure progress)
-        if iteration > 1:
+        if iteration > 1 and not self._config.strict_convergence:
             progress = score - prev_score
             if progress < self._config.min_progress:
                 return STOP_NO_PROGRESS

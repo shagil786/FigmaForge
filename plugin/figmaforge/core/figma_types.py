@@ -101,6 +101,7 @@ class Paint:
     gradient_handles: List[Any] = field(default_factory=list)
     gradient_stops: List[GradientStop] = field(default_factory=list)
     scale_mode: Optional[str] = None
+    image_transform: Optional[Dict[str, Any]] = None
     blend_mode: Optional[str] = None
 
     @staticmethod
@@ -120,6 +121,7 @@ class Paint:
                 if isinstance(s, dict)
             ],
             scale_mode=data.get("scaleMode"),
+            image_transform=data.get("imageTransform"),
             blend_mode=data.get("blendMode"),
         )
 

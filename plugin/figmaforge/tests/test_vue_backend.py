@@ -337,12 +337,11 @@ class TestVueBackend(unittest.TestCase):
         doc, plan = _unsupported_fixture()
         output = self.backend.generate(document=doc, layout_plan=plan)
         losses = [l for l in output.fidelity_losses if l.node_id == "abs:1"]
-        self.assertTrue(losses, "absolute positioning should be a preflight loss")
-        self.assertEqual(losses[0].feature, "absolute_positioning")
+        self.assertFalse(losses, "absolute positioning is supported by Vue CSS")
 
         sfc = [f for f in output.files if f.path.endswith(".vue")][0]
-        # Template degrades with an inline marker, without crashing.
-        self.assertIn("<!-- fidelity: absolute_positioning", sfc.content)
+        self.assertIn("position: absolute", sfc.content)
+        self.assertNotIn("absolute_positioning approximated", sfc.content)
         # Gradient fills are genuinely representable in scoped CSS.
         self.assertIn("linear-gradient", sfc.content)
         # Image fills (declared partial) are marked, never silent.
@@ -405,7 +404,7 @@ class TestVueBackend(unittest.TestCase):
         self.assertEqual(caps.renderer, "browser")
         self.assertEqual(caps.file_extensions, (".vue",))
         self.assertIn("flex", caps.supported_features)
-        self.assertIn("absolute_positioning", caps.unsupported_features)
+        self.assertIn("absolute_positioning", caps.supported_features)
         # Declared partial, never supported: image fills, assets, prototype
         # links, interactions — each has a named fallback or inline marker.
         for feature in ("prototype_links", "interactions", "design_tokens"):

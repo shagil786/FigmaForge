@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict
 
+from .png_codec import PngImage, decode_png, encode_png
+
 
 class RenderHarnessError(RuntimeError):
     """Raised when the harness cannot produce a browser render."""
@@ -121,6 +123,7 @@ class RenderHarness:
         viewport_spec: Dict[str, int],
         build_id: str,
         full_page: bool = True,
+        tiled: bool = False,
     ) -> RenderResult:
         """
         Renders the provided HTML to a screenshot and extracts layout metadata.
@@ -167,9 +170,12 @@ class RenderHarness:
                     # Deterministic capture: wait for fonts before shooting.
                     page.evaluate("document.fonts.ready")
                     accessibility_findings = page.evaluate(_browser_accessibility_script())
-                    page.screenshot(
-                        path=str(screenshot_path), full_page=full_page
-                    )
+                    if full_page and tiled:
+                        self._capture_tiled_page(page, screenshot_path, viewport)
+                    elif full_page:
+                        page.screenshot(path=str(screenshot_path), full_page=True)
+                    else:
+                        page.screenshot(path=str(screenshot_path), full_page=False)
                     meta = page.evaluate("window.__figmaforge_meta || {}")
                 finally:
                     try:
@@ -192,3 +198,62 @@ class RenderHarness:
             layout_metadata=meta,
             accessibility_findings=accessibility_findings,
         )
+
+    @staticmethod
+    def _capture_tiled_page(page: Any, output: Path, viewport: Dict[str, int]) -> None:
+        """Capture a long page in bounded tiles and stitch the PNGs.
+
+        Playwright's one-shot ``full_page`` capture can become unstable for
+        large Figma canvases. Tiling keeps the browser viewport small while
+        preserving the exact CSS pixel dimensions of the final artifact.
+        """
+        measured_height = page.evaluate(
+            "Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)"
+        )
+        # Test doubles and older browser adapters may not expose the numeric
+        # scroll-height probe. Preserve the normal Playwright full-page
+        # contract in that case; real Chromium returns a number and uses the
+        # bounded tiled path for genuinely long documents.
+        if not isinstance(measured_height, (int, float)):
+            page.screenshot(path=str(output), full_page=True)
+            return
+        document_height = int(measured_height)
+        width = int(viewport["width"])
+        tile_height = int(viewport["height"])
+        if document_height <= tile_height:
+            page.screenshot(path=str(output), full_page=True)
+            return
+
+        tiles: list[PngImage] = []
+        for top in range(0, document_height, tile_height):
+            height = min(tile_height, document_height - top)
+            page.evaluate("(scrollTop) => window.scrollTo(0, scrollTop)", top)
+            page.wait_for_timeout(20)
+            tile_path = output.with_name(f"{output.stem}.tile-{top}{output.suffix}")
+            page.screenshot(path=str(tile_path), full_page=False)
+            image = decode_png(tile_path.read_bytes())
+            if image.width != width:
+                raise RenderHarnessError(
+                    f"tiled screenshot width {image.width} != viewport width {width}"
+                )
+            if image.height < height:
+                raise RenderHarnessError(
+                    f"tiled screenshot height {image.height} < requested tile height {height}"
+                )
+            tiles.append(PngImage(
+                width=image.width,
+                height=height,
+                channels=image.channels,
+                pixels=image.pixels[:height * image.stride],
+            ))
+
+        channels = tiles[0].channels
+        pixels = b"".join(tile.pixels for tile in tiles)
+        output.write_bytes(encode_png(PngImage(
+            width=width,
+            height=sum(tile.height for tile in tiles),
+            channels=channels,
+            pixels=pixels,
+        )))
+        for tile_path in output.parent.glob(f"{output.stem}.tile-*{output.suffix}"):
+            tile_path.unlink(missing_ok=True)

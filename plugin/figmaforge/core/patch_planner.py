@@ -166,6 +166,13 @@ _TARGET_PRIORITY: Dict[str, int] = {
     TARGET_ASSET: 5,
 }
 
+# Raster diffs can contain hundreds of tiny regions caused by a wrong font,
+# image crop, or overlay. Applying one guessed color patch per pixel region
+# destroys the source and cannot produce 1:1 output. Keep a bounded number of
+# local color candidates for genuinely small defects; leave the rest
+# explicitly unresolved for the next strategy/iteration.
+_MAX_PIXEL_REGION_PATCHES = 64
+
 
 # ---------------------------------------------------------------------------
 # Planner
@@ -192,6 +199,11 @@ class PatchPlanner:
         self._baseline_png = baseline_png
         self._ir_index: Dict[str, IRNode] = {}
         self._patch_counter: int = 0
+        # Large Figma baselines can be several thousand pixels tall. Decode
+        # once per planner instance; decoding the same PNG for every color
+        # candidate made repair appear to hang on full-page designs.
+        self._baseline_image: Any = None
+        self._baseline_image_loaded = False
         if document is not None:
             self._build_ir_index()
 
@@ -220,6 +232,7 @@ class PatchPlanner:
 
         # Step 3: Generate patches
         patched_candidate_ids: Set[str] = set()
+        pixel_region_patches = 0
 
         # 3a: Generate shared-token patches first (they fix multiple candidates)
         for token_key, candidates in token_groups.items():
@@ -234,6 +247,17 @@ class PatchPlanner:
         for candidate in sorted_candidates:
             if candidate.candidate_id in patched_candidate_ids:
                 continue
+            if (
+                candidate.category == CATEGORY_COLOR
+                and isinstance(candidate.expected.get("region"), dict)
+            ):
+                if pixel_region_patches >= _MAX_PIXEL_REGION_PATCHES:
+                    result.skipped.append(SkippedCandidate(
+                        candidate_id=candidate.candidate_id,
+                        reason="pixel_patch_budget",
+                    ))
+                    continue
+                pixel_region_patches += 1
             patch = self._create_patch(candidate)
             if patch is not None:
                 result.patches.append(patch)
@@ -477,9 +501,16 @@ class PatchPlanner:
         region = expected.get("region") if expected else None
         if not region:
             return None
-        try:
-            image = decode_png(Path(str(self._baseline_png)).read_bytes())
-        except (OSError, PngError):
+        if not self._baseline_image_loaded:
+            self._baseline_image_loaded = True
+            try:
+                self._baseline_image = decode_png(
+                    Path(str(self._baseline_png)).read_bytes()
+                )
+            except (OSError, PngError):
+                self._baseline_image = None
+        image = self._baseline_image
+        if image is None:
             return None
 
         x0 = max(0, min(int(region.get("x", 0)), image.width))

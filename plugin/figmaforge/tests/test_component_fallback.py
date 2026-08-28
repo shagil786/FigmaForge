@@ -324,17 +324,9 @@ class TestReactComponentFallback(unittest.TestCase):
             after_return.startswith("  return (\n      <div data-figma-id=\"card:1\""),
             f"root element must be the only child of the return, got:\n{after_return[:220]}",
         )
-        # The honesty marker still appears — inside the element now.
-        self.assertIn("fidelity: absolute_positioning approximated (in-flow)", tsx)
-        marker_line = [
-            l for l in tsx.splitlines()
-            if "fidelity: absolute_positioning approximated" in l
-        ]
-        self.assertEqual(len(marker_line), 1)
-        self.assertTrue(
-            marker_line[0].startswith("        {/*"),
-            f"marker should be indented inside the element, got: {marker_line[0]!r}",
-        )
+        # Positioning is now emitted directly by the shared web layer.
+        self.assertIn('className="w-[200px] h-[80px] absolute', tsx)
+        self.assertNotIn("absolute_positioning approximated", tsx)
 
     def test_deterministic(self):
         doc, plan, resolution = canonical_fixture()

@@ -369,6 +369,7 @@ class IRBuilder:
             visible=paint.visible,
             image_ref=paint.image_ref,
             scale_mode=paint.scale_mode,
+            image_transform=paint.image_transform,
             blend_mode=paint.blend_mode,
         )
         if kind == "gradient":
@@ -376,6 +377,13 @@ class IRBuilder:
                 IRGradientStop(position=stop.position, color=_ir_color(stop.color))
                 for stop in paint.gradient_stops
                 if stop.color is not None
+            ]
+            fill.gradient_handles = [
+                {"x": float(handle.get("x", 0.0)), "y": float(handle.get("y", 0.0))}
+                for handle in paint.gradient_handles
+                if isinstance(handle, dict)
+                and isinstance(handle.get("x"), (int, float))
+                and isinstance(handle.get("y"), (int, float))
             ]
         return fill
 

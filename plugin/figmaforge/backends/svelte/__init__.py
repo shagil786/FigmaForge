@@ -8,9 +8,9 @@ whose rules reuse the shared ``ScopedCssGenerator`` — the same CSS output as
 the vue backend and the html_css reference, plus IR-sourced fills/radius/
 opacity/typography.  Breakpoints become ``@media (max-width: …)`` rules.
 
-Fidelity honesty: features this backend cannot represent (e.g. absolute
-positioning) are reported by ``preflight`` and degraded with an inline
-``<!-- fidelity: ... -->`` marker — never silently.
+Fidelity honesty: features this backend cannot represent are reported by
+``preflight`` and degraded with an inline ``<!-- fidelity: ... -->`` marker —
+never silently. Absolute positioning is emitted through scoped CSS.
 """
 
 from __future__ import annotations
@@ -40,8 +40,7 @@ from core.layout_types import DISPLAY_ABSOLUTE, LayoutNodePlan, LayoutPlan
 from core.resolver import ResolutionReport
 
 _SVELTE_UNSUPPORTED = frozenset({
-    Feature.ABSOLUTE_POSITIONING,  # in-flow approximation only (marker)
-    Feature.RELATIVE_POSITIONING,  # not a Svelte concept
+    Feature.RELATIVE_POSITIONING,  # generated as a containing-block detail
     Feature.AUTO_LAYOUT,  # Svelte components, not a Figma layout concept
 })
 
@@ -260,10 +259,6 @@ class SvelteBackend(BackendAdapter):
                         "<!-- fidelity: fills_image approximated (solid fallback) -->"
                     )
                     break
-        if plan_node.display == DISPLAY_ABSOLUTE:
-            markers.append(
-                "<!-- fidelity: absolute_positioning approximated (in-flow) -->"
-            )
         if markers:
             marker_lines = "\n".join(f"{pad}{m}" for m in markers)
             return f"{marker_lines}\n{element}"

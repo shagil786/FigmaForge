@@ -473,7 +473,11 @@ class TestRepairCli(unittest.TestCase):
         )
         self.assertEqual(code, 0)
         payload = json.loads(out.strip())
+        self.assertFalse(payload["ok"])
+        self.assertTrue(payload["stage_ok"])
         self.assertFalse(payload["success"])
+        self.assertTrue(payload["completion_gate"]["completion_required"])
+        self.assertEqual(payload["completion_gate"]["next_action"], "continue_repair")
         self.assertEqual(payload["stop_reason"], "approval_denied")
 
 
