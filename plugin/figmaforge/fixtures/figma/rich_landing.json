@@ -1,0 +1,665 @@
+{
+  "name": "Rich Test Page",
+  "lastModified": "2026-08-28T00:00:00Z",
+  "version": "1.0",
+  "document": {
+    "id": "0:0",
+    "name": "Document",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "name": "Page 1",
+        "type": "CANVAS",
+        "children": [
+          {
+            "id": "1:1",
+            "name": "Landing Page",
+            "type": "FRAME",
+            "absoluteBoundingBox": {"x": 0, "y": 0, "width": 1440, "height": 900},
+            "layoutMode": "VERTICAL",
+            "primaryAxisAlignItems": "MIN",
+            "counterAxisAlignItems": "CENTER",
+            "paddingLeft": 0,
+            "paddingRight": 0,
+            "paddingTop": 0,
+            "paddingBottom": 0,
+            "itemSpacing": 0,
+            "fills": [
+              {
+                "type": "SOLID",
+                "visible": true,
+                "opacity": 1.0,
+                "color": {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}
+              }
+            ],
+            "children": [
+              {
+                "id": "1:2",
+                "name": "Header",
+                "type": "FRAME",
+                "absoluteBoundingBox": {"x": 0, "y": 0, "width": 1440, "height": 72},
+                "layoutMode": "HORIZONTAL",
+                "primaryAxisAlignItems": "SPACE_BETWEEN",
+                "counterAxisAlignItems": "CENTER",
+                "paddingLeft": 48,
+                "paddingRight": 48,
+                "paddingTop": 0,
+                "paddingBottom": 0,
+                "itemSpacing": 24,
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "opacity": 1.0,
+                    "color": {"r": 0.102, "g": 0.102, "b": 0.18, "a": 1.0}
+                  }
+                ],
+                "children": [
+                  {
+                    "id": "1:3",
+                    "name": "Logo",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {"x": 48, "y": 20, "width": 120, "height": 32},
+                    "characters": "MyApp",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontSize": 24,
+                      "fontWeight": 700,
+                      "lineHeightPx": 32,
+                      "letterSpacing": 0
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "opacity": 1.0,
+                        "color": {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}
+                      }
+                    ]
+                  },
+                  {
+                    "id": "1:4",
+                    "name": "Nav Links",
+                    "type": "FRAME",
+                    "absoluteBoundingBox": {"x": 800, "y": 20, "width": 592, "height": 32},
+                    "layoutMode": "HORIZONTAL",
+                    "primaryAxisAlignItems": "MAX",
+                    "counterAxisAlignItems": "CENTER",
+                    "itemSpacing": 32,
+                    "fills": [],
+                    "children": [
+                      {
+                        "id": "1:5",
+                        "name": "Features",
+                        "type": "TEXT",
+                        "absoluteBoundingBox": {"x": 800, "y": 24, "width": 72, "height": 24},
+                        "characters": "Features",
+                        "style": {
+                          "fontFamily": "Inter",
+                          "fontSize": 16,
+                          "fontWeight": 500,
+                          "lineHeightPx": 24
+                        },
+                        "fills": [
+                          {
+                            "type": "SOLID",
+                            "visible": true,
+                            "opacity": 1.0,
+                            "color": {"r": 0.85, "g": 0.85, "b": 0.9, "a": 1.0}
+                          }
+                        ]
+                      },
+                      {
+                        "id": "1:6",
+                        "name": "Pricing",
+                        "type": "TEXT",
+                        "absoluteBoundingBox": {"x": 904, "y": 24, "width": 56, "height": 24},
+                        "characters": "Pricing",
+                        "style": {
+                          "fontFamily": "Inter",
+                          "fontSize": 16,
+                          "fontWeight": 500,
+                          "lineHeightPx": 24
+                        },
+                        "fills": [
+                          {
+                            "type": "SOLID",
+                            "visible": true,
+                            "opacity": 1.0,
+                            "color": {"r": 0.85, "g": 0.85, "b": 0.9, "a": 1.0}
+                          }
+                        ]
+                      },
+                      {
+                        "id": "1:7",
+                        "name": "Docs",
+                        "type": "TEXT",
+                        "absoluteBoundingBox": {"x": 992, "y": 24, "width": 44, "height": 24},
+                        "characters": "Docs",
+                        "style": {
+                          "fontFamily": "Inter",
+                          "fontSize": 16,
+                          "fontWeight": 500,
+                          "lineHeightPx": 24
+                        },
+                        "fills": [
+                          {
+                            "type": "SOLID",
+                            "visible": true,
+                            "opacity": 1.0,
+                            "color": {"r": 0.85, "g": 0.85, "b": 0.9, "a": 1.0}
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "1:8",
+                "name": "Hero",
+                "type": "FRAME",
+                "absoluteBoundingBox": {"x": 0, "y": 72, "width": 1440, "height": 500},
+                "layoutMode": "VERTICAL",
+                "primaryAxisAlignItems": "CENTER",
+                "counterAxisAlignItems": "CENTER",
+                "paddingLeft": 120,
+                "paddingRight": 120,
+                "paddingTop": 80,
+                "paddingBottom": 80,
+                "itemSpacing": 24,
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "opacity": 1.0,
+                    "color": {"r": 0.973, "g": 0.976, "b": 0.98, "a": 1.0}
+                  }
+                ],
+                "children": [
+                  {
+                    "id": "1:9",
+                    "name": "Hero Title",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {"x": 120, "y": 152, "width": 1200, "height": 60},
+                    "characters": "Build Faster with AI",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontSize": 56,
+                      "fontWeight": 800,
+                      "lineHeightPx": 68,
+                      "letterSpacing": -1
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "opacity": 1.0,
+                        "color": {"r": 0.063, "g": 0.063, "b": 0.118, "a": 1.0}
+                      }
+                    ]
+                  },
+                  {
+                    "id": "1:10",
+                    "name": "Hero Subtitle",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {"x": 240, "y": 236, "width": 960, "height": 48},
+                    "characters": "Ship production-ready code in minutes, not months. Powered by intelligent agents that understand your design system.",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontSize": 20,
+                      "fontWeight": 400,
+                      "lineHeightPx": 32,
+                      "letterSpacing": 0
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "opacity": 1.0,
+                        "color": {"r": 0.4, "g": 0.4, "b": 0.45, "a": 1.0}
+                      }
+                    ]
+                  },
+                  {
+                    "id": "1:11",
+                    "name": "CTA Group",
+                    "type": "FRAME",
+                    "absoluteBoundingBox": {"x": 470, "y": 310, "width": 500, "height": 56},
+                    "layoutMode": "HORIZONTAL",
+                    "primaryAxisAlignItems": "CENTER",
+                    "counterAxisAlignItems": "CENTER",
+                    "itemSpacing": 16,
+                    "fills": [],
+                    "children": [
+                      {
+                        "id": "1:12",
+                        "name": "Primary Button",
+                        "type": "FRAME",
+                        "absoluteBoundingBox": {"x": 470, "y": 310, "width": 200, "height": 56},
+                        "cornerRadius": 12,
+                        "fills": [
+                          {
+                            "type": "SOLID",
+                            "visible": true,
+                            "opacity": 1.0,
+                            "color": {"r": 0.22, "g": 0.27, "b": 0.72, "a": 1.0}
+                          }
+                        ],
+                        "effects": [
+                          {
+                            "type": "DROP_SHADOW",
+                            "visible": true,
+                            "color": {"r": 0.22, "g": 0.27, "b": 0.72, "a": 0.3},
+                            "offset": {"x": 0, "y": 4},
+                            "radius": 12,
+                            "spread": 0
+                          }
+                        ],
+                        "children": [
+                          {
+                            "id": "1:13",
+                            "name": "Label",
+                            "type": "TEXT",
+                            "absoluteBoundingBox": {"x": 522, "y": 326, "width": 96, "height": 24},
+                            "characters": "Get Started",
+                            "style": {
+                              "fontFamily": "Inter",
+                              "fontSize": 16,
+                              "fontWeight": 600,
+                              "lineHeightPx": 24
+                            },
+                            "fills": [
+                              {
+                                "type": "SOLID",
+                                "visible": true,
+                                "opacity": 1.0,
+                                "color": {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "id": "1:14",
+                        "name": "Secondary Button",
+                        "type": "FRAME",
+                        "absoluteBoundingBox": {"x": 686, "y": 310, "width": 200, "height": 56},
+                        "cornerRadius": 12,
+                        "fills": [],
+                        "strokes": [
+                          {
+                            "type": "SOLID",
+                            "visible": true,
+                            "opacity": 1.0,
+                            "color": {"r": 0.22, "g": 0.27, "b": 0.72, "a": 1.0}
+                          }
+                        ],
+                        "strokeWeight": 2,
+                        "children": [
+                          {
+                            "id": "1:15",
+                            "name": "Label",
+                            "type": "TEXT",
+                            "absoluteBoundingBox": {"x": 742, "y": 326, "width": 88, "height": 24},
+                            "characters": "Learn More",
+                            "style": {
+                              "fontFamily": "Inter",
+                              "fontSize": 16,
+                              "fontWeight": 600,
+                              "lineHeightPx": 24
+                            },
+                            "fills": [
+                              {
+                                "type": "SOLID",
+                                "visible": true,
+                                "opacity": 1.0,
+                                "color": {"r": 0.22, "g": 0.27, "b": 0.72, "a": 1.0}
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "1:16",
+                "name": "Features Section",
+                "type": "FRAME",
+                "absoluteBoundingBox": {"x": 0, "y": 572, "width": 1440, "height": 260},
+                "layoutMode": "HORIZONTAL",
+                "primaryAxisAlignItems": "CENTER",
+                "counterAxisAlignItems": "CENTER",
+                "paddingLeft": 120,
+                "paddingRight": 120,
+                "paddingTop": 48,
+                "paddingBottom": 48,
+                "itemSpacing": 32,
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "opacity": 1.0,
+                    "color": {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}
+                  }
+                ],
+                "children": [
+                  {
+                    "id": "1:17",
+                    "name": "Feature Card 1",
+                    "type": "FRAME",
+                    "absoluteBoundingBox": {"x": 120, "y": 620, "width": 380, "height": 164},
+                    "cornerRadius": 16,
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "opacity": 1.0,
+                        "color": {"r": 0.96, "g": 0.96, "b": 0.98, "a": 1.0}
+                      }
+                    ],
+                    "effects": [
+                      {
+                        "type": "DROP_SHADOW",
+                        "visible": true,
+                        "color": {"r": 0, "g": 0, "b": 0, "a": 0.06},
+                        "offset": {"x": 0, "y": 2},
+                        "radius": 8,
+                        "spread": 0
+                      }
+                    ],
+                    "children": [
+                      {
+                        "id": "1:18",
+                        "name": "Card Title",
+                        "type": "TEXT",
+                        "absoluteBoundingBox": {"x": 144, "y": 644, "width": 332, "height": 28},
+                        "characters": "AI-Powered",
+                        "style": {
+                          "fontFamily": "Inter",
+                          "fontSize": 22,
+                          "fontWeight": 700,
+                          "lineHeightPx": 28
+                        },
+                        "fills": [
+                          {
+                            "type": "SOLID",
+                            "visible": true,
+                            "opacity": 1.0,
+                            "color": {"r": 0.063, "g": 0.063, "b": 0.118, "a": 1.0}
+                          }
+                        ]
+                      },
+                      {
+                        "id": "1:19",
+                        "name": "Card Description",
+                        "type": "TEXT",
+                        "absoluteBoundingBox": {"x": 144, "y": 684, "width": 332, "height": 72},
+                        "characters": "Intelligent agents that understand your design system and generate production-ready code automatically.",
+                        "style": {
+                          "fontFamily": "Inter",
+                          "fontSize": 15,
+                          "fontWeight": 400,
+                          "lineHeightPx": 24
+                        },
+                        "fills": [
+                          {
+                            "type": "SOLID",
+                            "visible": true,
+                            "opacity": 1.0,
+                            "color": {"r": 0.45, "g": 0.45, "b": 0.5, "a": 1.0}
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "id": "1:20",
+                    "name": "Feature Card 2",
+                    "type": "FRAME",
+                    "absoluteBoundingBox": {"x": 532, "y": 620, "width": 380, "height": 164},
+                    "cornerRadius": 16,
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "opacity": 1.0,
+                        "color": {"r": 0.96, "g": 0.96, "b": 0.98, "a": 1.0}
+                      }
+                    ],
+                    "effects": [
+                      {
+                        "type": "DROP_SHADOW",
+                        "visible": true,
+                        "color": {"r": 0, "g": 0, "b": 0, "a": 0.06},
+                        "offset": {"x": 0, "y": 2},
+                        "radius": 8,
+                        "spread": 0
+                      }
+                    ],
+                    "children": [
+                      {
+                        "id": "1:21",
+                        "name": "Card Title",
+                        "type": "TEXT",
+                        "absoluteBoundingBox": {"x": 556, "y": 644, "width": 332, "height": 28},
+                        "characters": "Pixel Perfect",
+                        "style": {
+                          "fontFamily": "Inter",
+                          "fontSize": 22,
+                          "fontWeight": 700,
+                          "lineHeightPx": 28
+                        },
+                        "fills": [
+                          {
+                            "type": "SOLID",
+                            "visible": true,
+                            "opacity": 1.0,
+                            "color": {"r": 0.063, "g": 0.063, "b": 0.118, "a": 1.0}
+                          }
+                        ]
+                      },
+                      {
+                        "id": "1:22",
+                        "name": "Card Description",
+                        "type": "TEXT",
+                        "absoluteBoundingBox": {"x": 556, "y": 684, "width": 332, "height": 72},
+                        "characters": "SSIM-verified visual fidelity with automatic repair loops that converge to pixel-perfect output.",
+                        "style": {
+                          "fontFamily": "Inter",
+                          "fontSize": 15,
+                          "fontWeight": 400,
+                          "lineHeightPx": 24
+                        },
+                        "fills": [
+                          {
+                            "type": "SOLID",
+                            "visible": true,
+                            "opacity": 1.0,
+                            "color": {"r": 0.45, "g": 0.45, "b": 0.5, "a": 1.0}
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "id": "1:23",
+                    "name": "Feature Card 3",
+                    "type": "FRAME",
+                    "absoluteBoundingBox": {"x": 944, "y": 620, "width": 380, "height": 164},
+                    "cornerRadius": 16,
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "opacity": 1.0,
+                        "color": {"r": 0.96, "g": 0.96, "b": 0.98, "a": 1.0}
+                      }
+                    ],
+                    "effects": [
+                      {
+                        "type": "DROP_SHADOW",
+                        "visible": true,
+                        "color": {"r": 0, "g": 0, "b": 0, "a": 0.06},
+                        "offset": {"x": 0, "y": 2},
+                        "radius": 8,
+                        "spread": 0
+                      }
+                    ],
+                    "children": [
+                      {
+                        "id": "1:24",
+                        "name": "Card Title",
+                        "type": "TEXT",
+                        "absoluteBoundingBox": {"x": 968, "y": 644, "width": 332, "height": 28},
+                        "characters": "Multi-Framework",
+                        "style": {
+                          "fontFamily": "Inter",
+                          "fontSize": 22,
+                          "fontWeight": 700,
+                          "lineHeightPx": 28
+                        },
+                        "fills": [
+                          {
+                            "type": "SOLID",
+                            "visible": true,
+                            "opacity": 1.0,
+                            "color": {"r": 0.063, "g": 0.063, "b": 0.118, "a": 1.0}
+                          }
+                        ]
+                      },
+                      {
+                        "id": "1:25",
+                        "name": "Card Description",
+                        "type": "TEXT",
+                        "absoluteBoundingBox": {"x": 968, "y": 684, "width": 332, "height": 72},
+                        "characters": "React, Vue, Svelte, SwiftUI, Flutter — one design, six production outputs.",
+                        "style": {
+                          "fontFamily": "Inter",
+                          "fontSize": 15,
+                          "fontWeight": 400,
+                          "lineHeightPx": 24
+                        },
+                        "fills": [
+                          {
+                            "type": "SOLID",
+                            "visible": true,
+                            "opacity": 1.0,
+                            "color": {"r": 0.45, "g": 0.45, "b": 0.5, "a": 1.0}
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "1:26",
+                "name": "Footer",
+                "type": "FRAME",
+                "absoluteBoundingBox": {"x": 0, "y": 832, "width": 1440, "height": 68},
+                "layoutMode": "HORIZONTAL",
+                "primaryAxisAlignItems": "SPACE_BETWEEN",
+                "counterAxisAlignItems": "CENTER",
+                "paddingLeft": 48,
+                "paddingRight": 48,
+                "paddingTop": 0,
+                "paddingBottom": 0,
+                "itemSpacing": 24,
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "opacity": 1.0,
+                    "color": {"r": 0.102, "g": 0.102, "b": 0.18, "a": 1.0}
+                  }
+                ],
+                "children": [
+                  {
+                    "id": "1:27",
+                    "name": "Copyright",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {"x": 48, "y": 848, "width": 200, "height": 24},
+                    "characters": "© 2026 MyApp. All rights reserved.",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontSize": 14,
+                      "fontWeight": 400,
+                      "lineHeightPx": 24
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "opacity": 1.0,
+                        "color": {"r": 0.6, "g": 0.6, "b": 0.65, "a": 1.0}
+                      }
+                    ]
+                  },
+                  {
+                    "id": "1:28",
+                    "name": "Footer Links",
+                    "type": "FRAME",
+                    "absoluteBoundingBox": {"x": 1100, "y": 848, "width": 292, "height": 24},
+                    "layoutMode": "HORIZONTAL",
+                    "primaryAxisAlignItems": "MAX",
+                    "counterAxisAlignItems": "CENTER",
+                    "itemSpacing": 24,
+                    "fills": [],
+                    "children": [
+                      {
+                        "id": "1:29",
+                        "name": "Privacy",
+                        "type": "TEXT",
+                        "absoluteBoundingBox": {"x": 1100, "y": 852, "width": 56, "height": 20},
+                        "characters": "Privacy",
+                        "style": {
+                          "fontFamily": "Inter",
+                          "fontSize": 14,
+                          "fontWeight": 400,
+                          "lineHeightPx": 20
+                        },
+                        "fills": [
+                          {
+                            "type": "SOLID",
+                            "visible": true,
+                            "opacity": 1.0,
+                            "color": {"r": 0.6, "g": 0.6, "b": 0.65, "a": 1.0}
+                          }
+                        ]
+                      },
+                      {
+                        "id": "1:30",
+                        "name": "Terms",
+                        "type": "TEXT",
+                        "absoluteBoundingBox": {"x": 1180, "y": 852, "width": 44, "height": 20},
+                        "characters": "Terms",
+                        "style": {
+                          "fontFamily": "Inter",
+                          "fontSize": 14,
+                          "fontWeight": 400,
+                          "lineHeightPx": 20
+                        },
+                        "fills": [
+                          {
+                            "type": "SOLID",
+                            "visible": true,
+                            "opacity": 1.0,
+                            "color": {"r": 0.6, "g": 0.6, "b": 0.65, "a": 1.0}
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
