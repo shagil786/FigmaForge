@@ -99,21 +99,64 @@ class VNode:
 # ---------------------------------------------------------------------------
 
 SEMANTIC_TAG_BY_NAME = {
+    # Structural — only names that are true semantic HTML elements
     "header": "header",
     "nav": "nav",
+    "navigation": "nav",
     "hero": "section",
     "main": "main",
     "content": "main",
     "section": "section",
-    "card": "section",
     "aside": "aside",
     "footer": "footer",
+    # Additional semantic names that don't change existing behavior
+    "navbar": "nav",
+    "navigation bar": "nav",
+    "navigationbar": "nav",
+    "sidebar": "aside",
+    "banner": "header",
 }
 
 
 def semantic_tag(name: str) -> Optional[str]:
     """Map a node name to a semantic HTML tag, or None."""
     return SEMANTIC_TAG_BY_NAME.get(name.lower())
+
+
+# Valid HTML tag names (lowercase, no special chars)
+_VALID_HTML_TAGS = frozenset({
+    "div", "span", "p", "h1", "h2", "h3", "h4", "h5", "h6",
+    "header", "footer", "nav", "main", "section", "article",
+    "aside", "figure", "figcaption", "ul", "ol", "li",
+    "a", "img", "button", "input", "textarea", "select",
+    "table", "tr", "td", "th", "thead", "tbody",
+    "form", "fieldset", "label", "small", "strong", "em",
+    "blockquote", "pre", "code", "hr", "br", "video", "audio",
+    "canvas", "svg", "details", "summary", "dialog",
+})
+
+
+def _sanitize_tag(name: str) -> str:
+    """Convert any Figma element name into a valid HTML tag name.
+
+    Strategy: lowercase, replace non-alphanumeric with hyphens,
+    collapse multiples, strip leading/trailing hyphens.
+    If the result is a valid HTML tag, use it; otherwise fall back to 'div'.
+    """
+    # Fast path: already a known tag
+    lower = name.lower().strip()
+    if lower in _VALID_HTML_TAGS:
+        return lower
+    # Sanitize: keep only alphanumeric and hyphens
+    sanitized = "".join(c if c.isalnum() else "-" for c in lower)
+    # Collapse multiple hyphens
+    while "--" in sanitized:
+        sanitized = sanitized.replace("--", "-")
+    sanitized = sanitized.strip("-")
+    # Check if valid
+    if sanitized and sanitized in _VALID_HTML_TAGS:
+        return sanitized
+    return "div"
 
 
 # ---------------------------------------------------------------------------
@@ -303,6 +346,9 @@ class VNodeBuilder:
 
     def _resolve_tag(self, plan: LayoutNodePlan) -> tuple:
         if plan.node_id and plan.node_id in self._component_names:
+            # Component names are used as custom tags in fallback definitions
+            # (e.g. <Badge>, <ButtonCard>). Keep them as-is for framework
+            # compatibility — the fallback defines the component.
             return True, self._component_names[plan.node_id]
         return False, self._get_tag_for(plan)
 

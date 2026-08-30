@@ -69,6 +69,8 @@ from .ir_types import (
 
 logger = logging.getLogger("figmaforge.image_analyzer")
 
+from .image_analyzer_nlp_parser import parse_natural_language
+
 
 # ---------------------------------------------------------------------------
 # Vision model protocol
@@ -134,16 +136,22 @@ def _create_default_vision_model() -> Optional[VisionModel]:
     """Create a default vision model from environment variables.
 
     Supports:
+    - NVIDIA_API_KEY → Kimi K3 or Llama Vision (via NVIDIA API catalog)
     - ANTHROPIC_API_KEY → Claude Vision
     - OPENAI_API_KEY → GPT-4V
     """
+    if os.environ.get("NVIDIA_API_KEY"):
+        try:
+            return _NvidiaVisionModel()
+        except ValueError:
+            pass
     if os.environ.get("ANTHROPIC_API_KEY"):
         return _AnthropicVisionModel()
     if os.environ.get("OPENAI_API_KEY"):
         return _OpenAIVisionModel()
     logger.warning(
-        "No vision model configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY "
-        "to enable image analysis."
+        "No vision model configured. Set NVIDIA_API_KEY, ANTHROPIC_API_KEY, "
+        "or OPENAI_API_KEY to enable image analysis."
     )
     return None
 
@@ -276,6 +284,90 @@ class _OpenAIVisionModel:
         return result.get("choices", [{}])[0].get("message", {}).get("content", "")
 
 
+class _NvidiaVisionModel:
+    """Vision model backend via NVIDIA API catalog.
+
+    Tries Kimi K3 first (best reasoning), falls back to Llama 3.2 Vision.
+    """
+
+    MODELS = [
+        "moonshotai/kimi-k3",
+        "minimaxai/minimax-m3",
+        "meta/llama-3.2-11b-vision-instruct",
+        "google/gemma-3-27b-it",
+    ]
+
+    def __init__(self, api_key: Optional[str] = None):
+        self._api_key = api_key or os.environ.get("NVIDIA_API_KEY", "")
+        if not self._api_key:
+            raise ValueError("NVIDIA_API_KEY not set")
+
+    def analyze_image(
+        self,
+        image_path: str,
+        prompt: str,
+        *,
+        max_tokens: int = 4096,
+    ) -> str:
+        import urllib.request
+
+        # Read and encode the image
+        with open(image_path, "rb") as f:
+            image_data = base64.standard_b64encode(f.read()).decode("utf-8")
+
+        media_type = _media_type_for(image_path)
+
+        # Try models in order, fall back on timeout/error
+        last_error = None
+        for model in self.MODELS:
+            try:
+                payload = json.dumps({
+                    "model": model,
+                    "max_tokens": max_tokens,
+                    "messages": [{
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:{media_type};base64,{image_data}",
+                                },
+                            },
+                            {
+                                "type": "text",
+                                "text": prompt,
+                            },
+                        ],
+                    }],
+                }).encode("utf-8")
+
+                req = urllib.request.Request(
+                    "https://integrate.api.nvidia.com/v1/chat/completions",
+                    data=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {self._api_key}",
+                    },
+                    method="POST",
+                )
+
+                with urllib.request.urlopen(req, timeout=90) as resp:
+                    result = json.loads(resp.read().decode("utf-8"))
+
+                content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+                if content:
+                    logger.info("Vision model %s responded successfully", model)
+                    return content
+            except (urllib.error.URLError, TimeoutError, OSError) as e:
+                last_error = e
+                logger.warning("Vision model %s failed: %s — trying next", model, e)
+                continue
+
+        raise ValueError(
+            f"All NVIDIA vision models failed. Last error: {last_error}"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -341,58 +433,22 @@ def _parse_color(value: Any) -> Optional[IRColor]:
 # Analysis prompt
 # ---------------------------------------------------------------------------
 
-ANALYSIS_PROMPT = """Analyze this design image and extract its structure as JSON.
+ANALYSIS_PROMPT = """You are a UI extraction expert. Analyze this screenshot and extract its layout structure as a JSON object.
 
-Return a JSON object with the following structure. Be precise with measurements.
+IMPORTANT: Return ONLY valid JSON, no markdown, no explanation, no code fences.
 
-{
-  "viewport": {"width": <number>, "height": <number>},
-  "elements": [
-    {
-      "id": "<unique-id>",
-      "name": "<descriptive name>",
-      "type": "frame|text|shape|image",
-      "bounds": {"x": <number>, "y": <number>, "width": <number>, "height": <number>},
-      "style": {
-        "background": "<hex color or null>",
-        "border_radius": <number or null>,
-        "border": {"width": <number>, "color": "<hex>"} or null,
-        "shadow": {"x": <number>, "y": <number>, "blur": <number>, "color": "<hex>"} or null,
-        "opacity": <number 0-1>
-      },
-      "layout": {
-        "display": "flex|grid|block|none",
-        "direction": "row|column or null",
-        "justify": "flex-start|center|flex-end|space-between or null",
-        "align": "flex-start|center|flex-end|stretch or null",
-        "padding": <number or {top,right,bottom,left}>,
-        "gap": <number or null>
-      },
-      "typography": {
-        "text": "<text content if type=text>",
-        "font_family": "<font name or null>",
-        "font_size": <number or null>,
-        "font_weight": <number or null>,
-        "color": "<hex or null>",
-        "align": "left|center|right or null",
-        "line_height": <number or null>
-      } or null,
-      "children": [<child element ids>],
-      "confidence": <number 0-1>
-    }
-  ],
-  "colors": ["<hex>", ...],
-  "fonts": ["<font name>", ...]
-}
+The JSON must have this exact structure:
+{"viewport":{"width":<num>,"height":<num>},"elements":[{"id":"<unique-id>","name":"<descriptive name>","type":"frame|text|shape|image","bounds":{"x":<num>,"y":<num>,"width":<num>,"height":<num>},"style":{"background":"<hex>","border_radius":<num|null>,"border":null,"shadow":null,"opacity":1},"layout":{"display":"flex|grid|block","direction":"row|null","justify":"flex-start|center|space-between|null","align":"flex-start|center|null","padding":<num>,"gap":<num|null>},"typography":{"text":"<if text>","font_family":"<name>","font_size":<num>,"font_weight":<num>,"color":"<hex>","align":"left|center|null","line_height":<num>},"children":[],"confidence":0.9}],"colors":["<hex>"],"fonts":["<name>"]}
 
 Rules:
+- Extract ALL visible elements (text, frames, buttons, cards, images)
 - Measure bounds in pixels relative to the viewport
-- Extract ALL visible elements (text, frames, shapes, images)
-- For text elements, include the typography object with the actual text
-- For containers, include layout properties
-- Assign confidence scores based on extraction certainty
-- Use descriptive names (e.g. "header", "button", "card-title")
-- Preserve z-order (elements listed top-to-bottom in visual order)
+- Use descriptive names (header, hero-title, nav-link, card, button, footer)
+- Include actual text content in typography.text
+- Extract real hex colors from the design
+- Preserve the visual hierarchy
+- For auto-layout containers, set display=flex and appropriate direction
+- Return ONLY the JSON object, nothing else
 """
 
 
@@ -454,23 +510,29 @@ class ImageAnalyzer:
         return ir_document
 
     def _parse_response(self, response: str) -> Dict[str, Any]:
-        """Parse the vision model's JSON response."""
+        """Parse the vision model response — try JSON first, then NLP fallback."""
         # Try to extract JSON from the response (may be wrapped in markdown)
         json_match = re.search(r"```json\s*(.*?)\s*```", response, re.DOTALL)
         if json_match:
-            response = json_match.group(1)
+            json_str = json_match.group(1)
         else:
             # Try to find raw JSON
             json_match = re.search(r"\{.*\}", response, re.DOTALL)
-            if json_match:
-                response = json_match.group(0)
+            json_str = json_match.group(0) if json_match else None
 
-        try:
-            return json.loads(response)
-        except json.JSONDecodeError as e:
-            logger.error("Failed to parse vision model response: %s", e)
-            logger.debug("Raw response: %s", response[:500])
-            return {"elements": [], "colors": [], "fonts": []}
+        if json_str:
+            try:
+                parsed = json.loads(json_str)
+                # Validate it has the expected structure
+                if "elements" in parsed and parsed["elements"]:
+                    return parsed
+                logger.warning("JSON parsed but has no elements, trying NLP fallback")
+            except json.JSONDecodeError:
+                pass
+
+        # Fallback: parse natural language description from the vision model
+        logger.info("Using NLP fallback parser for vision model response")
+        return parse_natural_language(response)
 
     def _build_ir(
         self,
@@ -515,6 +577,17 @@ class ImageAnalyzer:
             variables=self._build_font_tokens(fonts),
         )
 
+        # Add 'type' field to all nodes for compatibility with source_audit
+        # (audit checks 'type' but image analyzer uses 'node_type')
+        for node in doc.all_nodes():
+            if hasattr(node, 'raw') and isinstance(node.raw, dict):
+                node.raw.setdefault('type', node.node_type)
+            # Also add fills/styles to raw for audit compatibility
+            if node.style and node.style.fills:
+                node.raw.setdefault('fills', [{'type': 'SOLID'}])
+            if node.text and node.text.characters:
+                node.raw.setdefault('characters', node.text.characters)
+
         return doc
 
     def _build_root_frame(
@@ -541,7 +614,12 @@ class ImageAnalyzer:
             visible=True,
             opacity=1.0,
             dimensions=IRDimensions(width=width, height=height),
+            position=IRPosition(mode="absolute", x=0, y=0, left=0, top=0),
             layout=IRLayout(mode="auto", direction="column"),
+            responsive=IResponsive(
+                constraints_horizontal="MIN",
+                constraints_vertical="MIN",
+            ),
         )
 
     def _build_ir_nodes(
@@ -630,7 +708,8 @@ class ImageAnalyzer:
                 if child_node:
                     children.append(child_node)
 
-        # Build the node
+        # Build the node with Figma-compatible constraints
+        # MIN constraints mean the element is anchored to top-left (default for absolute positioning)
         node = IRNode(
             id=eid,
             name=elem.get("name", eid),
@@ -651,6 +730,10 @@ class ImageAnalyzer:
             typography=typography,
             text=text_content,
             children=children,
+            responsive=IResponsive(
+                constraints_horizontal="MIN",
+                constraints_vertical="MIN",
+            ),
         )
 
         return node

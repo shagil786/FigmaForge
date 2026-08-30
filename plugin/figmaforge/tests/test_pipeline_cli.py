@@ -621,5 +621,250 @@ class TestAssetsStage(unittest.TestCase):
             self.assertTrue(proc.stderr.strip())
 
 
+# ---------------------------------------------------------------------------
+# spec subcommand
+# ---------------------------------------------------------------------------
+
+RICH_FIXTURE = plugin_root / "fixtures" / "figma" / "rich_landing.json"
+IR_FIXTURE = plugin_root / "fixtures" / "figma" / "layout_desktop.json"
+
+
+class TestSpec(unittest.TestCase):
+    """Test the ``spec`` subcommand (semantic design spec generation)."""
+
+    def test_spec_from_raw_figma_json(self):
+        """spec --file <raw Figma JSON> produces a valid design spec."""
+        proc = _run(["spec", "--file", str(RICH_FIXTURE)])
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
+        self.assertEqual(len(lines), 1)
+        spec = json.loads(lines[0])
+        self.assertIn("page", spec)
+        self.assertIn("sections", spec)
+        self.assertIn("design_tokens", spec)
+        self.assertIsInstance(spec["sections"], list)
+        self.assertGreater(len(spec["sections"]), 0)
+
+    def test_spec_from_raw_figma_matches_design_spec_module(self):
+        """spec output must be byte-identical to DesignSpecGenerator."""
+        proc = _run(["spec", "--file", str(RICH_FIXTURE)])
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        spec = json.loads(proc.stdout.strip())
+
+        from core.design_spec import DesignSpecGenerator
+        gen = DesignSpecGenerator()
+        with open(RICH_FIXTURE, encoding="utf-8") as f:
+            figma = json.load(f)
+        expected = gen.generate_from_figma(figma)
+        self.assertEqual(spec, expected)
+
+    def test_spec_json_serializable(self):
+        """The spec must round-trip through JSON."""
+        proc = _run(["spec", "--file", str(RICH_FIXTURE)])
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        spec = json.loads(proc.stdout.strip())
+        serialized = json.dumps(spec, sort_keys=True)
+        reparsed = json.loads(serialized)
+        self.assertEqual(spec, reparsed)
+
+    def test_spec_sections_have_required_fields(self):
+        """Every section must have id, name, type, layout."""
+        proc = _run(["spec", "--file", str(RICH_FIXTURE)])
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        spec = json.loads(proc.stdout.strip())
+        for section in spec["sections"]:
+            self.assertIn("id", section)
+            self.assertIn("name", section)
+            self.assertIn("type", section)
+            self.assertIn("layout", section)
+
+    def test_spec_out_flag_writes_file(self):
+        """--out writes the spec to disk."""
+        with tempfile.TemporaryDirectory() as tmp:
+            out_path = Path(tmp) / "spec.json"
+            proc = _run(["spec", "--file", str(RICH_FIXTURE), "--out", str(out_path)])
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertTrue(out_path.exists())
+            on_disk = json.loads(out_path.read_text(encoding="utf-8"))
+            stdout_spec = json.loads(proc.stdout.strip())
+            self.assertEqual(on_disk, stdout_spec)
+
+    def test_spec_deterministic(self):
+        """Two spec runs produce byte-identical output."""
+        first = _run(["spec", "--file", str(RICH_FIXTURE)])
+        second = _run(["spec", "--file", str(RICH_FIXTURE)])
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(first.stdout, second.stdout)
+
+    def test_spec_empty_document(self):
+        """A document with no children produces empty sections."""
+        with tempfile.TemporaryDirectory() as tmp:
+            empty = Path(tmp) / "empty.json"
+            empty.write_text(json.dumps({
+                "file_key": "empty",
+                "name": "Empty",
+                "document": {"type": "DOCUMENT", "id": "0:0", "children": []},
+            }), encoding="utf-8")
+            proc = _run(["spec", "--file", str(empty)])
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            spec = json.loads(proc.stdout.strip())
+            self.assertEqual(spec["sections"], [])
+
+    def test_spec_bad_json_exit_4(self):
+        """Non-JSON input exits 4."""
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = Path(tmp) / "bad.json"
+            bad.write_text("not json", encoding="utf-8")
+            proc = _run(["spec", "--file", str(bad)])
+            self.assertEqual(proc.returncode, 4)
+            self.assertTrue(proc.stderr.strip())
+
+    def test_spec_missing_file_flag(self):
+        """spec without --file is rejected by argparse."""
+        proc = _run(["spec"])
+        self.assertNotEqual(proc.returncode, 0)
+
+
+# ---------------------------------------------------------------------------
+# compare subcommand
+# ---------------------------------------------------------------------------
+
+
+class TestCompare(unittest.TestCase):
+    """Test the ``compare`` subcommand (pixel-diff feedback for agents)."""
+
+    def _make_png(self, path: Path, width: int, height: int, r: int, g: int, b: int):
+        """Write a solid-color PNG to *path*."""
+        from core.png_codec import PngImage, encode_png
+        pixels = bytes([r, g, b]) * (width * height)
+        path.write_bytes(encode_png(PngImage(width=width, height=height, channels=3, pixels=pixels)))
+
+    def test_identical_images_score_1(self):
+        """Two identical PNGs produce similarity 1.0 and no mismatches."""
+        with tempfile.TemporaryDirectory() as tmp:
+            a = Path(tmp) / "a.png"
+            b = Path(tmp) / "b.png"
+            self._make_png(a, 10, 10, 255, 0, 0)
+            self._make_png(b, 10, 10, 255, 0, 0)
+            proc = _run(["compare", "--baseline", str(a), "--generated", str(b)])
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            result = json.loads(proc.stdout.strip())
+            self.assertAlmostEqual(result["similarity_score"], 1.0, places=4)
+            self.assertEqual(result["verdict"], "identical")
+            self.assertEqual(len(result["mismatches"]), 0)
+
+    def test_different_images_score_below_1(self):
+        """Two different PNGs with different structure produce similarity < 1.0."""
+        from core.png_codec import PngImage, encode_png
+        with tempfile.TemporaryDirectory() as tmp:
+            a = Path(tmp) / "a.png"
+            b = Path(tmp) / "b.png"
+            # Left half red, right half red → solid red
+            a_pixels = bytes([255, 0, 0]) * 50 + bytes([255, 0, 0]) * 50
+            a.write_bytes(encode_png(PngImage(width=10, height=10, channels=3, pixels=a_pixels)))
+            # Left half red, right half black → structural difference
+            b_pixels = bytes([255, 0, 0]) * 50 + bytes([0, 0, 0]) * 50
+            b.write_bytes(encode_png(PngImage(width=10, height=10, channels=3, pixels=b_pixels)))
+            proc = _run(["compare", "--baseline", str(a), "--generated", str(b)])
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            result = json.loads(proc.stdout.strip())
+            self.assertLess(result["similarity_score"], 1.0)
+            self.assertEqual(result["verdict"], "changed")
+            self.assertGreater(len(result["mismatches"]), 0)
+
+    def test_out_flag(self):
+        """--out writes the comparison result to disk."""
+        with tempfile.TemporaryDirectory() as tmp:
+            a = Path(tmp) / "a.png"
+            b = Path(tmp) / "b.png"
+            out = Path(tmp) / "result.json"
+            self._make_png(a, 10, 10, 255, 0, 0)
+            self._make_png(b, 10, 10, 0, 0, 255)
+            proc = _run(["compare", "--baseline", str(a), "--generated", str(b), "--out", str(out)])
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertTrue(out.exists())
+            on_disk = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(on_disk, json.loads(proc.stdout.strip()))
+
+    def test_missing_files_exit_4(self):
+        """Missing baseline or generated file exits 4."""
+        proc = _run(["compare", "--baseline", "/nonexistent/a.png", "--generated", "/nonexistent/b.png"])
+        self.assertEqual(proc.returncode, 4)
+        self.assertTrue(proc.stderr.strip())
+
+    def test_json_serializable(self):
+        """The compare output must be JSON-serializable."""
+        with tempfile.TemporaryDirectory() as tmp:
+            a = Path(tmp) / "a.png"
+            b = Path(tmp) / "b.png"
+            self._make_png(a, 10, 10, 255, 0, 0)
+            self._make_png(b, 10, 10, 0, 0, 255)
+            proc = _run(["compare", "--baseline", str(a), "--generated", str(b)])
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            result = json.loads(proc.stdout.strip())
+            serialized = json.dumps(result, sort_keys=True)
+            self.assertEqual(result, json.loads(serialized))
+
+
+# ---------------------------------------------------------------------------
+# agent-loop subcommand
+# ---------------------------------------------------------------------------
+
+
+class TestAgentLoop(unittest.TestCase):
+    """Test the ``agent-loop`` subcommand (full pipeline with feedback)."""
+
+    def test_agent_loop_produces_spec_and_feedback(self):
+        """agent-loop on a raw Figma file produces spec + compare feedback."""
+        proc = _run(["agent-loop", "--file", str(RICH_FIXTURE), "--backend", "html_css"])
+        # May need a baseline — this tests the spec + generate path at minimum
+        self.assertIn(proc.returncode, (0, 3), proc.stderr)  # 3 = no baseline
+        result = json.loads(proc.stdout.strip())
+        self.assertIn("spec", result)
+        self.assertIn("sections", result["spec"])
+        self.assertIn("generated", result)
+        self.assertIn("backend", result["generated"])
+
+    def test_agent_loop_spec_matches_spec_command(self):
+        """The spec inside agent-loop output matches ``figmaforge spec``."""
+        proc_loop = _run(["agent-loop", "--file", str(RICH_FIXTURE), "--backend", "html_css"])
+        proc_spec = _run(["spec", "--file", str(RICH_FIXTURE)])
+        self.assertEqual(proc_loop.returncode, 0, proc_loop.stderr)
+        self.assertEqual(proc_spec.returncode, 0, proc_spec.stderr)
+        loop_result = json.loads(proc_loop.stdout.strip())
+        spec_result = json.loads(proc_spec.stdout.strip())
+        self.assertEqual(loop_result["spec"], spec_result)
+
+    def test_agent_loop_missing_file_exit_4(self):
+        """agent-loop with a nonexistent file exits 4."""
+        proc = _run(["agent-loop", "--file", "/nonexistent/file.json", "--backend", "html_css"])
+        self.assertEqual(proc.returncode, 4)
+        self.assertTrue(proc.stderr.strip())
+
+    def test_agent_loop_bad_backend_exit_2(self):
+        """agent-loop with an unknown backend exits 2."""
+        proc = _run(["agent-loop", "--file", str(RICH_FIXTURE), "--backend", "nonexistent"])
+        self.assertEqual(proc.returncode, 2)
+
+    def test_agent_loop_output_structure(self):
+        """The output must have the expected top-level keys."""
+        proc = _run(["agent-loop", "--file", str(RICH_FIXTURE), "--backend", "html_css"])
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        result = json.loads(proc.stdout.strip())
+        # Must have spec
+        self.assertIn("spec", result)
+        self.assertIn("page", result["spec"])
+        self.assertIn("sections", result["spec"])
+        # Must have generated
+        self.assertIn("generated", result)
+        self.assertIn("backend", result["generated"])
+        self.assertIn("files", result["generated"])
+        self.assertIn("manifest", result["generated"])
+        # Must have feedback (even without baseline)
+        self.assertIn("feedback", result)
+        self.assertIn("verdict", result["feedback"])
+
+
 if __name__ == "__main__":
     unittest.main()

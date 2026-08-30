@@ -564,8 +564,8 @@ export async function invokeBackendGeneratorFromStages(
 /** Normalize stage handler — fileJson → irJson (shared + artifact). */
 export function createNormalizeStageHandler(): StageHandler {
   return async (ctx: PipelineContext) => {
-    // Image input: the ingest stage already produced a valid IRDocument —
-    // skip Figma-specific audit + normalize entirely.
+    // Image input or IRDocument format: the ingest stage already produced
+    // a valid IRDocument — skip Figma-specific audit + normalize entirely.
     const existingIr = ctx.shared.get("irJson");
     if (existingIr && ctx.shared.get("imageIngestSource")) {
       return { irJson: existingIr, sourceAudit: { ready_for_generation: true, image_source: true } };
@@ -573,6 +573,14 @@ export function createNormalizeStageHandler(): StageHandler {
     const fileJson = ctx.shared.get("fileJson");
     if (!fileJson) {
       throw new Error("normalize stage requires ingest output (no fileJson available)");
+    }
+    // Detect IRDocument format (from image analyzer) — if the input already
+    // has schema_version and root, it's an IRDocument, not a Figma file.
+    // Skip the Figma-specific audit + normalize and use it directly.
+    const irFileJson = fileJson as Record<string, unknown>;
+    if (irFileJson.schema_version && irFileJson.root) {
+      ctx.shared.set("irJson", fileJson);
+      return { irJson: fileJson, sourceAudit: { ready_for_generation: true, ir_document: true } };
     }
     const sourceAudit = await invokeJsonStage(
       { pythonBin: ctx.toolCtx.pythonBin, pluginDir: ctx.config.pluginDir },
