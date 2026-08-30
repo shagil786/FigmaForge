@@ -257,3 +257,69 @@ class TestSchemaAndSerialization(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestInferLayoutFromChildren(unittest.TestCase):
+    """When a frame has no auto-layout, infer flex-row/column from children positions."""
+
+    def _make_frame(self, children_positions, frame_name="Frame"):
+        """Create a minimal Figma response with a frame containing positioned children."""
+        children = []
+        for i, (x, y, w, h) in enumerate(children_positions):
+            children.append({
+                "id": f"c:{i}",
+                "name": f"Item {i}",
+                "type": "TEXT",
+                "characters": f"Item {i}",
+                "absoluteBoundingBox": {"x": x, "y": y, "width": w, "height": h},
+            })
+        return {
+            "name": "test",
+            "document": {
+                "id": "0:0",
+                "name": "Document",
+                "type": "DOCUMENT",
+                "children": [{
+                    "id": "p:1",
+                    "name": "Page",
+                    "type": "CANVAS",
+                    "children": [{
+                        "id": "f:1",
+                        "name": frame_name,
+                        "type": "FRAME",
+                        "absoluteBoundingBox": {"x": 0, "y": 0, "width": 800, "height": 600},
+                        "children": children,
+                    }],
+                }],
+            },
+        }
+
+    def test_horizontal_alignment_infers_flex_row(self):
+        """Children aligned horizontally (same Y) should get flex-row."""
+        data = self._make_frame([
+            (0, 10, 100, 40),   # Item 0: x=0, y=10
+            (120, 10, 100, 40),  # Item 1: x=120, y=10
+            (240, 10, 100, 40),  # Item 2: x=240, y=10
+        ])
+        ff = FigmaFile.from_dict("test", data)
+        doc = IRBuilder().build(ff)
+        plan = LayoutAnalyzer().analyze(doc)
+        # The frame should have flex layout, not absolute
+        root = plan.screens[0]
+        # Check that children are not all absolute
+        child_displays = [c.display for c in root.children]
+        self.assertNotEqual(child_displays, ["absolute"] * len(child_displays))
+
+    def test_vertical_alignment_infers_flex_column(self):
+        """Children aligned vertically (same X) should get flex-column."""
+        data = self._make_frame([
+            (10, 0, 200, 40),   # Item 0: x=10, y=0
+            (10, 60, 200, 40),  # Item 1: x=10, y=60
+            (10, 120, 200, 40), # Item 2: x=10, y=120
+        ])
+        ff = FigmaFile.from_dict("test", data)
+        doc = IRBuilder().build(ff)
+        plan = LayoutAnalyzer().analyze(doc)
+        root = plan.screens[0]
+        child_displays = [c.display for c in root.children]
+        self.assertNotEqual(child_displays, ["absolute"] * len(child_displays))

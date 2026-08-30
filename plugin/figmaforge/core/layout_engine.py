@@ -632,10 +632,22 @@ class LayoutEngine:
         parent_gap = node.layout.gap if node.layout else 0.0
 
         def context_for(child):
+            # Explicitly marked absolute within auto-layout (layoutPositioning: ABSOLUTE)
+            # stays absolute regardless of parent display.
             if self._is_raw_absolute(child):
                 return _ParentContext(
                     node=node, type="absolute", direction=None,
                     content=provisional, grow_total=0.0,
+                )
+            # When the parent is flex (either from auto-layout or inferred from
+            # children alignment), children that only have position.mode ==
+            # 'absolute' (the IR default for non-auto-layout frames) become flow
+            # children — their coordinates are reinterpreted as flex offsets.
+            if display == DISPLAY_FLEX and child_type == "flow":
+                return _ParentContext(
+                    node=node, type="flow", direction=direction,
+                    content=provisional, grow_total=grow_total,
+                    gap=parent_gap, flow_count=flow_count,
                 )
             return _ParentContext(
                 node=node, type=child_type, direction=direction,
@@ -872,8 +884,63 @@ class LayoutEngine:
         if layout is not None and layout.mode == "grid":
             return DISPLAY_GRID, (layout.direction or "row")
         if node.position is not None and node.position.mode == "absolute":
+            # Even when the node itself is absolutely positioned, if it has
+            # children that are clearly aligned in a row or column, infer
+            # flex layout for the container.  This converts absolute-positioned
+            # parent frames with aligned children into semantic flex layouts.
+            inferred = self._infer_from_children(node)
+            if inferred is not None:
+                return inferred
             return DISPLAY_ABSOLUTE, None
+        # When a frame has no auto-layout, infer the layout direction from
+        # children's positions.
+        inferred = self._infer_from_children(node)
+        if inferred is not None:
+            return inferred
         return DISPLAY_NONE, None
+
+    def _infer_from_children(self, node: IRNode) -> Optional[Tuple[str, Optional[str]]]:
+        """Infer flex-row/column from children's positions when the parent
+        has no explicit layout mode.
+
+        The heuristic: compute the Y-centre and X-centre of each child using
+        the IR position + dimensions.  If all Y-centres are within a tolerance
+        the children sit on the same horizontal line → flex-row.  If all
+        X-centres align → flex-column.  Otherwise return ``None``.
+        """
+        children = [c for c in node.children if c.visible]
+        if len(children) < 2:
+            return None
+        centres = []
+        heights = []
+        widths = []
+        for c in children:
+            pos = c.position
+            dims = c.dimensions
+            if pos is None or dims is None:
+                continue
+            cx = (pos.x or 0) + (dims.width or 0) / 2
+            cy = (pos.y or 0) + (dims.height or 0) / 2
+            centres.append((cx, cy))
+            if dims.height:
+                heights.append(dims.height)
+            if dims.width:
+                widths.append(dims.width)
+        if len(centres) < 2:
+            return None
+        ys = [cy for _, cy in centres]
+        xs = [cx for cx, _ in centres]
+        y_range = max(ys) - min(ys)
+        x_range = max(xs) - min(xs)
+        median_h = sorted(heights)[len(heights) // 2] if heights else 40
+        median_w = sorted(widths)[len(widths) // 2] if widths else 100
+        tol_y = median_h * 0.6
+        tol_x = median_w * 0.6
+        if y_range <= tol_y and x_range > tol_x:
+            return DISPLAY_FLEX, "row"
+        if x_range <= tol_x and y_range > tol_y:
+            return DISPLAY_FLEX, "column"
+        return None
 
     @staticmethod
     def _sizing_spec(res_h: _AxisResult, res_v: _AxisResult, facts_h, facts_v) -> SizingSpec:
