@@ -1149,17 +1149,14 @@ def _cmd_spec(args: argparse.Namespace) -> int:
 
 
 def _cmd_compare(args: argparse.Namespace) -> int:
-    """Pixel-diff two PNGs and return actionable feedback JSON.
+    """Pixel-diff two PNGs or semantic-compare HTML vs IR.
 
-    Accepts two PNG files (baseline and generated).  The output is a
-    structured JSON report with:
-    - ``similarity_score``: 0.0–1.0 (1.0 = identical)
-    - ``verdict``: ``"identical"`` | ``"changed"``
-    - ``mismatches[]``: list of mismatch regions with category and coords
-    - ``stats``: pixel-level diff statistics
-
-    This is the primary feedback mechanism for the agent-driven pipeline.
+    Accepts two PNG files (baseline and generated) for pixel-diff,
+    or an IR JSON + HTML file for semantic comparison with ``--semantic``.
     """
+    if getattr(args, 'semantic', False):
+        return _cmd_semantic_compare(args)
+    
     baseline_path = Path(args.baseline)
     generated_path = Path(args.generated)
 
@@ -1204,6 +1201,76 @@ def _cmd_compare(args: argparse.Namespace) -> int:
         },
         "guidance": _build_compare_guidance(similarity, mismatches),
     }
+    _emit_with_out(result, args.out)
+    return 0
+
+
+def _cmd_semantic_compare(args: argparse.Namespace) -> int:
+    """Semantic-compare HTML against Figma IR.
+
+    The baseline is an IR JSON file (from ingest/normalize) and the
+    generated is an HTML file.  The output includes per-feature scores
+    and actionable guidance.
+    """
+    import json as _json
+    from core.semantic_comparator import compare_html_against_ir
+    
+    ir_path = Path(args.baseline)
+    html_path = Path(args.generated)
+    
+    if not ir_path.is_file():
+        raise _CliError(4, f"IR file not found: {ir_path!r}")
+    if not html_path.is_file():
+        raise _CliError(4, f"HTML file not found: {html_path!r}")
+    
+    try:
+        ir = _json.loads(ir_path.read_text())
+    except Exception as exc:
+        raise _CliError(4, f"failed to parse IR JSON: {exc}")
+    
+    html = html_path.read_text()
+    
+    result = compare_html_against_ir(ir, html)
+    
+    # Add verdict
+    result["verdict"] = (
+        "identical" if result["overall"] >= 0.99
+        else "near_perfect" if result["overall"] >= 0.95
+        else "changed"
+    )
+    
+    _emit_with_out(result, args.out)
+    return 0
+
+
+def _cmd_semantic_compare_from_args(args: argparse.Namespace) -> int:
+    """Handler for the semantic-compare subcommand."""
+    import json as _json
+    from core.semantic_comparator import compare_html_against_ir
+    
+    ir_path = Path(args.ir)
+    html_path = Path(args.html)
+    
+    if not ir_path.is_file():
+        raise _CliError(4, f"IR file not found: {ir_path!r}")
+    if not html_path.is_file():
+        raise _CliError(4, f"HTML file not found: {html_path!r}")
+    
+    try:
+        ir = _json.loads(ir_path.read_text())
+    except Exception as exc:
+        raise _CliError(4, f"failed to parse IR JSON: {exc}")
+    
+    html = html_path.read_text()
+    
+    result = compare_html_against_ir(ir, html)
+    
+    result["verdict"] = (
+        "identical" if result["overall"] >= 0.99
+        else "near_perfect" if result["overall"] >= 0.95
+        else "changed"
+    )
+    
     _emit_with_out(result, args.out)
     return 0
 
@@ -1676,11 +1743,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     cmp = sub.add_parser(
         "compare",
-        help="pixel-diff two PNGs and return actionable feedback JSON",
+        help="pixel-diff two PNGs or semantic-compare HTML vs IR",
     )
-    cmp.add_argument("--baseline", required=True, help="baseline PNG (the target look)")
+    cmp.add_argument("--baseline", required=True, help="baseline PNG (the target look) or IR JSON file")
     cmp.add_argument("--generated", required=True, help="generated PNG or HTML file to compare")
+    cmp.add_argument("--semantic", action="store_true",
+                     help="use semantic comparison (HTML vs IR) instead of pixel-diff")
     cmp.add_argument("--out", help="optional path to also write the result JSON")
+
+    sem_cmp = sub.add_parser(
+        "semantic-compare",
+        help="semantic-compare HTML against Figma IR (per-feature scoring)",
+    )
+    sem_cmp.add_argument("--ir", required=True, help="Figma IR JSON file (from ingest/normalize)")
+    sem_cmp.add_argument("--html", required=True, help="HTML file to compare")
+    sem_cmp.add_argument("--out", help="optional path to also write the result JSON")
 
     loop = sub.add_parser(
         "agent-loop",
@@ -1746,6 +1823,8 @@ def _execute(args: argparse.Namespace) -> int:
         return _cmd_spec(args)
     if args.command == "compare":
         return _cmd_compare(args)
+    if args.command == "semantic-compare":
+        return _cmd_semantic_compare_from_args(args)
     if args.command == "agent-loop":
         return _cmd_agent_loop(args)
     if args.command == "iterate":
