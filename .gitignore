@@ -54,6 +54,10 @@ FigmaForge.backups/
 # Pipeline output (large, regenerated)
 figmaforge-output/
 runtime/figmaforge-output/
+resume_builder_output.html
+
+# UI experiments (product is agent tooling, not a standalone app)
+ui/
 
 # node_modules
 node_modules/

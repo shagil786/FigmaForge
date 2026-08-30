@@ -83,6 +83,7 @@ from core.resolver import ResolutionReport, Resolver  # noqa: E402
 from core.image_analyzer import ImageAnalyzer, ImageAnalyzerConfig  # noqa: E402
 from core.source_audit import audit_source  # noqa: E402
 from core.token_resolver import SemanticToken, TokenResolution  # noqa: E402
+from core.design_spec import DesignSpecGenerator  # noqa: E402
 
 DEFAULT_VIEWPORT = 1440.0
 DEFAULT_OUT_DIR = "generated"
@@ -1128,6 +1129,279 @@ def _cmd_image_ingest(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_spec(args: argparse.Namespace) -> int:
+    """Generate a semantic design spec (agent-readable JSON) from a Figma file or IR.
+
+    Accepts either a raw Figma file JSON (ingest output) or a normalized
+    design IR.  When a raw Figma file is given, it is normalized first.
+    """
+    raw = _load_file_payload(args.file)
+    gen = DesignSpecGenerator()
+
+    # Detect whether the input is already an IR or a raw Figma payload
+    if "schema_version" in raw and "root" in raw:
+        spec = gen.generate_from_ir(raw)
+    else:
+        spec = gen.generate_from_figma(raw)
+
+    _emit_with_out(spec, args.out)
+    return 0
+
+
+def _cmd_compare(args: argparse.Namespace) -> int:
+    """Pixel-diff two PNGs and return actionable feedback JSON.
+
+    Accepts two PNG files (baseline and generated).  The output is a
+    structured JSON report with:
+    - ``similarity_score``: 0.0–1.0 (1.0 = identical)
+    - ``verdict``: ``"identical"`` | ``"changed"``
+    - ``mismatches[]``: list of mismatch regions with category and coords
+    - ``stats``: pixel-level diff statistics
+
+    This is the primary feedback mechanism for the agent-driven pipeline.
+    """
+    baseline_path = Path(args.baseline)
+    generated_path = Path(args.generated)
+
+    if not baseline_path.is_file():
+        raise _CliError(4, f"baseline file not found: {baseline_path!r}")
+    if not generated_path.is_file():
+        raise _CliError(4, f"generated file not found: {generated_path!r}")
+
+    from core.png_codec import decode_png
+    from core.pixel_diff import compare_images, resize_nearest
+    from core.ssim import ssim
+
+    try:
+        baseline_img = decode_png(baseline_path.read_bytes())
+        generated_img = decode_png(generated_path.read_bytes())
+    except Exception as exc:
+        raise _CliError(4, f"failed to decode PNG: {exc}")
+
+    # Resize to common dimensions if needed
+    if (baseline_img.width, baseline_img.height) != (generated_img.width, generated_img.height):
+        generated_img = resize_nearest(generated_img, baseline_img.width, baseline_img.height)
+
+    stats, mask = compare_images(baseline_img, generated_img)
+    ssim_score = ssim(baseline_img, generated_img)
+
+    # Build mismatch regions from the diff mask
+    mismatches = _extract_mismatch_regions(mask, baseline_img.width, baseline_img.height)
+
+    similarity = max(0.0, min(1.0, ssim_score))
+    verdict = "identical" if similarity >= 0.99 else "changed"
+
+    result = {
+        "similarity_score": round(similarity, 6),
+        "verdict": verdict,
+        "mismatches": mismatches,
+        "stats": {
+            "width": stats.width,
+            "height": stats.height,
+            "total_pixels": stats.total_pixels,
+            "diff_pixels": stats.diff_pixel_count,
+            "diff_ratio": round(stats.diff_ratio, 6),
+        },
+    }
+    _emit_with_out(result, args.out)
+    return 0
+
+
+def _extract_mismatch_regions(
+    mask: bytearray, width: int, height: int,
+) -> List[Dict[str, Any]]:
+    """Extract bounding-box regions of contiguous diff pixels."""
+    if not any(mask):
+        return []
+
+    # Simple scanline region extraction: find rows with diffs,
+    # group consecutive rows into regions
+    regions: List[Dict[str, Any]] = []
+    in_region = False
+    y_start = 0
+    x_min = width
+    x_max = 0
+    diff_count = 0
+
+    for y in range(height):
+        row_has_diff = False
+        for x in range(width):
+            if mask[y * width + x]:
+                row_has_diff = True
+                x_min = min(x_min, x)
+                x_max = max(x_max, x)
+                diff_count += 1
+
+        if row_has_diff and not in_region:
+            in_region = True
+            y_start = y
+            x_min = width
+            x_max = 0
+            diff_count = 0
+        elif not row_has_diff and in_region:
+            in_region = False
+            regions.append({
+                "type": "pixel_mismatch",
+                "bbox": {"x": x_min, "y": y_start, "width": x_max - x_min + 1, "height": y - y_start},
+                "pixel_count": diff_count,
+            })
+
+    if in_region:
+        regions.append({
+            "type": "pixel_mismatch",
+            "bbox": {"x": x_min, "y": y_start, "width": x_max - x_min + 1, "height": height - y_start},
+            "pixel_count": diff_count,
+        })
+
+    # Merge adjacent regions (within 4px vertical gap)
+    merged: List[Dict[str, Any]] = []
+    for region in regions:
+        if merged:
+            prev = merged[-1]
+            gap = region["bbox"]["y"] - (prev["bbox"]["y"] + prev["bbox"]["height"])
+            if gap <= 4:
+                # Merge
+                new_y = prev["bbox"]["y"]
+                new_h = region["bbox"]["y"] + region["bbox"]["height"] - new_y
+                new_x = min(prev["bbox"]["x"], region["bbox"]["x"])
+                new_w = max(
+                    prev["bbox"]["x"] + prev["bbox"]["width"],
+                    region["bbox"]["x"] + region["bbox"]["width"],
+                ) - new_x
+                prev["bbox"] = {"x": new_x, "y": new_y, "width": new_w, "height": new_h}
+                prev["pixel_count"] += region["pixel_count"]
+                continue
+        merged.append(region)
+
+    return merged
+
+
+def _cmd_agent_loop(args: argparse.Namespace) -> int:
+    """Run the full agent pipeline: spec → generate → compare → feedback.
+
+    Produces a single JSON object containing:
+    - ``spec``: the semantic design spec
+    - ``generated``: the generate manifest (backend, files, fidelity losses)
+    - ``feedback``: comparison feedback (if --baseline provided) or "no baseline"
+
+    This is the primary entry point for agent-driven code generation.
+    """
+    raw = _load_file_payload(args.file)
+    gen = DesignSpecGenerator()
+
+    # Step 1: Generate the spec
+    if "schema_version" in raw and "root" in raw:
+        spec = gen.generate_from_ir(raw)
+    else:
+        spec = gen.generate_from_figma(raw)
+
+    # Step 2: Generate the code
+    registry = get_registry()
+    try:
+        backend = registry.require(args.backend)
+    except KeyError as exc:
+        raise _CliError(2, str(exc))
+
+    # Build the IR + layout for the generate step
+    if "schema_version" in raw and "root" in raw:
+        doc = IRDocument.from_dict(raw)
+    else:
+        file_key = raw.get("file_key") or Path(args.file).stem
+        doc = IRBuilder(images=raw.get("assets") or {}).build(FigmaFile.from_dict(file_key, raw))
+
+    plan = LayoutAnalyzer().analyze(doc, library=LibraryLoader().load(), viewport=args.viewport)
+    report = Resolver(doc).resolve()
+    output = backend.generate(doc, plan, report, options={"viewport": args.viewport})
+
+    # Write generated files
+    out_dir = Path(args.out_dir) / args.backend
+    out_dir.mkdir(parents=True, exist_ok=True)
+    manifest_files = []
+    for gf in output.files:
+        file_path = out_dir / gf.path
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_text(gf.content, encoding="utf-8")
+        manifest_files.append({"path": gf.path, "size": len(gf.content)})
+
+    generated = {
+        "backend": args.backend,
+        "files": manifest_files,
+        "manifest": {
+            "backend": args.backend,
+            "file_count": len(manifest_files),
+            "fidelity_loss_count": len(output.fidelity_losses or []),
+        },
+        "fidelity_losses": [
+            {"feature": fl.feature.value, "reason": fl.reason}
+            for fl in (output.fidelity_losses or [])
+        ],
+    }
+
+    # Step 3: Compare (if baseline provided)
+    if args.baseline:
+        baseline_path = Path(args.baseline)
+        if not baseline_path.is_file():
+            raise _CliError(4, f"baseline file not found: {baseline_path!r}")
+
+        # Find the main HTML file for rendering
+        html_files = [f for f in manifest_files if f["path"].endswith(".html")]
+        if not html_files:
+            feedback = {
+                "verdict": "no_html",
+                "similarity_score": 0.0,
+                "note": f"backend {args.backend} did not produce an HTML file for rendering",
+            }
+        else:
+            # Render the generated HTML and compare
+            html_path = out_dir / html_files[0]["path"]
+            try:
+                harness = RenderHarness()
+                screenshot_path = out_dir / ".screenshot.png"
+                harness.render(str(html_path), str(screenshot_path), viewport=args.viewport)
+
+                from core.png_codec import decode_png
+                from core.pixel_diff import compare_images, resize_nearest
+                from core.ssim import ssim
+
+                baseline_img = decode_png(baseline_path.read_bytes())
+                generated_img = decode_png(screenshot_path.read_bytes())
+
+                if (baseline_img.width, baseline_img.height) != (generated_img.width, generated_img.height):
+                    generated_img = resize_nearest(generated_img, baseline_img.width, baseline_img.height)
+
+                _, mask = compare_images(baseline_img, generated_img)
+                ssim_score = ssim(baseline_img, generated_img)
+                mismatches = _extract_mismatch_regions(mask, baseline_img.width, baseline_img.height)
+
+                similarity = max(0.0, min(1.0, ssim_score))
+                feedback = {
+                    "similarity_score": round(similarity, 6),
+                    "verdict": "identical" if similarity >= 0.99 else "changed",
+                    "mismatches": mismatches,
+                    "mismatch_count": len(mismatches),
+                }
+            except Exception as exc:
+                feedback = {
+                    "verdict": "render_error",
+                    "similarity_score": 0.0,
+                    "error": str(exc),
+                }
+    else:
+        feedback = {
+            "verdict": "no_baseline",
+            "similarity_score": None,
+            "note": "provide --baseline to enable visual comparison",
+        }
+
+    result = {
+        "spec": spec,
+        "generated": generated,
+        "feedback": feedback,
+    }
+    _emit_with_out(result, args.out)
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # entry point
 # ---------------------------------------------------------------------------
@@ -1318,6 +1592,37 @@ def build_parser() -> argparse.ArgumentParser:
     )
     img.add_argument("--out", help="optional path to also write the IR JSON")
 
+    spec = sub.add_parser(
+        "spec",
+        help="generate a semantic design spec (agent-readable JSON) from a Figma file or IR",
+    )
+    spec.add_argument(
+        "--file", required=True,
+        help="Figma file JSON (raw ingest output) or design IR JSON (normalize output)",
+    )
+    spec.add_argument("--out", help="optional path to also write the spec JSON")
+
+    cmp = sub.add_parser(
+        "compare",
+        help="pixel-diff two PNGs and return actionable feedback JSON",
+    )
+    cmp.add_argument("--baseline", required=True, help="baseline PNG (the target look)")
+    cmp.add_argument("--generated", required=True, help="generated PNG or HTML file to compare")
+    cmp.add_argument("--out", help="optional path to also write the result JSON")
+
+    loop = sub.add_parser(
+        "agent-loop",
+        help="run the full agent pipeline: spec → generate → compare → feedback",
+    )
+    loop.add_argument("--file", required=True, help="Figma file JSON or design IR JSON")
+    loop.add_argument("--backend", required=True, help="backend to generate")
+    loop.add_argument("--baseline", help="optional baseline PNG for visual comparison")
+    loop.add_argument("--viewport", type=float, default=DEFAULT_VIEWPORT,
+                      help="target viewport width (default %g)" % DEFAULT_VIEWPORT)
+    loop.add_argument("--out-dir", default=DEFAULT_OUT_DIR,
+                      help="output directory (default %r)" % DEFAULT_OUT_DIR)
+    loop.add_argument("--out", help="optional path to also write the result JSON")
+
     return parser
 
 
@@ -1345,6 +1650,12 @@ def _execute(args: argparse.Namespace) -> int:
         return repair_main(_repair_argv_from_args(args))
     if args.command == "image_ingest":
         return _cmd_image_ingest(args)
+    if args.command == "spec":
+        return _cmd_spec(args)
+    if args.command == "compare":
+        return _cmd_compare(args)
+    if args.command == "agent-loop":
+        return _cmd_agent_loop(args)
     raise _CliError(2, f"unknown command {args.command!r}")
 
 
