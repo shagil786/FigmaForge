@@ -195,6 +195,53 @@ TOOLS: List[Dict[str, Any]] = [
             "required": ["file"],
         },
     },
+    {
+        "name": "figmaforge_iterate",
+        "description": (
+            "Run the agent iteration loop: generate → render → compare → LLM fix → repeat. "
+            "Uses a vision LLM to iteratively improve the generated code until it matches "
+            "the baseline design within the target SSIM threshold. Returns the best output "
+            "and iteration history."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "file": {
+                    "type": "string",
+                    "description": "Path to a Figma file JSON",
+                },
+                "backend": {
+                    "type": "string",
+                    "description": "Backend to generate (html_css, react_tailwind, vue, svelte, swiftui, flutter)",
+                },
+                "baseline": {
+                    "type": "string",
+                    "description": "Path to baseline PNG for visual comparison",
+                },
+                "max_iterations": {
+                    "type": "integer",
+                    "description": "Maximum iterations (default 10)",
+                    "default": 10,
+                },
+                "target_ssim": {
+                    "type": "number",
+                    "description": "Target SSIM score 0-1 (default 0.95)",
+                    "default": 0.95,
+                },
+                "viewport": {
+                    "type": "integer",
+                    "description": "Viewport width in pixels (default 1440)",
+                    "default": 1440,
+                },
+                "out_dir": {
+                    "type": "string",
+                    "description": "Output directory (default iteration_output)",
+                    "default": "iteration_output",
+                },
+            },
+            "required": ["file", "backend", "baseline"],
+        },
+    },
 ]
 
 # ---------------------------------------------------------------------------
@@ -289,6 +336,24 @@ def handle_audit(params: Dict[str, Any]) -> Dict[str, Any]:
     return _run_pipeline("audit", args)
 
 
+def handle_iterate(params: Dict[str, Any]) -> Dict[str, Any]:
+    args = [
+        "--file", params["file"],
+        "--backend", params["backend"],
+        "--baseline", params["baseline"],
+    ]
+    if params.get("max_iterations"):
+        args += ["--max-iterations", str(params["max_iterations"])]
+    if params.get("target_ssim"):
+        args += ["--target-ssim", str(params["target_ssim"])]
+    if params.get("viewport"):
+        args += ["--viewport", str(params["viewport"])]
+    if params.get("out_dir"):
+        args += ["--out-dir", params["out_dir"]]
+    # Iterate can take a long time (LLM calls + renders)
+    return _run_pipeline("iterate", args, timeout=600)
+
+
 HANDLERS = {
     "figmaforge_spec": handle_spec,
     "figmaforge_generate": handle_generate,
@@ -296,6 +361,7 @@ HANDLERS = {
     "figmaforge_agent_loop": handle_agent_loop,
     "figmaforge_image_ingest": handle_image_ingest,
     "figmaforge_audit": handle_audit,
+    "figmaforge_iterate": handle_iterate,
 }
 
 # ---------------------------------------------------------------------------

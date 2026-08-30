@@ -1402,6 +1402,52 @@ def _cmd_agent_loop(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_iterate(args: argparse.Namespace) -> int:
+    """Run the agent iteration loop: generate → render → compare → LLM fix → repeat.
+
+    Uses a vision LLM (Claude/GPT-4V/Kimi) to iteratively improve the generated
+    code until it matches the baseline design within the target SSIM threshold.
+    """
+    from core.agent_iterator import AgentIterator, IterationPlan
+    import logging
+
+    # Set up logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(message)s",
+    )
+
+    plan = IterationPlan(
+        file_path=args.file,
+        backend=args.backend,
+        baseline_path=args.baseline,
+        max_iterations=args.max_iterations,
+        target_ssim=args.target_ssim,
+        viewport=args.viewport,
+        out_dir=args.out_dir,
+        api_provider=args.api_provider,
+        api_key=args.api_key,
+    )
+
+    iterator = AgentIterator(plan)
+    result = iterator.run()
+
+    # Output final result
+    final = {
+        "iteration": result.iteration,
+        "ssim_score": result.ssim_score,
+        "verdict": result.verdict,
+        "best_output": result.html_path,
+        "screenshot": result.screenshot_path,
+        "diff": result.diff_path,
+        "mismatch_count": result.mismatch_count,
+        "iterations_run": len(iterator.results),
+        "scores": [r.ssim_score for r in iterator.results],
+    }
+    _emit_with_out(final, args.out)
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # entry point
 # ---------------------------------------------------------------------------
@@ -1623,6 +1669,26 @@ def build_parser() -> argparse.ArgumentParser:
                       help="output directory (default %r)" % DEFAULT_OUT_DIR)
     loop.add_argument("--out", help="optional path to also write the result JSON")
 
+    iterate = sub.add_parser(
+        "iterate",
+        help="agent iteration loop: generate → render → compare → LLM fix → repeat",
+    )
+    iterate.add_argument("--file", required=True, help="Figma file JSON or design IR JSON")
+    iterate.add_argument("--backend", required=True, help="backend to generate")
+    iterate.add_argument("--baseline", required=True, help="baseline PNG for visual comparison")
+    iterate.add_argument("--max-iterations", type=int, default=10,
+                         help="maximum iterations (default 10)")
+    iterate.add_argument("--target-ssim", type=float, default=0.95,
+                         help="target SSIM score (default 0.95)")
+    iterate.add_argument("--viewport", type=float, default=DEFAULT_VIEWPORT,
+                         help="target viewport width (default %g)" % DEFAULT_VIEWPORT)
+    iterate.add_argument("--out-dir", default="iteration_output",
+                         help="output directory (default iteration_output)")
+    iterate.add_argument("--api-provider", choices=["anthropic", "openai", "nvidia"],
+                         help="LLM provider (auto-detect from env vars)")
+    iterate.add_argument("--api-key", help="LLM API key (or set via env var)")
+    iterate.add_argument("--out", help="optional path to also write the result JSON")
+
     return parser
 
 
@@ -1656,6 +1722,8 @@ def _execute(args: argparse.Namespace) -> int:
         return _cmd_compare(args)
     if args.command == "agent-loop":
         return _cmd_agent_loop(args)
+    if args.command == "iterate":
+        return _cmd_iterate(args)
     raise _CliError(2, f"unknown command {args.command!r}")
 
 
