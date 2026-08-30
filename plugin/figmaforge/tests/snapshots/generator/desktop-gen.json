@@ -1,9 +1,9 @@
 {
   "0:1": {
     "style": {
-      "display": "absolute",
+      "display": "flex",
+      "flexDirection": "column",
       "height": "fit-content",
-      "position": "absolute",
       "width": "fit-content"
     },
     "vnode": {

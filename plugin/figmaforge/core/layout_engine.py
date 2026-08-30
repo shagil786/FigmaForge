@@ -906,9 +906,16 @@ class LayoutEngine:
         The heuristic: compute the Y-centre and X-centre of each child using
         the IR position + dimensions.  If all Y-centres are within a tolerance
         the children sit on the same horizontal line → flex-row.  If all
-        X-centres align → flex-column.  Otherwise return ``None``.
+        X-centres align → flex-column.  A single child always infers
+        flex-column (vertical stacking is the safe default).  Otherwise
+        return ``None``.
         """
         children = [c for c in node.children if c.visible]
+        if len(children) == 1:
+            # A single child in a non-auto-layout frame → flex-column
+            # (the child becomes the only flow child; direction is irrelevant
+            # for a single child but flex avoids absolute positioning).
+            return DISPLAY_FLEX, "column"
         if len(children) < 2:
             return None
         centres = []

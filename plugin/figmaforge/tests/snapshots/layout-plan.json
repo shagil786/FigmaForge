@@ -58,13 +58,13 @@
     "unsupported": []
   },
   "counts": {
-    "absolute": 1,
+    "absolute": 0,
     "bounds_mismatch": 0,
     "clipped_content": 0,
     "contradictions": 0,
     "fill": 2,
     "fixed": 3,
-    "flex": 3,
+    "flex": 4,
     "grid": 0,
     "hug": 2,
     "nodes": 7,
@@ -596,7 +596,8 @@
           "severity": "warning"
         }
       ],
-      "display": "absolute",
+      "direction": "column",
+      "display": "flex",
       "kind": "page",
       "name": "Desktop",
       "node_id": "0:1",
