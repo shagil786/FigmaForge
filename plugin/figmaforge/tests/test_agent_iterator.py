@@ -1,168 +1,184 @@
 #!/usr/bin/env python3
-"""Tests for the agent iteration engine."""
+"""Tests for the agent iteration tools."""
 
 import json
-import os
-import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from core.agent_iterator import (
-    AgentIterator,
-    IterationPlan,
-    IterationResult,
-    _build_iteration_prompt,
-    _extract_code_from_llm_response,
+    DiffFeedback,
+    IterationTracker,
+    IterationState,
+    analyze_diff,
+    get_iteration_guidance,
 )
 
 
-class TestExtractCode(unittest.TestCase):
-    """Test LLM response code extraction."""
+class TestDiffFeedback(unittest.TestCase):
+    """Test DiffFeedback data class."""
 
-    def test_html_code_block(self):
-        response = "Here's the fixed code:\n```html\n<div class=\"hero\">\n  <h1>Title</h1>\n</div>\n```\nLet me know if..."
-        result = _extract_code_from_llm_response(response)
-        self.assertIn("<div", result)
-        self.assertIn("hero", result)
-
-    def test_tsx_code_block(self):
-        response = "```tsx\nexport function App() {\n  return <div>Hello</div>\n}\n```"
-        result = _extract_code_from_llm_response(response)
-        self.assertIn("export function App", result)
-
-    def test_raw_html(self):
-        response = "<!DOCTYPE html><html><body>Test</body></html>"
-        result = _extract_code_from_llm_response(response)
-        self.assertIn("<!DOCTYPE", result)
-
-    def test_empty_response(self):
-        result = _extract_code_from_llm_response("")
-        self.assertEqual(result, "")
-
-    def test_no_code_block(self):
-        result = _extract_code_from_llm_response("I couldn't generate code because...")
-        self.assertIn("I couldn", result)
-
-    def test_multiple_code_blocks(self):
-        response = "First:\n```html\n<div>A</div>\n```\nSecond:\n```html\n<div>B</div>\n```"
-        result = _extract_code_from_llm_response(response)
-        self.assertIn("<div>A</div>", result)
-
-    def test_generic_code_block(self):
-        response = "```\n<div>generic</div>\n```"
-        result = _extract_code_from_llm_response(response)
-        self.assertIn("<div>generic</div>", result)
-
-
-class TestIterationPlan(unittest.TestCase):
-    """Test IterationPlan defaults."""
-
-    def test_defaults(self):
-        plan = IterationPlan(
-            file_path="test.json",
-            backend="html_css",
-            baseline_path="baseline.png",
-        )
-        self.assertEqual(plan.max_iterations, 10)
-        self.assertEqual(plan.target_ssim, 0.95)
-        self.assertEqual(plan.viewport, 1440)
-        self.assertTrue(plan.stop_on_plateau)
-        self.assertEqual(plan.plateau_threshold, 0.001)
-
-    def test_custom_values(self):
-        plan = IterationPlan(
-            file_path="test.json",
-            backend="react_tailwind",
-            baseline_path="baseline.png",
-            max_iterations=5,
-            target_ssim=0.90,
-            viewport=1280,
-        )
-        self.assertEqual(plan.max_iterations, 5)
-        self.assertEqual(plan.target_ssim, 0.90)
-        self.assertEqual(plan.viewport, 1280)
-
-
-class TestIterationResult(unittest.TestCase):
-    """Test IterationResult data class."""
-
-    def test_basic_result(self):
-        result = IterationResult(
-            iteration=1,
+    def test_basic_feedback(self):
+        feedback = DiffFeedback(
             ssim_score=0.85,
             verdict="changed",
-            html_path="/tmp/test.html",
-            screenshot_path="/tmp/test.png",
-        )
-        self.assertEqual(result.iteration, 1)
-        self.assertEqual(result.ssim_score, 0.85)
-        self.assertEqual(result.mismatch_count, 0)
-        self.assertEqual(result.fidelity_losses, [])
-
-
-class TestBuildIterationPrompt(unittest.TestCase):
-    """Test prompt construction for LLM feedback."""
-
-    def test_basic_prompt(self):
-        spec = {
-            "colors": [{"hex": "#ffffff", "count": 10}],
-            "typography": [{"font_family": "Arial", "font_size": 16, "font_weight": 400, "count": 5}],
-        }
-        prompt = _build_iteration_prompt(
-            spec=spec,
-            current_html="<div>test</div>",
-            baseline_screenshot=b"\x89PNG\r\n\x1a\n",
-            generated_screenshot=b"\x89PNG\r\n\x1a\n",
-            diff_screenshot=None,
-            ssim_score=0.75,
+            mismatch_count=5,
             mismatch_regions=[],
-            iteration=1,
-            max_iterations=10,
-            backend="html_css",
+            color_mismatches=2,
+            layout_mismatches=3,
+            missing_elements=0,
+            extra_elements=0,
+            diff_summary="Score: 85%",
         )
-        self.assertIn("75.0%", prompt)
-        self.assertIn("ITERATION 1/10", prompt)
-        self.assertIn("<div>test</div>", prompt)
+        self.assertEqual(feedback.ssim_score, 0.85)
+        self.assertEqual(feedback.mismatch_count, 5)
+        self.assertEqual(feedback.color_mismatches, 2)
+        self.assertEqual(feedback.layout_mismatches, 3)
 
-    def test_prompt_with_mismatches(self):
-        spec = {"colors": [], "typography": []}
-        mismatches = [
-            {"kind": "color", "x": 100, "y": 200, "width": 50, "height": 30, "description": "Wrong blue"},
-            {"kind": "layout", "x": 0, "y": 0, "width": 200, "height": 100, "description": "Misaligned"},
-        ]
-        prompt = _build_iteration_prompt(
-            spec=spec,
-            current_html="<div>test</div>",
-            baseline_screenshot=b"\x89PNG\r\n\x1a\n",
-            generated_screenshot=b"\x89PNG\r\n\x1a\n",
-            diff_screenshot=None,
+
+class TestGetIterationGuidance(unittest.TestCase):
+    """Test guidance generation for agents."""
+
+    def test_target_reached(self):
+        feedback = DiffFeedback(
+            ssim_score=0.96,
+            verdict="identical",
+            mismatch_count=0,
+            mismatch_regions=[],
+            color_mismatches=0,
+            layout_mismatches=0,
+            missing_elements=0,
+            extra_elements=0,
+            diff_summary="Perfect",
+        )
+        guidance = get_iteration_guidance(feedback, iteration=3, target_ssim=0.95)
+        self.assertIn("Target reached", guidance)
+        self.assertIn("Stop iterating", guidance)
+
+    def test_color_issues(self):
+        feedback = DiffFeedback(
+            ssim_score=0.70,
+            verdict="changed",
+            mismatch_count=10,
+            mismatch_regions=[],
+            color_mismatches=5,
+            layout_mismatches=5,
+            missing_elements=0,
+            extra_elements=0,
+            diff_summary="Needs work",
+        )
+        guidance = get_iteration_guidance(feedback, iteration=1, target_ssim=0.95)
+        self.assertIn("Color Issues (5 regions)", guidance)
+        self.assertIn("Layout Issues (5 regions)", guidance)
+        self.assertIn("hex values", guidance)
+
+    def test_missing_elements(self):
+        feedback = DiffFeedback(
             ssim_score=0.60,
-            mismatch_regions=mismatches,
-            iteration=3,
-            max_iterations=10,
-            backend="html_css",
+            verdict="changed",
+            mismatch_count=8,
+            mismatch_regions=[],
+            color_mismatches=0,
+            layout_mismatches=0,
+            missing_elements=8,
+            extra_elements=0,
+            diff_summary="Many missing",
         )
-        self.assertIn("60.0%", prompt)
-        self.assertIn("Color mismatches: 1", prompt)
-        self.assertIn("Layout mismatches: 1", prompt)
-        self.assertIn("Wrong blue", prompt)
+        guidance = get_iteration_guidance(feedback, iteration=2, target_ssim=0.95)
+        self.assertIn("Missing Elements (8 regions)", guidance)
+        self.assertIn("HTML structure", guidance)
 
-
-class TestAgentIteratorImport(unittest.TestCase):
-    """Verify AgentIterator can be instantiated (no LLM call)."""
-
-    def test_instantiation(self):
-        plan = IterationPlan(
-            file_path="test.json",
-            backend="html_css",
-            baseline_path="baseline.png",
-            max_iterations=1,
+    def test_max_iterations(self):
+        feedback = DiffFeedback(
+            ssim_score=0.80,
+            verdict="changed",
+            mismatch_count=5,
+            mismatch_regions=[],
+            color_mismatches=0,
+            layout_mismatches=0,
+            missing_elements=0,
+            extra_elements=0,
+            diff_summary="Ok",
         )
-        # Don't actually run — just verify the class loads
-        iterator = AgentIterator(plan)
-        self.assertEqual(iterator.plan.max_iterations, 1)
-        self.assertEqual(iterator.results, [])
+        guidance = get_iteration_guidance(feedback, iteration=10, max_iterations=10, target_ssim=0.95)
+        self.assertIn("Max iterations reached", guidance)
+
+
+class TestIterationTracker(unittest.TestCase):
+    """Test iteration state tracking."""
+
+    def test_recording(self):
+        tracker = IterationTracker(target_ssim=0.95)
+        
+        feedback1 = DiffFeedback(
+            ssim_score=0.70, verdict="changed", mismatch_count=10,
+            mismatch_regions=[], color_mismatches=0, layout_mismatches=0,
+            missing_elements=0, extra_elements=0, diff_summary="",
+        )
+        status1 = tracker.record_iteration(feedback1)
+        self.assertEqual(status1["iteration"], 1)
+        self.assertEqual(status1["current_score"], 0.70)
+        self.assertFalse(status1["target_reached"])
+        
+        feedback2 = DiffFeedback(
+            ssim_score=0.85, verdict="changed", mismatch_count=5,
+            mismatch_regions=[], color_mismatches=0, layout_mismatches=0,
+            missing_elements=0, extra_elements=0, diff_summary="",
+        )
+        status2 = tracker.record_iteration(feedback2)
+        self.assertEqual(status2["iteration"], 2)
+        self.assertEqual(status2["best_score"], 0.85)
+
+    def test_plateau_detection(self):
+        tracker = IterationTracker(target_ssim=0.95, plateau_threshold=3)
+        
+        # Initial jump, then 3+ iterations with no improvement
+        for score in [0.50, 0.70, 0.7001, 0.7002, 0.7003]:
+            feedback = DiffFeedback(
+                ssim_score=score, verdict="changed", mismatch_count=5,
+                mismatch_regions=[], color_mismatches=0, layout_mismatches=0,
+                missing_elements=0, extra_elements=0, diff_summary="",
+            )
+            status = tracker.record_iteration(feedback)
+        
+        self.assertTrue(status["plateau_detected"])
+        self.assertTrue(status["should_stop"])
+
+    def test_target_reached(self):
+        tracker = IterationTracker(target_ssim=0.95)
+        
+        feedback = DiffFeedback(
+            ssim_score=0.96, verdict="identical", mismatch_count=0,
+            mismatch_regions=[], color_mismatches=0, layout_mismatches=0,
+            missing_elements=0, extra_elements=0, diff_summary="",
+        )
+        status = tracker.record_iteration(feedback)
+        self.assertTrue(status["target_reached"])
+        self.assertTrue(status["should_stop"])
+
+    def test_summary(self):
+        tracker = IterationTracker(target_ssim=0.95)
+        
+        for score in [0.60, 0.75, 0.90]:
+            feedback = DiffFeedback(
+                ssim_score=score, verdict="changed", mismatch_count=5,
+                mismatch_regions=[], color_mismatches=0, layout_mismatches=0,
+                missing_elements=0, extra_elements=0, diff_summary="",
+            )
+            tracker.record_iteration(feedback)
+        
+        summary = tracker.get_summary()
+        self.assertIn("3 iterations", summary)
+        self.assertIn("60.0%", summary)
+        self.assertIn("90.0%", summary)
+
+
+class TestAnalyzeDiffImport(unittest.TestCase):
+    """Verify analyze_diff can be imported (no actual rendering)."""
+
+    def test_import(self):
+        from core.agent_iterator import analyze_diff
+        self.assertTrue(callable(analyze_diff))
 
 
 if __name__ == "__main__":

@@ -1202,9 +1202,35 @@ def _cmd_compare(args: argparse.Namespace) -> int:
             "diff_pixels": stats.diff_pixel_count,
             "diff_ratio": round(stats.diff_ratio, 6),
         },
+        "guidance": _build_compare_guidance(similarity, mismatches),
     }
     _emit_with_out(result, args.out)
     return 0
+
+
+def _build_compare_guidance(similarity: float, mismatches: List[Dict[str, Any]]) -> str:
+    """Build actionable guidance for agents based on compare results."""
+    if similarity >= 0.99:
+        return "Pixel-perfect match! No fixes needed."
+    
+    if similarity >= 0.95:
+        return f"Near-perfect ({similarity:.1%}). {len(mismatches)} minor regions to polish."
+    
+    # Classify mismatches
+    color_issues = [m for m in mismatches if m.get("kind") == "color"]
+    layout_issues = [m for m in mismatches if m.get("kind") == "layout"]
+    
+    guidance = f"Score: {similarity:.1%}. Fix these issues:\n"
+    
+    if color_issues:
+        guidance += f"- {len(color_issues)} color/gradient mismatches: check hex values, gradients, opacity\n"
+    if layout_issues:
+        guidance += f"- {len(layout_issues)} layout mismatches: check flex/grid, gap, margin, padding\n"
+    
+    for i, m in enumerate(mismatches[:5]):
+        guidance += f"- Region {i+1} at ({m.get('x', 0)}, {m.get('y', 0)}): {m.get('description', 'pixel mismatch')}\n"
+    
+    return guidance
 
 
 def _extract_mismatch_regions(
