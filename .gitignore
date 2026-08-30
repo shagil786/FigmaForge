@@ -68,3 +68,4 @@ runtime/dist/
 # Temporary files
 /tmp/
 *.tmp
+generated/
