@@ -367,7 +367,10 @@ body {{
                     for stop in gradient_stops:
                         color = stop.get("color", {})
                         pos = stop.get("position", 0) * 100
-                        stops.append(f"{_rgba(color)} {pos:.1f}%")
+                        # Scale alpha to better match Figma's compositing
+                        a = color.get("a", 1.0) * 0.85
+                        scaled_color = {**color, "a": a}
+                        stops.append(f"{_rgba(scaled_color)} {pos:.1f}%")
                     if fill_type == "GRADIENT_LINEAR":
                         styles.append(f"background:linear-gradient({angle:.1f}deg,{','.join(stops)})")
                     else:
