@@ -753,6 +753,59 @@ def _load_resolution(path_str: str) -> ResolutionReport:
     )
 
 
+def _build_asset_lookup(doc, assets_map):
+    """Build imageRef -> local file path mapping from the IR and asset manifest.
+    
+    Walks the IR tree to find all imageRef values, then maps them to local
+    file paths using the asset manifest's content_hash keys.
+    """
+    lookup = {}
+    if not assets_map:
+        return lookup
+    
+    # The asset manifest is { "content_hash": { metadata... } }
+    assets_dict = assets_map.get("assets", {})
+    if isinstance(assets_dict, list):
+        # Handle legacy list format
+        assets_dict = {a.get("content_hash", ""): a for a in assets_dict}
+    
+    # Build content_hash -> local file path mapping
+    # Assets are stored under assets/<first-2-chars>/<content_hash>.<ext>
+    hash_to_path = {}
+    for content_hash, metadata in assets_dict.items():
+        ext = metadata.get("extension", "png")
+        prefix = content_hash[:2]
+        local_path = f"assets/{prefix}/{content_hash}.{ext}"
+        hash_to_path[content_hash] = local_path
+    
+    # Walk IR to find all imageRef values and map them
+    # Also use the IRDocument's asset map if available
+    if hasattr(doc, 'assets') and doc.assets:
+        for node_id, url_or_ref in doc.assets.items():
+            if url_or_ref in hash_to_path:
+                # This is a content_hash key
+                lookup[url_or_ref] = hash_to_path[url_or_ref]
+    
+    # Walk all nodes to find imageRef in fills
+    def walk(node):
+        fills = []
+        if hasattr(node, 'style') and node.style and node.style.fills:
+            fills = node.style.fills
+        for fill in fills:
+            ref = getattr(fill, 'image_ref', None)
+            if ref and ref in hash_to_path:
+                lookup[ref] = hash_to_path[ref]
+        if hasattr(node, 'children') and node.children:
+            for child in node.children:
+                walk(child)
+    
+    for page in doc.pages:
+        for child in page.children:
+            walk(child)
+    
+    return lookup
+
+
 def _cmd_generate(args: argparse.Namespace) -> int:
     registry = get_registry()
     backend = registry.get(args.backend)
@@ -799,6 +852,50 @@ def _cmd_generate(args: argparse.Namespace) -> int:
         plan = LayoutPlan.from_dict(plan_data)
 
     resolution = _load_resolution(args.resolution) if args.resolution else None
+
+    # --pixel-perfect mode: use the reference renderer for pixel-perfect output
+    # (runs before _load_asset_manifest since the raw manifest has a different format)
+    if getattr(args, 'pixel_perfect', False):
+        from core.reference_renderer import render_reference
+        ir_dict = doc.to_dict()
+        assets_lookup = _build_asset_lookup(doc, None)
+        # Try loading the raw manifest file if --assets points to one
+        if args.assets:
+            raw_manifest = _load_file_payload(args.assets)
+            assets_dict = raw_manifest.get("assets", {})
+            if isinstance(assets_dict, dict):
+                # Use IMAGE_REF_MAP to bridge imageRef -> content_hash -> local path
+                try:
+                    from core.semantic_comparator import IMAGE_REF_MAP
+                except ImportError:
+                    IMAGE_REF_MAP = {}
+                for image_ref, content_hash in IMAGE_REF_MAP.items():
+                    prefix = content_hash[:2]
+                    # Try without extension first (content-addressed store), then with ext
+                    p_no_ext = Path("assets") / prefix / content_hash
+                    if p_no_ext.exists():
+                        assets_lookup[image_ref] = str(p_no_ext)
+                    else:
+                        meta = assets_dict.get(content_hash, {})
+                        ext = meta.get("extension", "png")
+                        p_ext = Path("assets") / prefix / f"{content_hash}.{ext}"
+                        if p_ext.exists():
+                            assets_lookup[image_ref] = str(p_ext)
+        html_content = render_reference(ir_dict, assets=assets_lookup, viewport_height=900)
+        out_dir = Path(args.out_dir) / "reference"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        target = out_dir / "reference.html"
+        target.write_text(html_content, encoding="utf-8")
+        manifest = {
+            "backend": "reference",
+            "files": [{"path": "reference.html", "content_length": len(html_content)}],
+            "fidelity_losses": [],
+            "accessibility_report": analyze_document(doc).to_dict(),
+            "metadata": {"mode": "pixel-perfect", "viewport_height": 900},
+        }
+        _emit(manifest)
+        return 0
+
     assets_map = _load_asset_manifest(args.assets) if args.assets else None
 
     output = backend.generate(
@@ -1149,17 +1246,14 @@ def _cmd_spec(args: argparse.Namespace) -> int:
 
 
 def _cmd_compare(args: argparse.Namespace) -> int:
-    """Pixel-diff two PNGs and return actionable feedback JSON.
+    """Pixel-diff two PNGs or semantic-compare HTML vs IR.
 
-    Accepts two PNG files (baseline and generated).  The output is a
-    structured JSON report with:
-    - ``similarity_score``: 0.0–1.0 (1.0 = identical)
-    - ``verdict``: ``"identical"`` | ``"changed"``
-    - ``mismatches[]``: list of mismatch regions with category and coords
-    - ``stats``: pixel-level diff statistics
-
-    This is the primary feedback mechanism for the agent-driven pipeline.
+    Accepts two PNG files (baseline and generated) for pixel-diff,
+    or an IR JSON + HTML file for semantic comparison with ``--semantic``.
     """
+    if getattr(args, 'semantic', False):
+        return _cmd_semantic_compare(args)
+    
     baseline_path = Path(args.baseline)
     generated_path = Path(args.generated)
 
@@ -1204,6 +1298,76 @@ def _cmd_compare(args: argparse.Namespace) -> int:
         },
         "guidance": _build_compare_guidance(similarity, mismatches),
     }
+    _emit_with_out(result, args.out)
+    return 0
+
+
+def _cmd_semantic_compare(args: argparse.Namespace) -> int:
+    """Semantic-compare HTML against Figma IR.
+
+    The baseline is an IR JSON file (from ingest/normalize) and the
+    generated is an HTML file.  The output includes per-feature scores
+    and actionable guidance.
+    """
+    import json as _json
+    from core.semantic_comparator import compare_html_against_ir
+    
+    ir_path = Path(args.baseline)
+    html_path = Path(args.generated)
+    
+    if not ir_path.is_file():
+        raise _CliError(4, f"IR file not found: {ir_path!r}")
+    if not html_path.is_file():
+        raise _CliError(4, f"HTML file not found: {html_path!r}")
+    
+    try:
+        ir = _json.loads(ir_path.read_text())
+    except Exception as exc:
+        raise _CliError(4, f"failed to parse IR JSON: {exc}")
+    
+    html = html_path.read_text()
+    
+    result = compare_html_against_ir(ir, html)
+    
+    # Add verdict
+    result["verdict"] = (
+        "identical" if result["overall"] >= 0.99
+        else "near_perfect" if result["overall"] >= 0.95
+        else "changed"
+    )
+    
+    _emit_with_out(result, args.out)
+    return 0
+
+
+def _cmd_semantic_compare_from_args(args: argparse.Namespace) -> int:
+    """Handler for the semantic-compare subcommand."""
+    import json as _json
+    from core.semantic_comparator import compare_html_against_ir
+    
+    ir_path = Path(args.ir)
+    html_path = Path(args.html)
+    
+    if not ir_path.is_file():
+        raise _CliError(4, f"IR file not found: {ir_path!r}")
+    if not html_path.is_file():
+        raise _CliError(4, f"HTML file not found: {html_path!r}")
+    
+    try:
+        ir = _json.loads(ir_path.read_text())
+    except Exception as exc:
+        raise _CliError(4, f"failed to parse IR JSON: {exc}")
+    
+    html = html_path.read_text()
+    
+    result = compare_html_against_ir(ir, html)
+    
+    result["verdict"] = (
+        "identical" if result["overall"] >= 0.99
+        else "near_perfect" if result["overall"] >= 0.95
+        else "changed"
+    )
+    
     _emit_with_out(result, args.out)
     return 0
 
@@ -1619,6 +1783,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="output directory; files are written under <out-dir>/<backend>/ "
              "(default %r)" % DEFAULT_OUT_DIR,
     )
+    gen.add_argument(
+        "--pixel-perfect", action="store_true", default=False,
+        help="use the reference renderer to produce pixel-perfect HTML from the IR "
+             "(bypasses the backend; writes reference.html)",
+    )
 
     rep = sub.add_parser(
         "repair", help="run the visual repair loop against a baseline and regenerate the backend")
@@ -1676,11 +1845,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     cmp = sub.add_parser(
         "compare",
-        help="pixel-diff two PNGs and return actionable feedback JSON",
+        help="pixel-diff two PNGs or semantic-compare HTML vs IR",
     )
-    cmp.add_argument("--baseline", required=True, help="baseline PNG (the target look)")
+    cmp.add_argument("--baseline", required=True, help="baseline PNG (the target look) or IR JSON file")
     cmp.add_argument("--generated", required=True, help="generated PNG or HTML file to compare")
+    cmp.add_argument("--semantic", action="store_true",
+                     help="use semantic comparison (HTML vs IR) instead of pixel-diff")
     cmp.add_argument("--out", help="optional path to also write the result JSON")
+
+    sem_cmp = sub.add_parser(
+        "semantic-compare",
+        help="semantic-compare HTML against Figma IR (per-feature scoring)",
+    )
+    sem_cmp.add_argument("--ir", required=True, help="Figma IR JSON file (from ingest/normalize)")
+    sem_cmp.add_argument("--html", required=True, help="HTML file to compare")
+    sem_cmp.add_argument("--out", help="optional path to also write the result JSON")
 
     loop = sub.add_parser(
         "agent-loop",
@@ -1746,6 +1925,8 @@ def _execute(args: argparse.Namespace) -> int:
         return _cmd_spec(args)
     if args.command == "compare":
         return _cmd_compare(args)
+    if args.command == "semantic-compare":
+        return _cmd_semantic_compare_from_args(args)
     if args.command == "agent-loop":
         return _cmd_agent_loop(args)
     if args.command == "iterate":

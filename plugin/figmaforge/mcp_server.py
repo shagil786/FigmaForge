@@ -117,6 +117,33 @@ TOOLS: List[Dict[str, Any]] = [
         },
     },
     {
+        "name": "figmaforge_semantic_compare",
+        "description": (
+            "Semantic-compare generated HTML against Figma IR. "
+            "Returns overall similarity (0.0-1.0), per-feature scores "
+            "(colors, text, images, shadows, typography, etc.), and "
+            "actionable guidance for fixing mismatches."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "ir": {
+                    "type": "string",
+                    "description": "Path to the Figma IR JSON file (from ingest/normalize)",
+                },
+                "html": {
+                    "type": "string",
+                    "description": "Path to the generated HTML file to compare",
+                },
+                "out": {
+                    "type": "string",
+                    "description": "Optional path to also write the result JSON",
+                },
+            },
+            "required": ["ir", "html"],
+        },
+    },
+    {
         "name": "figmaforge_agent_loop",
         "description": (
             "Run the full agent pipeline in one command: extract design spec, "
@@ -311,6 +338,14 @@ def handle_compare(params: Dict[str, Any]) -> Dict[str, Any]:
     return _run_pipeline("compare", args, timeout=60)
 
 
+def handle_semantic_compare(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Semantic-compare HTML against Figma IR."""
+    args = ["--ir", params["ir"], "--html", params["html"]]
+    if params.get("out"):
+        args += ["--out", params["out"]]
+    return _run_pipeline("semantic-compare", args, timeout=60)
+
+
 def handle_agent_loop(params: Dict[str, Any]) -> Dict[str, Any]:
     args = ["--file", params["file"], "--backend", params["backend"]]
     if params.get("baseline"):
@@ -358,6 +393,7 @@ HANDLERS = {
     "figmaforge_spec": handle_spec,
     "figmaforge_generate": handle_generate,
     "figmaforge_compare": handle_compare,
+    "figmaforge_semantic_compare": handle_semantic_compare,
     "figmaforge_agent_loop": handle_agent_loop,
     "figmaforge_image_ingest": handle_image_ingest,
     "figmaforge_audit": handle_audit,
