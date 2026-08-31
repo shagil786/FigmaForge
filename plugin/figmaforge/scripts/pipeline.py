@@ -1245,6 +1245,81 @@ def _cmd_spec(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_vision_compare(args: argparse.Namespace) -> int:
+    """Vision-model comparison of design intent."""
+    baseline_path = Path(args.baseline)
+    generated_path = Path(args.generated)
+    if not baseline_path.is_file():
+        raise _CliError(4, f"baseline not found: {baseline_path!r}")
+    if not generated_path.is_file():
+        raise _CliError(4, f"generated not found: {generated_path!r}")
+
+    mode = getattr(args, "mode", "agent")
+    if mode == "agent":
+        from core.vision_comparator import generate_agent_prompt
+        prompt = generate_agent_prompt(baseline_path, generated_path)
+        result = {
+            "mode": "agent",
+            "baseline": str(baseline_path.resolve()),
+            "generated": str(generated_path.resolve()),
+            "prompt": prompt,
+        }
+        _emit_with_out(result, getattr(args, "out", None))
+        return 0
+
+    from core.vision_comparator import VisionComparator
+    try:
+        comp = VisionComparator(
+            provider=getattr(args, "provider", "auto"),
+            api_key=getattr(args, "api_key", None),
+            model=getattr(args, "model", None),
+            api_url=getattr(args, "api_url", None),
+        )
+    except ValueError as exc:
+        raise _CliError(2, str(exc))
+
+    score = comp.compare(baseline_path, generated_path)
+    result = score.to_dict()
+    result["verdict"] = (
+        "perfect" if score.overall >= 0.99 else "near_perfect" if score.overall >= 0.95
+        else "good" if score.overall >= 0.85 else "needs_work"
+    )
+    _emit_with_out(result, getattr(args, "out", None))
+    return 0
+
+
+def _cmd_vision_iterate(args: argparse.Namespace) -> int:
+    """Vision-driven iteration loop."""
+    from core.vision_iterator import VisionIterator, VisionIterationPlan
+    plan = VisionIterationPlan(
+        file_path=args.file, baseline_path=args.baseline,
+        target_score=args.target, max_iterations=args.max_iterations,
+        viewport_width=args.viewport_width, viewport_height=args.viewport_height,
+        out_dir=args.out_dir, api_provider=getattr(args, "api_provider", None),
+        api_key=getattr(args, "api_key", None),
+        api_url=getattr(args, "api_url", None), model=getattr(args, "model", None),
+    )
+    iterator = VisionIterator(plan)
+    result = iterator.run()
+    output = {
+        "iterations": [
+            {"iteration": r.iteration, "vision_score": r.vision_score,
+             "html_path": r.html_path, "screenshot_path": r.screenshot_path,
+             "fixes_applied": r.fixes_applied,
+             "issues": r.feedback.get("issues", []),
+             "suggestions": r.feedback.get("suggestions", []),
+             "latency_ms": r.latency_ms}
+            for r in result.iterations
+        ],
+        "best_score": result.best_score, "best_iteration": result.best_iteration,
+        "target_reached": result.target_reached, "plateau_detected": result.plateau_detected,
+        "final_html": result.final_html_path, "final_screenshot": result.final_screenshot_path,
+        "scores": [r.vision_score for r in result.iterations],
+    }
+    _emit_with_out(output, getattr(args, "out", None))
+    return 0
+
+
 def _cmd_compare(args: argparse.Namespace) -> int:
     """Pixel-diff two PNGs or semantic-compare HTML vs IR.
 
@@ -1894,6 +1969,34 @@ def build_parser() -> argparse.ArgumentParser:
     iterate.add_argument("--api-key", help="LLM API key (or set via env var)")
     iterate.add_argument("--out", help="optional path to also write the result JSON")
 
+    vc = sub.add_parser("vision-compare", help="vision-model comparison of design intent")
+    vc.add_argument("--baseline", required=True, help="baseline PNG (Figma screenshot)")
+    vc.add_argument("--generated", required=True, help="generated PNG (HTML screenshot)")
+    vc.add_argument("--mode", choices=["agent", "api"], default="agent",
+                    help="agent mode: output prompt for the calling agent; api: call vision API")
+    vc.add_argument("--provider", default="auto",
+                    help="vision API provider: openai/anthropic/gemini/custom/mock")
+    vc.add_argument("--api-key", help="API key (or set via env var)")
+    vc.add_argument("--api-url", help="Custom API URL (for --provider custom)")
+    vc.add_argument("--model", help="Model name override")
+    vc.add_argument("--out", help="optional path to also write the result JSON")
+
+    vi = sub.add_parser("vision-iterate",
+                         help="vision-driven iteration: generate → render → compare → fix → repeat")
+    vi.add_argument("--file", required=True, help="Figma file JSON or design IR JSON")
+    vi.add_argument("--baseline", required=True, help="Figma baseline screenshot (PNG)")
+    vi.add_argument("--target", type=float, default=0.90, help="target vision score (default 0.90)")
+    vi.add_argument("--max-iterations", type=int, default=10, help="max iterations (default 10)")
+    vi.add_argument("--viewport-width", type=int, default=1920)
+    vi.add_argument("--viewport-height", type=int, default=900)
+    vi.add_argument("--out-dir", default="vision_iteration")
+    vi.add_argument("--api-provider", choices=["openai", "anthropic", "gemini", "custom"],
+                    help="LLM provider for HTML fixes")
+    vi.add_argument("--api-key", help="LLM API key (or set via env var)")
+    vi.add_argument("--api-url", help="Custom API URL (for --api-provider custom)")
+    vi.add_argument("--model", help="Model name override")
+    vi.add_argument("--out", help="optional path to also write the result JSON")
+
     return parser
 
 
@@ -1923,6 +2026,10 @@ def _execute(args: argparse.Namespace) -> int:
         return _cmd_image_ingest(args)
     if args.command == "spec":
         return _cmd_spec(args)
+    if args.command == "vision-compare":
+        return _cmd_vision_compare(args)
+    if args.command == "vision-iterate":
+        return _cmd_vision_iterate(args)
     if args.command == "compare":
         return _cmd_compare(args)
     if args.command == "semantic-compare":
