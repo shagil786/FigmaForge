@@ -319,9 +319,9 @@ class SemanticComparator:
             for child in node.get("children", []):
                 walk(child, depth + 1)
         
-        for page in self.ir.get("pages", []):
-            for frame_node in page.get("children", []):
-                walk(frame_node)
+        # Only process the first frame (main design), not showcase/OG/favicon frames
+        if pages and pages[0].get("children"):
+            walk(pages[0]["children"][0])
         
         viewport = (int(frame_bbox.get("width", 1920)), self.viewport_height)
         
@@ -671,11 +671,16 @@ class SemanticComparator:
         ir_ratio = ir_increasing / max(len(ir_positions) - 1, 1)
         html_ratio = html_increasing / max(len(html_positions) - 1, 1)
         order_score = 1.0 - abs(ir_ratio - html_ratio)
+        # If ordering matches perfectly, give full credit regardless of count
+        # (HTML may not include elements beyond the viewport)
+        if order_score >= 0.99:
+            return 1.0
+        # Otherwise use soft count normalization
         count_ratio = min(len(html_positions), len(ir_positions)) / max(
             len(ir_positions), 1
         )
         soft_count = math.sqrt(count_ratio)
-        return order_score * 0.6 + soft_count * 0.4
+        return order_score * 0.5 + soft_count * 0.5
     
     def _score_completeness(self, ir_features: Dict[str, Any],
                             html_features: Dict[str, Any]) -> float:

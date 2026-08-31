@@ -110,7 +110,8 @@ class ReferenceRenderer:
 
         # Use the first frame as the viewport
         frame = children[0]
-        frame_bbox = frame.get("raw", {}).get("absoluteBoundingBox", {})
+        frame_raw = frame.get("raw", frame) if "raw" in frame else frame
+        frame_bbox = frame_raw.get("absoluteBoundingBox", {})
         frame_w = frame_bbox.get("width", 1920)
         frame_h = viewport_height  # Crop to viewport, not full frame height
         self._frame_origin = (frame_bbox.get("x", 0), frame_bbox.get("y", 0))
@@ -161,7 +162,8 @@ body {{
 
     def _render_node(self, node: Dict, parent_bbox: Dict) -> None:
         """Recursively render a node to HTML."""
-        raw = node.get("raw", {})
+        # Support both schema format (node.raw) and raw Figma format (node has props directly)
+        raw = node.get("raw", node) if "raw" in node else node
         bbox = raw.get("absoluteBoundingBox", {})
         if not bbox:
             return
