@@ -1084,8 +1084,47 @@ export function createCompareStageHandler(): StageHandler {
       ? totalSimilarity / screens.length
       : 0;
 
+    // Vision-compare: design-intent scoring via vision model
+    let visionResult: Record<string, unknown> = {};
+    if (screens.length > 0 && baseline) {
+      try {
+        const firstScreenshot = renderOutputs[0].screenshot;
+        const visionArgs = [
+          "vision-compare",
+          "--baseline", baseline,
+          "--generated", firstScreenshot,
+          "--mode", "api",
+          "--provider", "auto",
+        ];
+        const visionResult_raw = await spawnPython(
+          cfg.pythonBin,
+          path.join(cfg.pluginDir, "scripts", "pipeline.py"),
+          visionArgs,
+          cfg.pluginDir,
+          { timeoutMs: 30_000 },
+        );
+        if (visionResult_raw.exitCode === 0) {
+          visionResult = parseJsonLine(visionResult_raw.stdout);
+        }
+      } catch {
+        // Vision compare is non-fatal
+      }
+    }
+
     const report = {
       similarity_score: overall,
+      vision_score: visionResult.overall ?? null,
+      vision_dimensions: {
+        layout: visionResult.layout ?? null,
+        color: visionResult.color ?? null,
+        typography: visionResult.typography ?? null,
+        spacing: visionResult.spacing ?? null,
+        hierarchy: visionResult.hierarchy ?? null,
+        composition: visionResult.composition ?? null,
+      },
+      vision_issues: visionResult.issues ?? [],
+      vision_suggestions: visionResult.suggestions ?? [],
+      vision_summary: visionResult.summary ?? null,
       categories: { geometry: null, style: null, pixels: overall },
       raster_stats: firstStats
         ? {
@@ -1105,11 +1144,13 @@ export function createCompareStageHandler(): StageHandler {
         : null,
     };
     ctx.shared.set("diffReport", report);
-    // Share the resolved baseline so the repair/verify stages consume the
-    // exact PNG + kind this stage compared against (Part 20).
     ctx.shared.set("compareBaseline", baseline);
     ctx.shared.set("compareBaselineKind", baselineKind);
-    ctx.updateMetrics({ similarityScore: overall });
+    const visionScore = (report as any).vision_score ?? null;
+    ctx.updateMetrics({
+      similarityScore: overall,
+      ...(visionScore !== null ? { visionScore } : {}),
+    });
     return report;
   };
 }

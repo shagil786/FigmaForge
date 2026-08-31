@@ -496,6 +496,10 @@ async function cmdRun(args: CliArgs): Promise<void> {
     if (diffArtifacts.length > 0) {
       const report = artifacts.loadJSON(diffArtifacts[0]) as {
         similarity_score: number | null;
+        vision_score?: number | null;
+        vision_dimensions?: Record<string, number | null> | null;
+        vision_issues?: string[] | null;
+        vision_summary?: string | null;
         baseline_kind: string | null;
         resized?: boolean;
         raster_stats?: { ssim?: number | null; ssim_clean?: boolean | null } | null;
@@ -515,6 +519,23 @@ async function cmdRun(args: CliArgs): Promise<void> {
         );
       } else {
         console.log(`  Visual verdict: no measured score (${report.note ?? "no screenshots"})`);
+      }
+      // Vision intent score
+      if (report.vision_score !== null && report.vision_score !== undefined) {
+        const vs = report.vision_score as number;
+        const dims = (report.vision_dimensions ?? {}) as Record<string, number | null>;
+        const dimParts = ["layout", "color", "typography", "spacing", "hierarchy", "composition"]
+          .filter((k) => dims[k] !== null && dims[k] !== undefined)
+          .map((k) => `${k}=${((dims[k] as number) * 100).toFixed(0)}%`)
+          .join(", ");
+        console.log(`  Vision intent:  ${(vs * 100).toFixed(1)}% (${dimParts})`);
+        if (report.vision_summary) {
+          console.log(`  Vision summary: ${report.vision_summary}`);
+        }
+        const issues = (report.vision_issues ?? []) as string[];
+        for (const issue of issues.slice(0, 3)) {
+          console.log(`    Issue: ${issue}`);
+        }
       }
     }
 
