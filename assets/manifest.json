@@ -1,0 +1,156 @@
+{
+  "assets": {
+    "c2988197a352cd9c51600ca93bc0d5d3c5d4a9d940a12ae6971bf00de6f98884": {
+      "original_url": "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/6094d144-48da-4485-93a9-7ed00c3605c9",
+      "content_hash": "c2988197a352cd9c51600ca93bc0d5d3c5d4a9d940a12ae6971bf00de6f98884",
+      "kind": "image",
+      "extension": "png",
+      "license": null,
+      "source": null
+    },
+    "cdcff818184b7a1ccd619978c945c4fcfe4393286c3da893bc24af828cfb1d9a": {
+      "original_url": "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/fee0f777-4e53-42ec-8941-c9d42548c522",
+      "content_hash": "cdcff818184b7a1ccd619978c945c4fcfe4393286c3da893bc24af828cfb1d9a",
+      "kind": "image",
+      "extension": "png",
+      "license": null,
+      "source": null
+    },
+    "58ef3615d722e34b27854ce3ab3b73bc075899d6c71de9457e5d408001edd906": {
+      "original_url": "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/b44d97a1-d47b-4e86-b083-a83f9aadcc75",
+      "content_hash": "58ef3615d722e34b27854ce3ab3b73bc075899d6c71de9457e5d408001edd906",
+      "kind": "image",
+      "extension": "png",
+      "license": null,
+      "source": null
+    },
+    "50510acf8eaf183c4dfc28e293660f35a6ba86fe63e34a493ff86530e94cea59": {
+      "original_url": "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/a30d4862-bf21-43db-b222-a30e6778c434",
+      "content_hash": "50510acf8eaf183c4dfc28e293660f35a6ba86fe63e34a493ff86530e94cea59",
+      "kind": "image",
+      "extension": "png",
+      "license": null,
+      "source": null
+    },
+    "791478288c951e438025b067c25063e39efcfe867710c8ddda47be74f9752392": {
+      "original_url": "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/6414a421-9bbc-4065-a882-760e69beeccf",
+      "content_hash": "791478288c951e438025b067c25063e39efcfe867710c8ddda47be74f9752392",
+      "kind": "image",
+      "extension": "png",
+      "license": null,
+      "source": null
+    },
+    "d27b0382c0ff2f141951e1c43a7ba35790003350eb7f59343dc2f19ef6a93de2": {
+      "original_url": "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/3dffe903-8761-4c42-a59e-8f1b651b0180",
+      "content_hash": "d27b0382c0ff2f141951e1c43a7ba35790003350eb7f59343dc2f19ef6a93de2",
+      "kind": "image",
+      "extension": "png",
+      "license": null,
+      "source": null
+    },
+    "bedb3ab398197daef72e8e6f8797f5644b6c02417ce4e42dc43fceddddc34315": {
+      "original_url": "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/95d0710c-9f77-42e1-8587-662941f1981c",
+      "content_hash": "bedb3ab398197daef72e8e6f8797f5644b6c02417ce4e42dc43fceddddc34315",
+      "kind": "image",
+      "extension": "png",
+      "license": null,
+      "source": null
+    },
+    "5d74c2a7fbbd4babcf215ad7c8bf202fd84383ecdd31d0462a1c71996dd23edc": {
+      "original_url": "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/c8902226-a252-4e28-82e4-1566c280fc76",
+      "content_hash": "5d74c2a7fbbd4babcf215ad7c8bf202fd84383ecdd31d0462a1c71996dd23edc",
+      "kind": "image",
+      "extension": "png",
+      "license": null,
+      "source": null
+    },
+    "9b2d35073dce51cef1cab04d4f250d654a472b08998edb7806caf47c030b98ff": {
+      "original_url": "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/1320bde7-b480-4154-bcea-7663ae77fd1d",
+      "content_hash": "9b2d35073dce51cef1cab04d4f250d654a472b08998edb7806caf47c030b98ff",
+      "kind": "image",
+      "extension": "png",
+      "license": null,
+      "source": null
+    },
+    "be9cede8929abc0f05f6854018d97fc86cca5ca057e518ce880500d98ace444d": {
+      "original_url": "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/fd0a6c81-4330-415a-9c8f-f50b27369d1b",
+      "content_hash": "be9cede8929abc0f05f6854018d97fc86cca5ca057e518ce880500d98ace444d",
+      "kind": "image",
+      "extension": "png",
+      "license": null,
+      "source": null
+    },
+    "9a4826350f9604923b18d750daee8cc579f84cc607a3af501f5560c486618e96": {
+      "original_url": "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/41645601-729d-4cae-8ffa-0f01dc45de28",
+      "content_hash": "9a4826350f9604923b18d750daee8cc579f84cc607a3af501f5560c486618e96",
+      "kind": "image",
+      "extension": "png",
+      "license": null,
+      "source": null
+    },
+    "b99a45d57d2b9b6de75d31c53444b82a7c730d214028fc883b01ce06e2cd17b7": {
+      "original_url": "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/84379d5c-d224-4a5e-b71d-d2048b04c767",
+      "content_hash": "b99a45d57d2b9b6de75d31c53444b82a7c730d214028fc883b01ce06e2cd17b7",
+      "kind": "image",
+      "extension": "png",
+      "license": null,
+      "source": null
+    },
+    "dfe5220ef1ce24b7a1d818b0e21fff9befb7e1e4b83e92c37c40b28667b9df16": {
+      "original_url": "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/88598cda-718a-483d-990a-5675b3e4565e",
+      "content_hash": "dfe5220ef1ce24b7a1d818b0e21fff9befb7e1e4b83e92c37c40b28667b9df16",
+      "kind": "image",
+      "extension": "png",
+      "license": null,
+      "source": null
+    },
+    "f54cf0946a4187b5698d9d3b7a318ad7894f29bb235dc0aa0723db1aeec626d6": {
+      "original_url": "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/ba648eb0-5cd1-4336-9d3a-e2869283f9ec",
+      "content_hash": "f54cf0946a4187b5698d9d3b7a318ad7894f29bb235dc0aa0723db1aeec626d6",
+      "kind": "image",
+      "extension": "png",
+      "license": null,
+      "source": null
+    },
+    "8602468a31138c6deae81d713872a59929ef763ac6059ab8746d3c99d5bf5aab": {
+      "original_url": "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/b85a9833-9282-4438-b264-61759edaa6eb",
+      "content_hash": "8602468a31138c6deae81d713872a59929ef763ac6059ab8746d3c99d5bf5aab",
+      "kind": "image",
+      "extension": "png",
+      "license": null,
+      "source": null
+    },
+    "7c8f4fef3195fdf944f4c6ee2105603f69586cfcf0397a033889d33081d9b912": {
+      "original_url": "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/dd3af65c-ab6d-48f9-a8b5-c98811cb3fa3",
+      "content_hash": "7c8f4fef3195fdf944f4c6ee2105603f69586cfcf0397a033889d33081d9b912",
+      "kind": "image",
+      "extension": "png",
+      "license": null,
+      "source": null
+    },
+    "8ae51a8aacace25ca06622a23b31706307bd8ba658c625e46da9ea56e7a4b5b1": {
+      "original_url": "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/70d03cf3-b2c0-4b0a-8aba-2badda884a57",
+      "content_hash": "8ae51a8aacace25ca06622a23b31706307bd8ba658c625e46da9ea56e7a4b5b1",
+      "kind": "image",
+      "extension": "png",
+      "license": null,
+      "source": null
+    },
+    "5d046156d9f8fc087c37fe5280a9be25694485bf167149f972813327e20b3eae": {
+      "original_url": "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/c26d5345-bf38-47ff-aa9c-edf738547db7",
+      "content_hash": "5d046156d9f8fc087c37fe5280a9be25694485bf167149f972813327e20b3eae",
+      "kind": "image",
+      "extension": "png",
+      "license": null,
+      "source": null
+    },
+    "a76506cd7b6db6660310f43e3d77a23dc5e8bbca1ea34907a37f0cf463024282": {
+      "original_url": "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/d461c03d-3e24-4295-9f48-086a5c19f8e0",
+      "content_hash": "a76506cd7b6db6660310f43e3d77a23dc5e8bbca1ea34907a37f0cf463024282",
+      "kind": "image",
+      "extension": "png",
+      "license": null,
+      "source": null
+    }
+  }
+}

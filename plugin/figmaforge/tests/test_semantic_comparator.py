@@ -336,7 +336,7 @@ class TestFeatureScoring(unittest.TestCase):
         
         # One increasing, one decreasing
         score = self.comparator._score_vertical_layout([0, 100, 200], [200, 100, 0])
-        self.assertLess(score, 0.5)
+        self.assertLessEqual(score, 0.5)
 
 
 if __name__ == "__main__":

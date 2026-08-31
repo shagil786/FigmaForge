@@ -23,6 +23,7 @@ Usage:
 from __future__ import annotations
 
 import math
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 
@@ -189,9 +190,11 @@ body {{
             f"height:{h:.1f}px",
         ]
 
-        # Background fills
+        # Background fills — skip for text nodes (text has no background fill in Figma)
         fills = raw.get("fills", [])
-        self._apply_fills(styles, fills, raw)
+        text_node = raw.get("characters") or node.get("text", {}).get("characters")
+        if not text_node:
+            self._apply_fills(styles, fills, raw)
 
         # Border radius
         corner_radius = raw.get("cornerRadius", 0)
@@ -250,26 +253,34 @@ body {{
         node_id = node.get("id", "unknown")
         node_type = raw.get("type", "RECTANGLE")
 
-        # Check for image fill
+        # Check for image fill (raw Figma format: fills[].imageRef;
+        # IRDocument format: style.fills[].image_ref)
         image_ref = None
+        scale_mode = "FILL"
         for fill in fills:
             if fill.get("type") == "IMAGE" or fill.get("imageRef"):
                 image_ref = fill.get("imageRef")
+                scale_mode = fill.get("scaleMode", "FILL")
                 break
+        if not image_ref:
+            style_fills = raw.get("style", {}).get("fills", [])
+            for fill in style_fills:
+                if fill.get("kind") == "image" or fill.get("image_ref"):
+                    image_ref = fill.get("image_ref")
+                    scale_mode = fill.get("scale_mode", "FILL")
+                    break
 
         if image_ref and image_ref in self.assets:
             # Image element
             local_path = self.assets[image_ref]
-            scale_mode = "FILL"
-            for fill in fills:
-                if fill.get("imageRef") == image_ref:
-                    scale_mode = fill.get("scaleMode", "FILL")
-                    break
+            # Resolve to absolute path for Chromium file:// loading
+            abs_path = str(Path(local_path).resolve()) if not Path(local_path).is_absolute() else local_path
+            # scale_mode already set above from either format
             object_fit = {"FILL": "fill", "FIT": "contain", "CROP": "cover", "TILE": "repeat"}.get(scale_mode, "fill")
             self._elements.append(
                 f'<img class="el" data-figma-id="{node_id}" '
                 f'style="{style_str};object-fit:{object_fit}" '
-                f'src="file://{local_path}" />'
+                f'src="file://{abs_path}" />'
             )
             return
 
@@ -286,8 +297,14 @@ body {{
             text_case = style_info.get("textCase", "NONE")
 
             text_styles = []
-            text_fill = fills[0] if fills else {}
-            text_color = text_fill.get("color", {"r": 0, "g": 0, "b": 0, "a": 1})
+            # Get text color from fills (raw format) or style.fills (IRDocument format)
+            text_color = {"r": 0, "g": 0, "b": 0, "a": 1}
+            if fills:
+                text_fill = fills[0]
+                text_color = text_fill.get("color", text_color)
+            elif raw.get("style", {}).get("fills"):
+                style_fill = raw["style"]["fills"][0]
+                text_color = style_fill.get("color", text_color)
             text_styles.append(f"color:{_hex6(text_color)}")
             text_styles.append(f"font-family:'{font_family}',sans-serif")
             text_styles.append(f"font-size:{font_size}px")
